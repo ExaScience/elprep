@@ -1,0 +1,271 @@
+body {
+	font: 90% Times New Roman, Times, serif;
+}
+
+.contents {
+	margin-right: 1em;
+	margin-left: 1em;
+}
+
+.documentation {
+	margin-right: 1em;
+	margin-left: 1em;	
+}
+
+.part-parents {
+	margin-left: 1em;
+}
+
+.part-parents h3 {
+	display: inline;
+	margin-right: 0.5em;
+}
+
+.package-symbols {
+	margin-left: 1em;
+	margin-bottom: 0.5em;
+	margin-top: 0.5em;
+}
+
+.license {
+	margin-right: 1em;
+	margin-left: 1em;
+	margin-bottom: 1em;
+}
+
+/*<group=table-of-contents>*/
+
+.table-of-contents {
+  border-collapse: collapse;
+	vertical-align: top;
+	text-align: left;
+}
+
+.table-of-contents table {
+    border-collapse: collapse;
+	padding-right: 1em;
+	padding-left: 1em;
+}
+
+.table-of-contents tr {
+}
+
+.table-of-contents th {
+	font-weight: bold;
+	width: 200px;
+	font-family: Arial, Helvetica, sans-serif;
+	text-align: left;
+}
+
+.table-of-contents td {
+	padding-left: 1em;
+}
+	
+/*</group>*/
+
+/*<group=part-summary>*/
+
+.part-summary {
+	margin-right: 2em;
+	margin-left: 2em;
+}
+
+.part-summary tr {
+	text-align: left;
+	vertical-align: top;
+}
+
+.part-summary td {
+	text-align: left;
+	padding-bottom: 0.0em;
+	padding-top: 0.0em;
+}
+
+.part-summary th {
+	text-align: left;
+	width: 100px;
+	font-style: italic;
+}
+	
+/*</group>*/
+
+/*<group=table-summary>*/
+
+#other-file td {
+	padding-left: 1em;
+}
+
+.table-summary {
+  border-collapse: collapse;
+	vertical-align: top;
+	margin-right: 1em;
+	margin-left: 1em;
+	text-align: left;
+}
+
+.table-summary table {
+	margin-left: 1em;
+}
+
+.table-summary tr {
+	text-align: left;
+	vertical-align: top;
+}
+
+.table-summary td {
+	text-align: left;
+	padding-bottom: 0.5em;
+	padding-top: 0.2em;
+}
+
+.table-summary th {
+	text-align: left;
+	font-weight: normal;
+	width: 200px;
+}
+	
+/*</group>*/
+
+#header{   background: #009933;  color: white;  border: 1px solid black;  font-family: sans-serif;  margin-top: 0.5em; padding: 0.5em;  height: 22px;}
+
+#header a[href] { color: #ffff33; text-decoration: none;
+	border-bottom-style: none;
+}
+
+#header a[href]:hover { 
+    background: transparent; 
+    color: #ffff00;
+    font-variant: small-caps;
+    font-style: italic;
+}
+
+#contents-link{  clear: both;}
+
+#footer{   background: #009933;  color: white;  border: 1px solid black;  margin-top: 0.5em;   padding: 0.5em;
+  font-family: Verdana, Arial, Helvetica, sans-serif;
+  font-size: 80%;
+  clear: both;
+}
+
+#footer a[href] { color: #ffff33; text-decoration: none;
+	border-bottom-style: none;
+}
+
+#footer a[href]:hover { background: transparent; color: #ffff00;
+	font-style: italic;
+	font-variant: small-caps;
+}
+
+#tinaa-logo{   font-variant: small-caps;  float: right;  font-family: fantasy;  font-size: 150%;  letter-spacing: 0.05em;}
+
+.date {
+	margin-right: 2em;
+}
+
+.version {
+	margin-right: 2em;
+}
+
+h1, h2, h3, h4 {   color: #333333;  font-family: Arial, Helvetica, sans-serif;}
+
+h3 {
+	margin-right: 0;
+	margin-bottom: 0.5em;
+	margin-left: 0;
+}
+
+a[href] {
+	text-decoration: none;
+}
+
+a[href]:hover { 
+    background: #ff9;
+	border-bottom: 1px dotted black;
+}
+
+.documentation {
+	text-align: left;
+	margin-bottom: 0.4em;
+}
+
+.property-heading {
+	margin-right: 3px;
+	font: italic 90% Arial, Helvetica, sans-serif;
+}
+
+.property-value {
+	
+}
+
+.oddrow {  background-color: #ccffcc}
+
+/*<group=Index>*/
+
+.back-to-top {
+	float: right;
+}
+
+.index-name {
+	width: 200px;
+	float: left;
+	clear: left;
+	margin-left: 3em;
+     text-indent: -1em;
+	margin-top: 0.2em;
+}
+
+.index-kind {
+	float: left;
+	padding-right: 2.0em;
+}
+
+.index-links {
+	float: right;
+}
+
+.index {
+	float: left;
+	padding-left: 0.4em;
+}
+
+.index-contents {
+	margin-bottom: 2.0em;
+}
+
+.index-contents pre {
+	clear: both;
+}
+
+.index-letters {
+	margin-left: 2em;
+}
+
+.used-letter {
+	float: left;
+	margin-right: 6px;
+	font-family: Verdana, Arial, Helvetica, sans-serif;
+}
+
+.dead-letter {
+	float: left;
+	margin-right: 6px;
+	font-family: Verdana, Arial, Helvetica, sans-serif;
+	color: #999999;
+}
+
+.index-letter {
+	float: left;
+	width: 90%;
+	margin-top: 1.5em;
+	border: 1px  #000000;
+	border-top: 1px dotted #666666;
+	padding-top: 0.4em;
+}
+
+.the-letter {
+	text-transform: uppercase;
+	float: left;
+	font: 150% Verdana, Arial, Helvetica, sans-serif;
+}
+	
+/*</group>*/
