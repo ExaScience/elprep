@@ -121,7 +121,9 @@ As of today there is no publication on elPrep yet. Please cite the ExaScience Li
 
 # Demo
 
-We have a seperate GitHub repository with [demo](https://github.com/ExaScience/elprep-demo) scripts that use elPrep for procesing a subset of NA12878 that maps to chromosome 22.
+We have a seperate [git repository](http://git.exascience.com) with demo scripts that use elPrep for procesing a subset of NA12878 that maps to chromosome 22. To download the repository execute the clone command below (2.4G in total):
+
+	git clone http://git.exascience.com/git/elprep-demo.git
 
 # Manual Reference Pages
 
