@@ -8,7 +8,7 @@ The table below shows the execution time of the preparation phases in a whole-ge
 
 The table shows that preparation phase with elPrep is 25x faster than using SAMtools/Picard. The output of elPrep is 100% equivalent to output produced by SAMtools/Picard.
 
-	Prepartion of NA12878 on one 4x10-core Intel Xeon E7-4870 server
+	Preparation of NA12878 on one 4x10-core Intel Xeon E7-4870 server
 	
 							Number of Threads	Execution Time	
 		SAMtools/Picard					   40	   29h 44m 55s				
@@ -73,7 +73,7 @@ A build script is provided with the source code if you wish to build elPrep your
 	
 		lispworks -build save-elprep-script.lisp
 
-Please ensure that the elPrep repository and its dependencies are visible to the asdf path of your LispWorks compiler. Also see our separate readme on [installing](https://github.com/ExaScience/elprep/blob/master/installing.md) for more detailed instructions.
+Please ensure that the elPrep repository and its dependencies are visible to the asdf path of your LispWorks compiler.
 
 ## Compatibility 
 
