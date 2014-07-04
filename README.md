@@ -34,7 +34,7 @@ elPrep is released as an open-source project under a BSD 3-Clause License (BSD 2
 
 You can download a precompiled binary of elPrep [here](https://github.com/ExaScience/elprep/releases) upon accepting the license agreement. This binary was created using the 64-bit LispWorks 6.1 Professional Edition for Linux. 
 
-## Github
+## GitHub
 
 The elPrep source code is freely available on GitHub. elPrep is implemented in Common Lisp using the LispWorks compiler for Linux.
 
@@ -121,9 +121,7 @@ As of today there is no publication on elPrep yet. Please cite the ExaScience Li
 
 # Demo
 
-We have a seperate [git repository](http://git.exascience.com) with demo scripts that use elPrep for procesing a subset of NA12878 that maps to chromosome 22. To download the repository execute the clone command below (2.4G in total):
-
-	git clone http://git.exascience.com/git/elprep-demo.git
+We have a seperate [GitHub repository](https://github.com/ExaScience/elprep-demo) with demo scripts that use elPrep for procesing a subset of NA12878 that maps to chromosome 22.
 
 # Manual Reference Pages
 
