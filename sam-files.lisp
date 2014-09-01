@@ -257,9 +257,11 @@
                   (- (char-int char) #.(- (char-int #\A) 10)))
                  (t (error "Not a hex digit ~S." char)))))
     (declare (inline hex-value))
-    (map 'vector 'identity (loop collect (+ (ash (hex-value (readc stream)) 4)
-                                            (hex-value (readc stream)))
-                                 until (end-of-entry-or-line-p (peekc stream))))))
+    (loop for count of-type fixnum from 1
+          collect (+ (ash (hex-value (readc stream)) 4)
+                     (hex-value (readc stream)))
+          into list until (end-of-entry-or-line-p (peekc stream))
+          finally (return (make-array count :element-type '(unsigned-byte 8) :initial-contents list)))))
 
 (defun parse-sam-numeric-array (stream)
   "Parse a numeric array in a SAM file.
@@ -565,7 +567,7 @@
   (etypecase byte-array
     (list   (loop for byte in (the list byte-array)
                   do (format out "~2,'0X" byte)))
-    (vector (loop for byte across (the simple-vector byte-array)
+    (vector (loop for byte across (the vector byte-array)
                   do (format out "~2,'0X" byte)))))
 
 (defun format-sam-datetime (out tag datetime)
@@ -772,7 +774,7 @@
     (double-float (format out ":f:~E" (coerce value 'single-float))) ; single-precision floating point number
     (string       (writestr out ":Z:") (writestr out value))         ; printable string
     (vector       (writestr out ":H:")                               ; byte array in hex format
-                  (loop for byte across (the simple-vector value)
+                  (loop for byte across (the vector value)
                         do (format out "~2,'0X" byte)))
     (list         (writestr out ":B:")                               ; integer or numeric array
                   (let ((type (common-number-type value)))
