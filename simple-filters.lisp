@@ -150,8 +150,9 @@
 
 (defun rename-chromosomes (header)
   "A filter for prepending \"chr\" to the reference sequence names in a sam-header, and in RNAME and RNEXT in each sam-alignment."
-  (loop for sn in (sam-header-sq header)
-        do (setf (car (cdr sn)) (string-append "chr" (second sn))))
+  (loop for plist in (sam-header-sq header)
+        for sn = (getf plist :SN)
+        when sn do (setf (getf plist :SN) (string-append "chr" sn)))
   (lambda ()
     (lambda (alignment)
       (declare (sam-alignment alignment) #.*optimization*)
