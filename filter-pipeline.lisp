@@ -497,7 +497,8 @@
                        (receive-chunk (cons 0 alns)))
                       ((:coordinate :queryname)
                        (if destructive
-                         (loop do (let ((head alns) (tail (nthcdr chunk-size alns)))
+                         (loop with chunk-size-1 = (1- chunk-size)
+                               do (let ((head alns) (tail (nthcdr chunk-size-1 alns)))
                                     (if tail
                                       (setf alns (cdr tail) (cdr tail) nil)
                                       (setq alns nil))
@@ -550,8 +551,9 @@
                                                   (receive-chunk chunk)))))))))))
                       (lambda (mailboxes)
                         (loop with serial = -1
+                              with chunk-size-1 = (1- chunk-size)
                               for mailbox-ring = mailboxes then (or (cdr mailbox-ring) mailboxes)
-                              do (let ((head alns) (tail (nthcdr chunk-size alns)))
+                              do (let ((head alns) (tail (nthcdr chunk-size-1 alns)))
                                    (setq alns (cdr tail))
                                    (mp:mailbox-send (car mailbox-ring) (cons (incf serial) (cons head tail))))
                               while alns)))
