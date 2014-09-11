@@ -311,7 +311,7 @@
   (:documentation "Efficient copying of the contents of an input stream to an output stream.")
   (:method ((input buffered-stream) (output stream))
    "Specialization for LispWorks's buffered-stream."
-   (loop (with-stream-input-buffer (buffer index limit) input
-           (stream-write-sequence output buffer index limit))
-         (unless (stream-fill-buffer input)
-           (return-from copy-stream (values))))))
+   (loop do (with-stream-input-buffer (buffer index limit) input
+              (when (< index limit)
+                (stream-write-sequence output buffer index limit)))
+         while (stream-fill-buffer input))))
