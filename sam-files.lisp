@@ -824,19 +824,33 @@
                        (error "samtools not found. Please download it from http://samtools.sourceforge.net and make sure that its binary is present in your PATH.")
                        (setq *samtools* line))))))
 
+(defun check-stdout (pathname)
+  (ignore-errors
+    (string= (namestring (truename pathname))
+             (load-time-value (namestring (truename #p"/dev/stdout"))))))
+
+(defun check-stdin (pathname)
+  (ignore-errors
+    (string= (namestring (truename pathname))
+             (load-time-value (namestring (truename #p"/dev/stdin"))))))
+
 (defun %open-sam (pathname direction header-only kind)
   "Open a SAM file for :input or :output. If kind is :bam or :cram, use samtools view for input or output.
    Tell samtools view to only return the header for :input when :header-only is true."
   (ecase direction
     (:input (cond ((eq kind :sam)
-                   (open pathname :direction :input :element-type 'base-char :if-does-not-exist :error))
+                   (if (check-stdin pathname)
+                       (make-synonym-stream '*terminal-io*)
+                     (open pathname :direction :input :element-type 'base-char :if-does-not-exist :error)))
                   (t (open pathname :direction :probe :element-type 'base-char :if-does-not-exist :error)
-                     (sys:open-pipe (list (get-samtools) "view" (if header-only "-H" "-h")
+                     (sys:open-pipe (list (get-samtools) "view" (if header-only "-H" "-h") "-@" (write-to-string *number-of-threads*)
                                           (namestring (translate-logical-pathname pathname)))
                                     :direction :input))))
     (:output (cond ((eq kind :sam)
-                    (open pathname :direction :output :element-type 'base-char :if-exists :supersede))
-                   (t (sys:open-pipe (list (get-samtools) "view" (ecase kind (:bam "-Sb") (:cram "-C"))
+                    (if (check-stdout pathname)
+                        (make-synonym-stream '*terminal-io*)
+                      (open pathname :direction :output :element-type 'base-char :if-exists :supersede)))
+                   (t (sys:open-pipe (list (get-samtools) "view" (ecase kind (:bam "-Sb") (:cram "-C")) "-@" (write-to-string *number-of-threads*)
                                            "-o" (namestring (translate-logical-pathname pathname)) "-")
                                      :direction :output))))))
 

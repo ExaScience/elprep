@@ -18,7 +18,8 @@
     #+lispworks-64bit
     (when (= gc-on 1) (system:marking-gc 0 :max-size 0))
     ; write to file
-    (ensure-directories-exist (current-pathname file-out))
+    (unless (check-stdout file-out)
+      (ensure-directories-exist (current-pathname file-out)))
     (cond (timed
            (format t "Write to file.~%")
            (time (run-pipeline filtered-reads (current-pathname file-out)
@@ -55,6 +56,8 @@
 
 (defun elprep-script ()
   "Command line script for the best practices pipeline."
+  ; change output to stderr
+  (setq *standard-output* (system:make-stderr-stream))
   (format t "~A version ~A. See ~A for more information.~%"
           *program-name* *program-version* *program-url*)
   (let ((cmd-line (rest sys:*line-arguments-list*))
@@ -162,6 +165,7 @@
                  (filters2 remove-duplicates-filter)) ; only used in conjuction with filters that split up processing in multiple phases
             (format t "Executing command:~%  ~a~%" cmd-string)
             (let ((*number-of-threads* nr-of-threads))
+              (push `(*number-of-threads* . ,nr-of-threads) mp:*process-initial-bindings*) ; make sure output threads see this binding
               (if (or mark-duplicates-p
                       (member sorting-order '(:coordinate :queryname))
                       (and replace-ref-seq-dct-filter (eq sorting-order :keep)))

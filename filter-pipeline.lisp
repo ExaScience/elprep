@@ -342,7 +342,8 @@
                        (format-sam-header out header)
                        (with-chunk-output (chunk) (mailbox (not (eq sorting-order :unsorted)))
                          (loop for aln in chunk do
-                               (stream:stream-write-sequence out aln 0 (length aln)))))))))
+                               (stream:stream-write-sequence out aln 0 (length aln))))
+                       (stream:stream-flush-buffer out))))))
     (values (lambda (aln)
               (with-output-to-string (s)
                 (format-sam-alignment s aln)))
@@ -369,7 +370,9 @@
            (with-chunk-output (chunk) (mailbox (not (eq sorting-order :unsorted)))
              (loop for aln in chunk do
                    (stream:stream-write-sequence out aln 0 (length aln))))
-           (close out))
+           (progn 
+             (stream:stream-flush-buffer out)
+             (close out)))
          (mp:mailbox-send outbox pathname))))
     (values (lambda (aln)
               (with-output-to-string (s)
