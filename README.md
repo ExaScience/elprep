@@ -1,18 +1,28 @@
 # Overview
 
-elPrep is a high-performance tool for preparing .sam/.bam files for variant calling in sequencing pipelines. It can be used as a drop-in replacement for SAMtools/Picard, and was extensively tested with the GATK best practices pipeline for variant analysis.
+elPrep is a high-performance tool for preparing .sam/.bam/.cram files for variant calling in sequencing pipelines. It can be used as a drop-in replacement for SAMtools/Picard, and was extensively tested with different pipelines for variant analysis with GATK. The key advantage of elPrep is that it only performs a single-pass to process a .sam/.bam/.cram file, independent of the number of filters that need to be applied in a particular pipeline.
 
-elPrep is designed as an in-memory and multi-threaded application to fully take advantage of the processing power available with modern servers. Its software architecture is based on functional programming techniques, which allow to easily compose multiple alignment filters and perform optimizations such as loop merging.
+elPrep is designed as an in-memory and multi-threaded application to fully take advantage of the processing power available with modern servers. Its software architecture is based on functional programming techniques, which allows easy composition of multiple alignment filters and optimizations such as loop merging. To make this possible, elPrep proposes a couple of new algorithms. For example, for duplicate marking we devised an algorithm that expresses the operation as a single-pass filter using memoization techniques and hierarchical hash tables for efficient parallel synchronisation.
 
-The table below shows the execution time of the preparation phases in a whole-genome-sequencing pipeline for NA12878 on a 4x10-core Intel Xeon E7-4870 server with 512GB RAM. The preparation phases in this example include filtering unmapped reads, sorting for coordinate order, marking duplicates, adding read group information, and reordering the reference sequence dictionary for GATK. 
+The main advantage of elPrep is very fast execution times on high-end backend servers, as is available for example through Amazon cloud computing services or custom server setups. We do not recommend using elPrep on laptops, desktops, or low-end servers. Please consult the system requirements below for more details.
 
-The table shows that preparation phase with elPrep is 25x faster than using SAMtools/Picard. The output of elPrep is 100% equivalent to output produced by SAMtools/Picard.
+The table below shows the execution time of the preparation phases in a whole-genome-sequencing pipeline for NA12878 on a 4x10-core Intel Xeon E7-4870 server with 512GB RAM. The sam file is split up and processed per chromosome. The preparation phases in this example include filtering unmapped reads, sorting for coordinate order, marking duplicates, adding read group information, and reordering the reference sequence dictionary for GATK. 
+
+The table shows that the preparation phase with elPrep is 25x faster than with SAMtools and Picard. The output of elPrep is 100% equivalent to output produced by SAMtools and Picard.
 
 	Preparation of NA12878 on one 4x10-core Intel Xeon E7-4870 server
 	
 							Number of Threads	Execution Time	
 		SAMtools/Picard					   40	   29h 44m 55s				
 		elPrep							   40	    1h 11m 38s
+
+We also excuted the same pipeline on a 2x8-core hyperthreaded Intel Xeon E5-2680 server with 256GB RAM. On this configuration, elPrep is 10.5 times faster than SAMtools and Picard.
+
+	Preparation of NA12878 on one 2x8-core hyperthreaded Intel Xeon E5-2680 server
+	
+							Number of Threads	Execution Time	
+		SAMtools/Picard					   32	   19h 19m 29s				
+		elPrep							   32	    1h 54m 51s
 
 elPrep is being developed at the [ExaScience Life Lab](http://www.exascience.com), a collaboration between Imec, Intel, and Janssen Pharmaceutica.
 
@@ -22,9 +32,9 @@ The advantages of elPrep include:
 
 * efficient multi-threaded execution
 * operates completely in-memory, no intermediate files are generated 
-* 100% equivalent output to output produced by Picard-tools and SAMtools for overlapping functionality
-* compatible with existing tools such as GATK, SAMtools, and Picard-tools
-* extensible implementation
+* 100% equivalent output to output produced by SAMtools and Picard for overlapping functionality
+* compatible with existing tools such as GATK, SAMtools, and Picard
+* modular implementation
 
 # Availability 
 
@@ -44,12 +54,12 @@ The elPrep source code is freely available on GitHub. elPrep is implemented in C
 
 ## Dependencies
 
-elPrep works with the .sam and .bam formats as input/output. To use .bam SAMtools must be installed:
+elPrep works with the .sam, .bam, and .cram formats as input/output. To use .bam or .cram, SAMtools must be installed in addition to the elPrep binary:
 
 	
-		http://samtools.sourceforge.net
+		http://www.htslib.org
 
-The .cram format will be supported once the successor of samtools-0.1.19 (which supports .cram) is officially released.
+The .cram format is only supported for samtools-1.0 and up.
 
 The elPrep implementation depends on the Claws and cl-date-time-parser libraries:
 
@@ -83,6 +93,7 @@ The output of elPrep is compatible (as input) with:
 * gatk 2.7.2
 * gatk 1.6
 * samtools-0.1.19
+* samtools-1.0
 * picard-tools-1.113
 
 elPrep may be compatible with other versions of these tools as well, but this has not been tested.
@@ -97,13 +108,15 @@ elPrep has been developed for Linux and has not been tested for other operating 
 
 ## RAM
 
-elPrep is designed to operate in-memory, i.e. data is stored in RAM during computation. As long as you do not use the in-memory sort or mark duplicates filter, elPrep operates as a streaming tool and peek memory use is limited to a few GB.
+elPrep is designed to operate in memory, i.e. data is stored in RAM during computation. As long as you do not use the in-memory sort or mark duplicates filter, elPrep operates as a streaming tool, and peak memory use is limited to a few GB.
 
-The in-memory sort and mark duplicates filter require keeping the entire input file in memory and therefore use an amount of RAM that is proportional to the size of the input file. As a rule of thumb, elPrep requires 6x times more RAM memory than the size of the input file in .sam format when it is used for sorting or marking duplicates. 
+The in-memory sort and mark duplicates filter require keeping the entire input file in memory, and therefore use an amount of RAM that is proportional to the size of the input file. As a rule of thumb, elPrep requires 6x times more RAM memory than the size of the input file in .sam format when it is used for sorting or marking duplicates. 
 
-If your machine has less RAM than your input requires this way, you have a couple of options. One solution is to split up your input file per chromosomal region, which is for example also done to run analyses in a distributed setup. A variety of tools such as SAMtools provide this functionality.
+For whole-genome sequencing, we recommend a server with at least 256GB RAM and processing the data per chromosome. For exome sequencing, we recommend a server with 256GB of RAM, or processing the data per chromosome on a server with 20GB RAM.
 
-Alternatively, you may configure a disk to extend the swap space of your server. Using swap space may have a penalty on execution time for a job compared to running the same job fully in RAM, but it does not change how elPrep is used. If configuring additional swap space is not an option, you may also run elPrep with the gc execution option. This option triggers more aggressive garbage collection during execution and may save peek memory use, but may significantly slow down execution compared to running fully in-memory. See our manual reference pages for more details. 
+If your machine has less RAM than your input requires, you have a couple of options. One solution is to split up your input file per chromosomal region, which is for example also done to run analyses in a distributed setup. A variety of tools, such as SAMtools, provide commands to split up your input files in this way.
+
+Alternatively, you may configure a disk to extend the swap space of your server. Using swap space may have a penalty on execution time for a job compared to running the same job fully in RAM, but it does not change how elPrep is used. If configuring additional swap space is not an option, you may also run elPrep with the gc execution option. This option triggers more aggressive garbage collection during execution and may save peak memory use, but may significantly slow down execution compared to running fully in memory. See our manual reference pages for more details. 
 
 ## Disk Space
 
@@ -115,7 +128,7 @@ Use the Google [forum](https://groups.google.com/d/forum/elprep) for discussions
 
 # Citing elPrep  
 
-As of today there is no publication on elPrep yet. Please cite the ExaScience Life Lab with a link to the GitHub repository:
+As of today, there is no publication on elPrep yet. Please cite the ExaScience Life Lab with a link to the GitHub repository:
 
 		https://github.com/ExaScience/elprep
 
@@ -127,7 +140,7 @@ We have a seperate [GitHub repository](https://github.com/ExaScience/elprep-demo
 
 ## Name
 
-### elprep - a commandline tool for filtering and updating .sam/.bam files in preparation for variant calling
+### elprep - a commandline tool for filtering and updating .sam/.bam/.cram files in preparation for variant calling
 
 ## Synopsis
 
@@ -141,9 +154,9 @@ We have a seperate [GitHub repository](https://github.com/ExaScience/elprep-demo
 
 ## Description
 
-The elprep command requires two arguments: the input file and the output file. The input/output format can be .sam or .bam. (.cram will be supported in the near future). To use .bam (or .cram), SAMtools must be installed. elPrep determines the format by looking at the file extension. elPrep also allows to use /dev/stdin and /dev/stdout as respective input or output sources for using unix pipes. When doing so, elPrep assumes the input and output are in .sam format.
+The elprep command requires two arguments: the input file and the output file. The input/output format can be .sam, .bam. or .cram. To use .bam or .cram, SAMtools must be installed. elPrep determines the format by looking at the file extension. elPrep also allows to use /dev/stdin and /dev/stdout as respective input or output sources for using unix pipes. When doing so, elPrep assumes the input and output are in .sam format.
 
-The elprep commandline tool has three types of command options: filters, which implement actual .sam/.bam/.cram manipulations, sorting options, and execution-related options, e.g. for setting the number of threads. For optimal performance, issue a single elprep call that combines all filters you wish to apply. 
+The elprep commandline tool has three types of command options: filters, which implement actual .sam/.bam/.cram manipulations, sorting options, and execution-related options, for example for setting the number of threads. For optimal performance, issue a single elprep call that combines all filters you wish to apply. 
 
 The order in which command options are passed is ignored. For optimal performance, elPrep always applies filters in the following order:
 
@@ -155,31 +168,85 @@ The order in which command options are passed is ignored. For optimal performanc
 
 Sorting is done after filtering.
 
+### Unix pipes
+
+elPrep is compatible with unix pipes and allows using /dev/stdin and /dev/stdout as input or output sources. elPrep assumes that input and output on /dev/stdin and /dev/stdout are in .sam format.
+
+### Using .bam or .cram 
+
+elPrep uses SAMtools for compression and decompression of .bam and .cram files. When the user specifies the input or ouput to be in .bam or .cram, a call to SAMtools is generated to compress or decompress the data. The SAMtools and elPrep commands are connected via unix pipes to avoid generating intermediate files.
+
+For example, when the user executes the following elPrep command:
+
+	 elprep input.bam output.bam
+
+The actual command that is executed is the following:
+
+	samtools view -h input.bam /dev/stdout | elprep /dev/stdin /dev/stdout | samtools view -b -o output.bam /dev/stdin
+
+elPrep may pass additional parameters to SAMtools which are not shown above, for example for setting the number of compression threads. You are, of course, free to specify the SAMtools commands for .bam/.cram conversion manually in your own scripts.
+
+### .cram Conversion Options
+
+When specifying that the output is in .cram format, it is required to specify the reference file to be used for the .cram compression via one of the --reference-t or --reference-T options.
+
+### --reference-T reference-fasta
+
+A fasta format reference file used by SAMtools for .cram compression, optionally compressed with bgzip and indexed by samtools faidx. elPrep uses it to fill in the "-T" option when calling the samtools view command for converting to .cram.
+
+For example, when the user executes the following elPrep command:
+
+	 elprep input.sam output.cram --reference-T ucsc.hg19.fasta
+
+The actual command that is executed is the following:
+
+	 elprep input.sam /dev/stdout | samtools view -C -T ucsc.hg19.fasta -o output.cram /dev/stdin
+
+elPrep may pass additional options to the SAMtools command shown above. 
+
+See the [SAMtools manual](http://www.htslib.org/man/samtools/) for more documentation on .cram conversion and the "-T" option to the view command in particular.
+
+### --reference-t reference-fai
+
+A tab-delimited file, where a first column lists the reference names and a second column lists the lengths of those references; for example, a .fai file generated with samtools faidx. elPrep uses it to fill in the "-t" option when calling the samtools view command for converting to .cram.
+
+For example, when the user executes the following elPrep command:
+
+	 elprep input.sam output.cram --reference-t ucsc.hg19.fai
+
+The actual command that is executed is the following:
+
+	 elprep input.sam /dev/stdout | samtools view -C -t ucsc.hg19.fai -o output.cram /dev/stdin
+
+elPrep may pass additional options to the SAMtools command shown above.
+
+See the [SAMtools manual](http://www.htslib.org/man/samtools/) for more documentation on .cram conversion and the "-t" option to the view command in particular.
+
 ## Filter Command Options  
 
 ### --replace-reference-sequences file
 
-This filter is used for replacing the header of a .sam/.bam/.cram file by a new header. The new header is passed as a single argument following the command option. The format of the new header can either be a .dict file, e.g. ucsc.hg19.dict from the GATK bundle, or another .sam/.bam/.cram file from which you wish to extract the new header. 
+This filter is used for replacing the header of a .sam/.bam/.cram file by a new header. The new header is passed as a single argument following the command option. The format of the new header can either be a .dict file, for example ucsc.hg19.dict from the GATK bundle, or another .sam/.bam/.cram file from which you wish to extract the new header. 
 
-All alignments in the input file that do not map to a chromosome that is present in the new header, are removed. Therefore there must be some overlap between the old and the new header for this command option to be meaningful. The option is typically used to reorder the reference sequence dictionary in the header, e.g. to reflect the order required by GATK.
+All alignments in the input file that do not map to a chromosome that is present in the new header are removed. Therefore, there should be some overlap between the old and the new header for this command option to be meaningful. The option is typically used to reorder the reference sequence dictionary in the header, for example to reflect the order required by GATK.
 
-Replacing the header of a .sam/.bam/.cram file may destroy the sorting order of the file. In this case, the sorting order in the header is set to "unknown" by elPrep in the output file (cf. the so tag). 
+Replacing the header of a .sam/.bam/.cram file may destroy the sorting order of the file. In this case, the sorting order in the header is set to "unknown" by elPrep in the output file (cf. the 'so' tag). 
 
 ### --filter-unmapped-reads [strict]
 
-Removes all alignments in the input file that are unmapped. An alignment is determined unmapped when bit 0x4 of its FLAG is set, conform the SAM specification.
+Removes all alignments in the input file that are unmapped. An alignment is determined unmapped when bit 0x4 of its FLAG is set, conforming to the SAM specification.
 
-There user may additionally speficy the *strict* option:
+There user may additionally specify the *strict* option:
 
-* strict: Also removes alignments where the mapping position (POS) is 0 or where the reference sequence name (RNAME) is *. Such alignments are considered unmapped by the SAM speficication, but some alignment programs may not mark the FLAG of those alignments as unmapped. This option is recommended when you are targetting older versions of GATK (cf. GATK 1.6).
+* strict: Also removes alignments where the mapping position (POS) is 0 or where the reference sequence name (RNAME) is *. Such alignments are considered unmapped by the SAM specification, but some alignment programs may not mark the FLAG of those alignments as unmapped. This option is recommended when you are targeting older versions of GATK (cf. GATK 1.6).
 
 ### --replace-read-group read-group-string
 
-This filter is replaces or adds read groups to the alignments in the input file. This command option takes a single argument, a string of the form "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" where the names following ID:, PL:, PU:, etc. can be any user-chosen name conform the SAM specification. See SAM Format Specification Section 1.3 for details: The string passed here can be any string conforming to a header line for tag @RG, omitting the tag @RG itself, and using whitespace as separators for the line instead of TABs.
+This filter is replaces or adds read groups to the alignments in the input file. This command option takes a single argument, a string of the form "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" where the names following ID:, PL:, PU:, etc. can be any user-chosen name conforming to the SAM specification. See SAM Format Specification Section 1.3 for details: The string passed here can be any string conforming to a header line for tag @RG, omitting the tag @RG itself, and using whitespace as separators for the line instead of TABs.
 
 ### --mark-duplicates [remove]
 
-This filter marks the duplicate reads in the input file by setting bit 0x400 of their FLAG conform the SAM specification. The algorithm underlying this option is the same as the one used in picard-tools.
+This filter marks the duplicate reads in the input file by setting bit 0x400 of their FLAG conforming to the SAM specification. The criteria underlying this option are the same as the ones used in Picard.
 
 The user may additionally pass the *remove* flag so that the duplicate reads are not written to the output file.
 
@@ -190,7 +257,7 @@ This filter fixes alignments in two ways:
 * it soft clips alignments that hang off the end of its reference sequence
 * it sets the mapping quality to 0 if the alignment is unmapped
 
-This filter is similar to the CleanSam command of Picard-tools.
+This filter is similar to the CleanSam command of Picard.
 
 ## Sorting Command Options
 
@@ -198,10 +265,10 @@ This filter is similar to the CleanSam command of Picard-tools.
 
 This command option determines the order of the alignments in the output file. The command option is followed by one of five possible orders:
 
-1. *keep*: The original order of the input file is preserved in the output file. This is the default setting. Some filters may change the order of an input file, in which case elPrep forces a sort to preserve the order of the input file.
+1. *keep*: The original order of the input file is preserved in the output file. This is the default setting. Some filters may change the order of the input, in which case elPrep forces a sort to recover the order of the input file.
 2. *unknown*: The order of the alignments in the output file is undetermined, elPrep performs no sorting of any form. The order in the header of the output file will be *unknown*.
 3. *unsorted*: The alignments in the output file are unsorted, elPrep performs no sorting of any form. The order in the header of the output file will be *unsorted*.
-4. *queryname*: The output file is sorted according to query name. The sort is enforced and guaranteed to be executed. If the original input file is already sorted by query name and you wish to avoid a sort with elPrep, use the *keep* option instead.
+4. *queryname*: The output file is sorted according to the query name. The sort is enforced and guaranteed to be executed. If the original input file is already sorted by query name and you wish to avoid a sort with elPrep, use the *keep* option instead.
 5. *coordinate*: The output file is sorted according to coordinate order. The sort is enforced and guaranteed to be executed. If the original input file is already sorted by coordinate order and you wish to avoid a sort with elPrep, use the *keep* option instead.
 
 ## Execution Command Options
@@ -212,15 +279,15 @@ This command option sets the number of threads that elPrep uses during execution
 
 ### --gc-on [0 | 1 | 2 ]
 
-This option configures garbage collection during the elPrep execution. By default, elPrep is optimised for performance, but not for memory use. Therefore, elPrep may use a large amount of RAM and/or virtual memory / swap space during its execution (see Memory Requirements). If you want to use elPrep in memory-constrained environments this option may be helpful.
+This option configures garbage collection during the elPrep execution. By default, elPrep is optimised for performance, but not for memory use. Therefore, elPrep may use a large amount of RAM and/or virtual memory / swap space during its execution (see Memory Requirements). If you want to use elPrep in memory-constrained environments, this option may be helpful.
 
 Specifically, if you use the mark-duplicates and/or the sorting option in elPrep, memory use will be high even with a high gc-on setting, at the expense of a significantly slower execution time. However, if you do not use the mark-duplicates option, and/or use the sorting-order unsorted option, setting gc-on high can significantly decrease memory use, possibly at the expense of a slower runtime.
 
 There are three options:
 
 * 0: elPrep avoids garbage collection. This is the default setting. Use this option when enough RAM and virtual memory / swap space is available.
-* 1: elPrep performs a garbage collect after the filtering and sorting phases. This can reduce peek memory use, but slows down execution somewhat.
-* 2: elPrep performs garbage collection interleaved with the execution at regular intervals. This may reduce peek memory significantly, but may slow down execution considerably.
+* 1: elPrep performs a garbage collect after the filtering and sorting phases. This can reduce peak memory use, but slows down execution somewhat.
+* 2: elPrep performs garbage collection interleaved with the execution at regular intervals. This may reduce peak memory significantly, but may slow down execution considerably.
 
 If the option is not passed explicitly, elPrep assumes —gc-on 0 is intended.
 

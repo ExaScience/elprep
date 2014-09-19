@@ -45,13 +45,13 @@
 (defvar *program-name* "elPrep"
   "Name of the elprep binary.")
 
-(defvar *program-version* "1.0"
+(defvar *program-version* "1.01"
   "Version of the elprep binary.")
 
 (defvar *program-url* "http://github.com/exascience/elprep"
   "URL for more information about elprep.")
 
-(defvar *program-help* "sam-file sam-output-file ~% [--replace-reference-sequences sam-file] ~% [--filter-unmapped-reads [strict]] ~% [--replace-read-group read-group-string]~% [--mark-duplicates [remove]] ~% [--sorting-order [keep | unknown | unsorted | queryname | coordinate]] ~% [--clean-sam] ~% [--nr-of-threads nr] ~% [--gc-on [0 | 1 | 2]] ~% [--timed] ~%"
+(defvar *program-help* "sam-file sam-output-file ~% [--replace-reference-sequences sam-file] ~% [--filter-unmapped-reads [strict]] ~% [--replace-read-group read-group-string]~% [--mark-duplicates [remove]] ~% [--sorting-order [keep | unknown | unsorted | queryname | coordinate]] ~% [--clean-sam] ~% [--nr-of-threads nr] ~% [--gc-on [0 | 1 | 2]] ~% [--timed] ~% [--reference-t fai-file] ~% [--reference-T fasta-file] ~%"
   "Help string for the sam-filers-script binary.")
 
 (defun elprep-script ()
@@ -76,7 +76,9 @@
         (mark-duplicates-filter nil)
         (remove-duplicates-filter nil)
         (clean-sam-filter nil)
-        (rename-chromosomes-filter nil))
+        (rename-chromosomes-filter nil)
+        (reference-fai nil)
+        (reference-fasta nil))
     (loop with entry while cmd-line do (setq entry (pop cmd-line))
           if (string= entry "-h") do
           (format t *program-help*)
@@ -123,6 +125,19 @@
                        (return-from elprep-script))))))
           else if (string= entry "--timed")
           do (setf timed t)
+          else if (string= entry "--reference-t")
+          do (let ((ref (first cmd-line)))
+               (cond ((or (not ref) (search "--" cmd-line)) ; no file given
+                      (format t "Please provide reference file with --reference-t.~%")
+                      (format t *program-help*)
+                      (return-from elprep-script))
+                     (t (setf *reference-fai* (setf reference-fai (pop cmd-line))))))
+          else if (string= entry "--reference-T")
+          do (let ((ref (first cmd-line)))
+               (cond ((or (not ref) (search "--" cmd-line)) ; no file given
+                      (format t "Please provide reference file with --reference-T.~%")
+                      (format t *program-help*))
+                     (t (setf *reference-fasta* (setf reference-fasta (pop cmd-line))))))
           else if (string= entry "--rename-chromosomes")
           do (setf rename-chromosomes-filter (list 'rename-chromosomes))
           else collect entry into conversion-parameters ; main required parameters, input and output sam files
@@ -135,7 +150,12 @@
           ; print a warning when replacing ref seq dictionary and trying to keep the order
           (when (and replace-ref-seq-dct-filter (eq sorting-order :keep))
             (format t "WARNING: Requesting to keep the order of the input file while replacing the reference sequence dictionary may force an additional sorting phase to ensure the original sorting order is respected."))
-
+          ; check that when cram is used, the reference dictionary is passed
+          (when (and (eq (sam-file-kind (second conversion-parameters)) :cram)
+                     (not reference-fai) (not reference-fasta))
+            (format t "ERROR: Attempting to output to cram without specifying a reference file. Please add --reference-t or --reference-T to your call.~%")
+            (format t *program-help*)
+            (return-from elprep-script))
           (let* ((cmd-string
                   (with-output-to-string (s)
                     (format s "~a ~a ~a" (first sys:*line-arguments-list*) (first conversion-parameters) (second conversion-parameters))
@@ -148,7 +168,9 @@
                         (format s " --mark-duplicates remove")
                         (format s " --mark-duplicates")))
                     (format s " --sorting-order ~(~a~) --gc-on ~a --nr-of-threads ~a" sorting-order gc-on nr-of-threads)
-                    (when timed (format s " --timed"))))
+                    (when timed (format s " --timed"))
+                    (when reference-fai (format s " --reference-t ~a" reference-fai))
+                    (when reference-fasta (format s " --reference-T ~a" reference-fasta))))
                  ; optimal order for filters
                  (filters (nconc (list (add-pg-line (format nil "~A ~A" *program-name* *program-version*)
                                                     :pn *program-name*
@@ -166,6 +188,8 @@
             (format t "Executing command:~%  ~a~%" cmd-string)
             (let ((*number-of-threads* nr-of-threads))
               (push `(*number-of-threads* . ,nr-of-threads) mp:*process-initial-bindings*) ; make sure output threads see this binding
+              (push `(*reference-fasta* . ,reference-fasta) mp:*process-initial-bindings*)
+              (push `(*reference-fai* . ,reference-fai) mp:*process-initial-bindings*)
               (if (or mark-duplicates-p
                       (member sorting-order '(:coordinate :queryname))
                       (and replace-ref-seq-dct-filter (eq sorting-order :keep)))

@@ -834,6 +834,9 @@
     (string= (namestring (truename pathname))
              (load-time-value (namestring (truename #p"/dev/stdin"))))))
 
+(defvar *reference-fasta* nil)
+(defvar *reference-fai* nil)
+
 (defun %open-sam (pathname direction header-only kind)
   "Open a SAM file for :input or :output. If kind is :bam or :cram, use samtools view for input or output.
    Tell samtools view to only return the header for :input when :header-only is true."
@@ -850,6 +853,15 @@
                     (if (check-stdout pathname)
                         (make-synonym-stream '*terminal-io*)
                       (open pathname :direction :output :element-type 'base-char :if-exists :supersede)))
+                   ((eq kind :cram)
+                    (let ((reference-fasta *reference-fasta*)
+                          (reference-fai *reference-fai*))
+                      (cond (reference-fasta
+                             (sys:open-pipe (list (get-samtools) "view" "-C" "-@" (write-to-string *number-of-threads*) "-T" reference-fasta
+                                                  "-o" (namestring (translate-logical-pathname pathname)) "-") :direction :output))
+                            (reference-fai
+                             (sys:open-pipe (list (get-samtools) "view" "-C" "-@" (write-to-string *number-of-threads*) "-t" reference-fai
+                                                  "-o" (namestring (translate-logical-pathname pathname)) "-") :direction :output)))))
                    (t (sys:open-pipe (list (get-samtools) "view" (ecase kind (:bam "-Sb") (:cram "-C")) "-@" (write-to-string *number-of-threads*)
                                            "-o" (namestring (translate-logical-pathname pathname)) "-")
                                      :direction :output))))))

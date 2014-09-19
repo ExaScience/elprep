@@ -137,6 +137,9 @@ Refer to the documentation of run-pipeline as a starting point.")
    #:open-sam
    #:open-temporary-sam
 
+   #:*reference-fasta*
+   #:*reference-fai*
+
    ;; filter-pipeline
 
    #:*number-of-threads*
