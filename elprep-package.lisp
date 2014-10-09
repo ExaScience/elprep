@@ -9,15 +9,25 @@ Refer to the documentation of run-pipeline as a starting point.")
   (:use 
    #:cl-date-time-parser
    #:common-lisp
-   #:stream 
    #:string-case)
-  (:import-from #:lispworks 
-   #:current-pathname #:nconcf #:sbchar #:string-append #:if-let #:when-let)
+  (:shadow #:byte #:make-hash-table)
+  #+lispworks
+  (:import-from #:hcl #:get-working-directory #:modify-hash #:with-hash-table-locked)
+  #+lispworks
+  (:import-from #:mp #:mailbox #:make-mailbox #:mailbox-send #:mailbox-read #:process-join)
+  #+lispworks
+  (:import-from #:stream #:buffered-stream)
+  #+lispworks
+  (:import-from #:sys #:compare-and-swap)
+  #+sbcl
+  (:import-from #:sb-concurrency #:mailbox)
+  #+sbcl
+  (:import-from #:sb-ext #:compare-and-swap)
   (:export 
 
    ;; sam-types
 
-   #:int32
+   #:octet #:int16 #:uint16 #:int32 #:uint16
 
    #:*sam-file-format-version*
 
@@ -97,6 +107,8 @@ Refer to the documentation of run-pipeline as a starting point.")
 
    ;; sam-files
 
+   #:make-scanner
+
    #:scan-string
    #:scan-stringn
    #:scan-integer
@@ -136,6 +148,10 @@ Refer to the documentation of run-pipeline as a starting point.")
    #:sam-file-kind
    #:open-sam
    #:open-temporary-sam
+   #:close-sam
+   #:sam-input
+   #:sam-output
+   #:invoke-with-open-sam #:with-open-sam
 
    ;; filter-pipeline
 

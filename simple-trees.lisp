@@ -4,7 +4,8 @@
 
 (defstruct (simple-tree 
             (:constructor make-simple-tree
-             (rank &optional depth &aux (nodes (make-array rank :initial-element nil :single-thread t)))))
+             (rank &optional depth &aux (nodes (make-array rank :initial-element nil
+                                                           #+lispworks :single-thread #+lispworks t)))))
   "A simple balanced tree.
    The struct simple-tree has a constructor that takes the rank and optionally the depth as parameters.
    Accessor simple-tree-index of type fixnum points to the current node in simple-tree-nodes.
@@ -35,20 +36,20 @@
 
 (defun make-subtree (tree)
   "Create a subtree for the given simple-tree."
-  (declare (simple-tree tree) #.*fixnum-optimization*)
+  (declare (simple-tree tree) #.*optimization*)
   (make-simple-tree
    (simple-tree-rank tree)
-   (1- (simple-tree-depth tree))))
+   (the fixnum (1- (simple-tree-depth tree)))))
 
 (declaim (inline make-super-tree))
 
 (defun make-super-tree (tree)
   "Create a super tree for the given simple-tree, and add the given tree to the new super tree as its first node."
-  (declare (simple-tree tree) #.*fixnum-optimization*)
+  (declare (simple-tree tree) #.*optimization*)
   (let ((super-tree
          (make-simple-tree
           (simple-tree-rank tree)
-          (1+ (simple-tree-depth tree)))))
+          (the fixnum (1+ (simple-tree-depth tree))))))
     (declare (simple-tree super-tree))
     (setf (simple-tree-index super-tree) 1)
     (setf (svref (simple-tree-nodes super-tree) 0) tree)
@@ -58,7 +59,7 @@
   "Insert a node into the given simple-tree. Returns the tree unless it is fully occupied.
    If it is fully occupied, create a fresh super tree, insert both the given tree and the node there,
    and return that super tree."
-  (declare (simple-tree top-tree) #.*fixnum-optimization*)
+  (declare (simple-tree top-tree) #.*optimization*)
   (labels ((recur (tree)
              (declare (simple-tree tree))
              (let ((index (simple-tree-index tree))
@@ -67,7 +68,7 @@
                (when (< index (length nodes))
                  (when (= (simple-tree-depth tree) 0)
                    (setf (svref nodes index) node)
-                   (setf (simple-tree-index tree) (1+ index))
+                   (setf (simple-tree-index tree) (the fixnum (1+ index)))
                    ;; done: jump out of the recursion!
                    (return-from insert-node top-tree))
                  ;; depth /= 0
@@ -84,11 +85,11 @@
 
 (defun tree-reduce (tree threads map reduce)
   "Perform a parallel map/reduce traversal over the given simple-tree."
-  (declare (simple-tree tree) (fixnum threads) #.*fixnum-optimization*)
+  (declare (simple-tree tree) (fixnum threads) (function map reduce) #.*fixnum-optimization*)
   (claws:reset-workers threads)
   (unwind-protect
       (labels ((reduce-vector (vector start end map)
-                 (declare (simple-vector vector) (fixnum start end))
+                 (declare (simple-vector vector) (fixnum start end) (function map))
                  (let ((length (- end start)))
                    (declare (fixnum length))
                    (cond ((= length 0))

@@ -12,40 +12,42 @@
 
 (defun make-phred-score-table ()
   "Map Phred qualities to a reasonable range and an error flag indicating if it is outside a valid range."
-  (let ((score-table (make-array 512 :element-type 'base-char :allocation :long-lived :single-thread t)))
+  (let ((score-table (make-array 512 :element-type 'octet
+                                 #+lispworks :allocation #+lispworks :long-lived
+                                 #+lispworks :single-thread #+lispworks t)))
     (loop for char below 256
           for pos = (ash char 1) do
           (if (or (< char 33) (> char 126))
-            (setf (sbchar score-table pos)      #.(code-char 0)
-                  (sbchar score-table (1+ pos)) #.(code-char 1))
+            (setf (aref score-table pos)      0
+                  (aref score-table (1+ pos)) 1)
             (let ((qual (- char 33)))
-              (setf (sbchar score-table pos)      (if (>= qual 15) (code-char qual) #.(code-char 0))
-                    (sbchar score-table (1+ pos)) #.(code-char 0)))))
+              (setf (aref score-table pos)      (if (>= qual 15) qual 0)
+                    (aref score-table (1+ pos)) 0))))
     score-table))
 
 (declaim (notinline compute-phred-score))
 
 (defun compute-phred-score (aln)
   "Sum the adapted Phred qualities of a sam-alignment."
-  (declare (sam-alignment aln) #.*fixnum-optimization*)
+  (declare (sam-alignment aln) #.*optimization*)
   (let ((string (sam-alignment-qual aln))
         (score-table (load-time-value (make-phred-score-table) t))
         (score 0) (error 0))
-    (declare (simple-base-string string) (fixnum score error))
+    (declare (simple-base-string string) ((simple-array octet (512)) score-table) (fixnum score error))
     (loop for i of-type fixnum below (length string)
-          for pos of-type fixnum = (ash (char-code (sbchar string i)) 1) do
-          (setq score (+ score (char-code (sbchar score-table pos)))
-                error (logior error (char-code (sbchar score-table (1+ pos))))))
+          for pos of-type fixnum = (ash (char-code (schar string i)) 1) do
+          (setq score (+ score (aref score-table pos))
+                error (logior error (aref score-table (the fixnum (1+ pos))))))
     (assert (= error 0))
     score))
 
-(define-symbol-macro upcase-cigar-operations "MIDNSHPX=")
+(define-symbol-macro upcase-cigar-operations (sbs "MIDNSHPX="))
 
-(defconstant +min-upcase-cigar-operation+ (reduce 'min upcase-cigar-operations :key 'char-code)
+(defconstant +min-upcase-cigar-operation+ (reduce #'min upcase-cigar-operations :key #'char-code)
   "The smallest CIGAR operation, upper case only.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.6.")
 
-(defconstant +max-upcase-cigar-operation+ (reduce 'max upcase-cigar-operations :key 'char-code)
+(defconstant +max-upcase-cigar-operation+ (reduce #'max upcase-cigar-operations :key #'char-code)
   "The largest CIGAR operation, upper case only.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.6.")
 
@@ -53,7 +55,7 @@
 
 (defun cigar-aux-pos (char)
   "Position in a vector of CIGAR operations, starting with the smallest CIGAR operation, upper case only."
-  (declare (base-char char) #.*fixnum-optimization*)
+  (declare (base-char char) #.*optimization*)
   (- (char-code char) +min-upcase-cigar-operation+))
 
 (defun make-unclipped-aux-tables ()
@@ -61,19 +63,19 @@
   (let* ((tablesize (1+ (- +max-upcase-cigar-operation+
                            +min-upcase-cigar-operation+)))
          (clipped   (make-array tablesize
-                                :initial-element #.(code-char 0)
-                                :element-type 'base-char
-                                :allocation :long-lived
-                                :single-thread t))
+                                :initial-element 0
+                                :element-type 'octet
+                                #+lispworks :allocation #+lispworks :long-lived
+                                #+lispworks :single-thread #+lispworks t))
          (reference (make-array tablesize
-                                :initial-element #.(code-char 0)
-                                :element-type 'base-char
-                                :allocation :long-lived
-                                :single-thread t)))
+                                :initial-element 0
+                                :element-type 'octet
+                                #+lispworks :allocation #+lispworks :long-lived
+                                #+lispworks :single-thread #+lispworks t)))
     (flet ((set-clipped-flag (char)
-             (setf (sbchar clipped (cigar-aux-pos char)) #.(code-char 1)))
+             (setf (aref clipped (cigar-aux-pos char)) 1))
            (set-reference-flag (char)
-             (setf (sbchar reference (cigar-aux-pos char)) #.(code-char 1))))
+             (setf (aref reference (cigar-aux-pos char)) 1)))
       (set-clipped-flag #\S)
       (set-clipped-flag #\H)
       (set-reference-flag #\M)
@@ -92,24 +94,27 @@
     (declare (simple-vector cigar))
     (if (= 0 (length cigar))
       (sam-alignment-pos aln)
-      (let ((tables (load-time-value (make-unclipped-aux-tables) t)))
-        (declare (cons tables))
-        (if (sam-alignment-reversed-p aln)
-          (1- (+ (sam-alignment-pos aln)
-                 (loop for i of-type fixnum = (1- (length cigar)) then (1- i)
-                       for (key . value) of-type (symbol . fixnum) = (svref cigar i)
-                       for p of-type fixnum = (cigar-aux-pos (sbchar (symbol-name key) 0))
-                       for c of-type fixnum = (char-code (sbchar (car tables) p))
-                       for r of-type fixnum = (char-code (sbchar (cdr tables) p)) 
-                       for clipped of-type fixnum = c then (* c clipped)
-                       sum (* (logior r clipped) value) fixnum
-                       until (= i 0))))
-          (- (sam-alignment-pos aln)
-             (loop for i of-type fixnum below (length cigar)
-                   for (key . value) of-type (symbol . fixnum) = (svref cigar i)
-                   for p of-type fixnum = (cigar-aux-pos (sbchar (symbol-name key) 0))
-                   until (= 0 (char-code (sbchar (car tables) p)))
-                   sum value fixnum)))))))
+      (let* ((tables (load-time-value (make-unclipped-aux-tables) t))
+             (clipped-table (car tables))
+             (reference-table (cdr tables)))
+        (declare (cons tables) ((simple-array octet) clipped-table reference-table))
+        (the int32
+             (if (sam-alignment-reversed-p aln)
+               (1- (+ (sam-alignment-pos aln)
+                      (loop for i of-type fixnum = (the fixnum (1- (length cigar))) then (the fixnum (1- i))
+                            for (key . value) of-type (base-char . fixnum) = (svref cigar i)
+                            for p of-type fixnum = (cigar-aux-pos key)
+                            for c of-type fixnum = (aref clipped-table p)
+                            for r of-type fixnum = (aref reference-table p)
+                            for clipped of-type fixnum = c then (the fixnum (* c clipped))
+                            sum (the fixnum (* (logior r clipped) value)) fixnum
+                            until (= i 0))))
+               (- (sam-alignment-pos aln)
+                  (loop for i of-type fixnum below (length cigar)
+                        for (key . value) of-type (base-char . fixnum) = (svref cigar i)
+                        for p of-type fixnum = (cigar-aux-pos key)
+                        until (= 0 (aref clipped-table p))
+                   sum value fixnum))))))))
 
 (declaim (inline sam-alignment-adapted-pos (setf sam-alignment-adapted-pos)
                  sam-alignment-adapted-score (setf sam-alignment-adapted-score)))
@@ -153,7 +158,7 @@
 
 (defun mark-as-duplicate (aln)
   "Set the PCR/optical duplicate FLAG in the sam-alignment."
-  (declare (sam-alignment aln) #.*fixnum-optimization*)
+  (declare (sam-alignment aln) #.*optimization*)
   (setf (sam-alignment-flag aln) (logior (sam-alignment-flag aln) +duplicate+)))
 
 (declaim (inline make-handle))
@@ -184,29 +189,29 @@
   (let ((f1 (handle-object f1))
         (f2 (handle-object f2)))
     (declare (sam-alignment f1 f2))
-    (and (eq (sam-alignment-rg          f1) (sam-alignment-rg          f2))
-         (=  (sam-alignment-refid       f1) (sam-alignment-refid       f2))
-         (=  (sam-alignment-adapted-pos f1) (sam-alignment-adapted-pos f2))
+    (and (eq (sam-alignment-rg f1) (sam-alignment-rg f2))
+         (= (the int32 (sam-alignment-refid f1)) (the int32 (sam-alignment-refid f2)))
+         (= (the int32 (sam-alignment-adapted-pos f1)) (the int32 (sam-alignment-adapted-pos f2)))
          (eq (sam-alignment-reversed-p  f1) (sam-alignment-reversed-p  f2)))))
 
 (defun fragment-hash (f)
   "Hash function that corresponds to handle-fragment=, but operates an a sam-alignment directly."
   (declare (sam-alignment f) #.*optimization*)
-  (logxor (sxhash (sam-alignment-rg f))
-          (sxhash (sam-alignment-refid f))
-          (sxhash (sam-alignment-adapted-pos f))
-          (sxhash (sam-alignment-reversed-p f))))
+  (logxor (sxhash (the simple-base-string (sam-alignment-rg f)))
+          (sxhash (the int32 (sam-alignment-refid f)))
+          (sxhash (the int32 (sam-alignment-adapted-pos f)))
+          (sxhash (the boolean (sam-alignment-reversed-p f)))))
 
 (declaim (inline true-fragment-p true-pair-p))
 
 (defun true-fragment-p (aln)
   "Is this sam-alignment definitely not part of a pair?"
-  (declare (sam-alignment aln) #.*fixnum-optimization*)
+  (declare (sam-alignment aln) #.*optimization*)
   (/= (logand (sam-alignment-flag aln) #.(logior +multiple+ +next-unmapped+)) +multiple+))
 
 (defun true-pair-p (aln)
   "Is this sam-alignment definitely part of a pair?"
-  (declare (sam-alignment aln) #.*fixnum-optimization*)
+  (declare (sam-alignment aln) #.*optimization*)
   (= (logand (sam-alignment-flag aln) #.(logior +multiple+ +next-unmapped+)) +multiple+))
 
 (defun classify-fragment (aln fragments) ; fragments is the hash table to store intermediate "best" alns, passed as a parameter
@@ -217,7 +222,7 @@
          (split (hash-table-split key fragments))
          (best (or (gethash key split)
                    (let ((entry (make-handle aln hash)))
-                     (hcl:with-hash-table-locked split
+                     (with-hash-table-locked split
                        (let ((value (gethash key split)))
                          (cond (value value)
                                (t (setf (gethash entry split) entry)
@@ -229,12 +234,12 @@
                  until (cond ((or (true-pair-p best-aln)
                                   (>= (sam-alignment-adapted-score best-aln) aln-score))
                               (mark-as-duplicate aln) t)
-                             ((sys:compare-and-swap (handle-object best) best-aln aln)
+                             ((compare-and-swap (handle-object best) best-aln aln)
                               (mark-as-duplicate best-aln) t))))
           (t ; the aln is a true pair object, there may be a true fragment stored in the hash table which we then need to mark and swap out
            (loop for best-aln = (handle-object best)
                  until (cond ((true-pair-p best-aln) t) ; stop, the best in the hash tab is a pair, this is marked via mark-duplicates
-                             ((sys:compare-and-swap (handle-object best) best-aln aln)
+                             ((compare-and-swap (handle-object best) best-aln aln)
                               (mark-as-duplicate best-aln) t)))))))
 
 (defun sam-alignment-pair= (aln1 aln2)
@@ -247,8 +252,8 @@
   "Hash function that corresponds to sam-alignment-pair=."
   (declare (sam-alignment aln) #.*optimization*)
   (or (sam-alignment-temp aln :pair-hash)
-      (let ((hash (logxor (sxhash (sam-alignment-rg aln))
-                          (sxhash (sam-alignment-qname aln)))))
+      (let ((hash (logxor (sxhash (the simple-base-string (sam-alignment-rg aln)))
+                          (sxhash (the simple-base-string (sam-alignment-qname aln))))))
         (setf (sam-alignment-temps aln)
               (list* :pair-hash hash (sam-alignment-temps aln)))
         hash)))
@@ -321,36 +326,36 @@
   (let ((p1 (handle-object p1))
         (p2 (handle-object p2)))
     (declare (pair p1 p2))
-    (and (eq (pair-rg          p1) (pair-rg          p2))
-         (=  (pair-refid1      p1) (pair-refid1      p2))
-         (=  (pair-pos1        p1) (pair-pos1        p2))
+    (and (eq (pair-rg p1) (pair-rg p2))
+         (=  (the int32 (pair-refid1 p1)) (the int32 (pair-refid1 p2)))
+         (=  (the int32 (pair-pos1 p1)) (the int32 (pair-pos1 p2)))
          (eq (pair-reversed1-p p1) (pair-reversed1-p p2))
-         (=  (pair-refid2      p1) (pair-refid2      p2)) 
-         (=  (pair-pos2        p1) (pair-pos2        p2))
+         (=  (the int32 (pair-refid2 p1)) (the int32 (pair-refid2 p2)))
+         (=  (the int32 (pair-pos2 p1)) (the int32 (pair-pos2 p2)))
          (eq (pair-reversed2-p p1) (pair-reversed2-p p2)))))
 
 (defun pair-hash (p)
   "Hash function that corresponds to handle-pair=, but operates on a pair directly."
   (declare (pair p) #.*optimization*)
-  (logxor (sxhash (pair-rg p))
-          (sxhash (pair-refid1 p))
-          (sxhash (pair-refid2 p))
-          (sxhash (+ (ash (pair-pos1 p) 32) (pair-pos2 p)))
-          (sxhash (pair-reversed1-p p))
-          (sxhash (pair-reversed2-p p))))
+  (logxor (sxhash (the simple-base-string (pair-rg p)))
+          (sxhash (the int32 (pair-refid1 p)))
+          (sxhash (the int32 (pair-refid2 p)))
+          (sxhash (+ (ash (the int32 (pair-pos1 p)) 32) (the int32 (pair-pos2 p))))
+          (sxhash (the boolean (pair-reversed1-p p)))
+          (sxhash (the boolean (pair-reversed2-p p)))))
 
 (defun classify-pair (aln fragments pairs)
   "For each list of pairs with the same unclipped positions and directions, all except the one with the highest score are marked as duplicates."
   (when (true-pair-p aln)
     (let ((aln1 aln)
           (aln2 (let ((split (hash-table-split aln fragments)))
-                  (hcl:with-hash-table-locked split
+                  (with-hash-table-locked split
                     (let ((value (gethash aln split)))
                       (cond (value (remhash aln split) value)
                             (t (setf (gethash aln split) aln)
                                (return-from classify-pair))))))))
-      (when (> (sam-alignment-adapted-pos aln1)
-               (sam-alignment-adapted-pos aln2))
+      (when (> (the int32 (sam-alignment-adapted-pos aln1))
+               (the int32 (sam-alignment-adapted-pos aln2)))
         (rotatef aln1 aln2))
       (let* ((score (+ (sam-alignment-adapted-score aln1)
                        (sam-alignment-adapted-score aln2)))
@@ -363,7 +368,7 @@
                          (progn
                            (setq entry (make-pair score aln1 aln2))
                            (let ((handle (make-handle entry hash)))
-                             (hcl:with-hash-table-locked split
+                             (with-hash-table-locked split
                                (let ((value (gethash pairkey split)))
                                  (cond (value value)
                                        (t (setf (gethash handle split) handle)
@@ -373,20 +378,20 @@
               until (cond ((>= (pair-score best-pair) score)
                            (mark-as-duplicate aln1)
                            (mark-as-duplicate aln2) t)
-                          ((sys:compare-and-swap (handle-object best) best-pair
-                                                 (or entry (setq entry (make-pair score aln1 aln2))))
+                          ((compare-and-swap (handle-object best) best-pair
+                                             (or entry (setq entry (make-pair score aln1 aln2))))
                            (mark-as-duplicate (pair-aln1 best-pair))
                            (mark-as-duplicate (pair-aln2 best-pair)) t)))))))
 
 (defun mark-duplicates (header)
   "A filter for marking duplicate sam-alignment instances. Depends on the add-refid filter being called before to fill in the refid."
   (declare (ignore header))
-  (let ((splits (* 8 *number-of-threads*)))
+  (let ((splits (* 16 *number-of-threads*)))
     ; set up tables once header is parsed, tables will serve for all alignments
-    (let ((fragments (make-split-hash-table splits :test 'handle-fragment= :hash-function 'handle-hash))
-          (pairs-fragments (make-split-hash-table splits :test 'sam-alignment-pair= :hash-function 'sam-alignment-pair-hash))
-          (pairs (make-split-hash-table splits :test 'handle-pair= :hash-function 'handle-hash))
-          (rg-table (make-hash-table :test 'string= :hash-function 'sxhash)))
+    (let ((fragments (make-split-hash-table splits :test #'handle-fragment= :hash-function #'handle-hash))
+          (pairs-fragments (make-split-hash-table splits :test #'sam-alignment-pair= :hash-function #'sam-alignment-pair-hash))
+          (pairs (make-split-hash-table splits :test #'handle-pair= :hash-function #'handle-hash))
+          (rg-table (make-synchronized-hash-table :test #'string= :hash-function #'sxhash)))
       (lambda ()
         (lambda (alignment)
           (when (sam-alignment-flag-notany alignment #.(+ +unmapped+ +secondary+ +duplicate+ +supplementary+))

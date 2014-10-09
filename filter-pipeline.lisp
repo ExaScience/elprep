@@ -61,9 +61,9 @@
         for filter in filters do
         (setf (values local-filter local-init local-exit)
               (apply filter args))
-        when local-filter collect it into local-filters
-        when local-init collect it into local-inits
-        when local-exit do (push local-exit local-exits)
+        when local-filter collect (get-function local-filter) into local-filters
+        when local-init collect (get-function local-init) into local-inits
+        when local-exit do (push (get-function local-exit) local-exits)
         finally (return (values local-filters
                                 (compose-thunks local-inits)
                                 (compose-thunks local-exits)))))
@@ -112,7 +112,7 @@
                       (lambda (aln)
                         (declare #.*optimization*)
                         (loop for filter in aln-filters
-                              always (funcall filter aln)))
+                              always (funcall (the function filter) aln)))
                       (car aln-filters))))
     (call-next-method input-filter aln-filter output-filter destructive)))
 
@@ -138,7 +138,7 @@
       (nfilter aln-filter head tail))
     (lambda (head &optional tail)
       (declare #.*optimization*)
-      (mapfilter 'copy-structure aln-filter head tail))))
+      (mapfilter #'copy-structure aln-filter head tail))))
 
 (defmethod create-chunk-filter ((input-filter null) (aln-filter null) (output-filter t) destructive)
   (declare (ignore input-filter aln-filter))
@@ -165,10 +165,16 @@
   (if destructive
     (lambda (head &optional tail)
       (declare #.*optimization*)
-      (nmapcar* (lambda (aln) (funcall output-filter (funcall input-filter aln))) head tail))
+      (nmapcar* (lambda (aln)
+                  (funcall (the function output-filter)
+                           (funcall (the function input-filter) aln)))
+                head tail))
     (lambda (head &optional tail)
       (declare #.*optimization*)
-      (mapcar* (lambda (aln) (funcall output-filter (funcall input-filter aln))) head tail))))
+      (mapcar* (lambda (aln)
+                 (funcall (the function output-filter)
+                          (funcall (the function input-filter) aln)))
+               head tail))))
 
 (defmethod create-chunk-filter ((input-filter null) (aln-filter t) (output-filter t) destructive)
   (declare (ignore input-filter))
@@ -178,7 +184,7 @@
       (nfiltermap aln-filter output-filter head tail))
     (lambda (head &optional tail)
       (declare #.*optimization*)
-      (mapfiltermap 'copy-structure aln-filter output-filter head tail))))
+      (mapfiltermap #'copy-structure aln-filter output-filter head tail))))
 
 (defmethod create-chunk-filter ((input-filter t) (aln-filter t) (output-filter t) destructive)
   (if destructive
@@ -196,7 +202,7 @@
    If this happens, and requested sorting order is :keep, then we need to effectively sort the result
    according to the original sorting order."
   (cond ((eq sorting-order :keep)
-         (cond ((string= (getf (sam-header-hd header) :so "unknown") original-sorting-order) :keep)
+         (cond ((string= (getf (sam-header-hd header) :so (sbs "unknown")) original-sorting-order) :keep)
                (t (sam-header-ensure-hd header :so original-sorting-order)
                   (intern-key (string-upcase original-sorting-order)))))
         (t (sam-header-ensure-hd header :so sorting-order)
@@ -207,27 +213,23 @@
 (defun sorting-criterion (sorting-order)
   "Determine sorting criterion for given sorting order, which is a list of parameters to be passed to sort/stable-sort."
   (case sorting-order
-    (:coordinate '(coordinate<))
-    (:queryname '(string< :key sam-alignment-qname))))
+    (:coordinate (load-time-value (list #'coordinate<)))
+    (:queryname (load-time-value (list #'string< :key #'sam-alignment-qname)))))
 
 ;;; generic filter process setup
 
-(defvar *number-of-threads* 1
-  "The number of threads used by run-pipeline and run-pipeline-in-situ to parallelize the filtering process.
-   Default is 1, which results in sequential execution. Usually, parallelization only occurs when this value is greater than 3.")
-
 (defun call-with-processes (threads name filter-process source-process)
   "Set up the filter threads for a filter pipeline, and execute the input thread."
-  (declare (fixnum threads) #.*fixnum-optimization*)
+  (declare (fixnum threads) #.*optimization*)
   (loop repeat threads
-        for mailbox = (mp:make-mailbox)
-        for process = (mp:process-run-function name () filter-process mailbox)
+        for mailbox = (make-mailbox)
+        for process = (process-run name filter-process mailbox)
         collect mailbox into mailboxes
         collect process into processes
         finally (unwind-protect
-                    (funcall source-process mailboxes)
-                  (loop for mailbox in mailboxes do (mp:mailbox-send mailbox :eop))
-                  (mapc 'mp:process-join processes))))
+                    (funcall (the function source-process) mailboxes)
+                  (loop for mailbox in mailboxes do (mailbox-send mailbox :eop))
+                  (mapc #'process-join processes))))
 
 (defstruct (temporary-file (:constructor make-temporary-file (sibling)))
   "An internal representation for temporary files.
@@ -254,8 +256,8 @@
 (defgeneric get-output-functions (output header &key sorting-order &allow-other-keys)
   (:documentation
    "Sets up the output thread, feeds the given header to the output data set, and returns four functions:
-    One for potential additional output mapping of alignments (output-filter, can be NIL, which defaults to 'IDENTITY),
-    one for invoking the function that filters chunks (wrap-thread, can be NIL, which defaults to 'FUNCALL),
+    One for potential additional output mapping of alignments (output-filter, can be NIL, which defaults to #'IDENTITY),
+    one for invoking the function that filters chunks (wrap-thread, can be NIL, which defaults to #'FUNCALL),
     one for receiving chunks of alignments in filter threads (receive-chunk),
     and one for finalizing alignments in the main thread (finalize).
     The function wrap-thread is called once per thread, receives the main function for processing chunks as a thunk,
@@ -270,18 +272,19 @@
   "Abstract loop for writing chunks of alignments. Each chunk has a sequence number prepended to it.
    If ordered is true, ensure that chunks are written in the order of the sequence numbers.
    Otherwise ignore the sequence numbers."
+  (declare (mailbox mailbox) (function output-chunk) #.*optimization*)
   (if ordered
-    (loop with stash = '() with run = 0
-          for chunk = (mp:mailbox-read mailbox) until (eq chunk :eop)
+    (loop with stash = '() with run of-type integer = 0
+          for chunk = (mailbox-read mailbox) until (eq chunk :eop)
           if (= (car chunk) run) do
           (loop do (funcall output-chunk (cdr chunk))
                 (incf run)
                 (setq chunk (car stash))
                 while (and chunk (= (car chunk) run))
                 do (setq stash (cdr stash)))
-          else do (setq stash (merge 'list (list chunk) stash '< :key 'car))
+          else do (setq stash (merge 'list (list chunk) stash #'< :key #'car))
           finally (assert (null stash)))
-    (loop for chunk = (mp:mailbox-read mailbox) until (eq chunk :eop)
+    (loop for chunk = (mailbox-read mailbox) until (eq chunk :eop)
           do (funcall output-chunk (cdr chunk)))))
 
 (defmacro with-chunk-output ((chunk) (mailbox ordered) &body body)
@@ -293,96 +296,99 @@
     ((:keep :unknown :unsorted)
      (let* ((head (cons nil nil))
             (tail head)
-            (mailbox (mp:make-mailbox))
-            (process (mp:process-run-function
-                      "in-memory output process" ()
+            (mailbox (make-mailbox))
+            (process (process-run
+                      "in-memory output process"
                       (lambda ()
                         (setf (sam-header output) header)
                         (with-chunk-output (chunk) (mailbox (not (eq sorting-order :unsorted)))
                           (when chunk (setf (cdr tail) chunk tail (last chunk))))))))
        (values nil nil
                (lambda (chunk)
-                 (mp:mailbox-send mailbox chunk))
+                 (mailbox-send mailbox chunk))
                (lambda ()
-                 (mp:mailbox-send mailbox :eop)
-                 (mp:process-join process)
+                 (mailbox-send mailbox :eop)
+                 (process-join process)
                  (setf (sam-alignments output) (cdr head))
                  output))))
     ((:coordinate :queryname)
      (let* ((tree    (make-simple-tree 16))
-            (mailbox (mp:make-mailbox))
-            (process (mp:process-run-function
-                      "in-memory output process with sorting" ()
+            (mailbox (make-mailbox))
+            (process (process-run
+                      "in-memory output process with sorting"
                       (lambda ()
                         (setf (sam-header output) header)
                         (with-chunk-output (chunk) (mailbox nil)
                           (when chunk (setq tree (insert-node tree chunk))))))))
        (values nil nil
                (lambda (chunk)
-                 (mp:mailbox-send mailbox chunk))
+                 (mailbox-send mailbox chunk))
                (lambda ()
-                 (mp:mailbox-send mailbox :eop)
-                 (mp:process-join process)
+                 (mailbox-send mailbox :eop)
+                 (process-join process)
                  (let ((sorting-criterion (sorting-criterion sorting-order)))
                    (setf (sam-alignments output)
                          (tree-reduce tree *number-of-threads*
                                       (lambda (chunk)
-                                        (apply 'stable-sort chunk sorting-criterion))
+                                        (apply #'stable-sort chunk sorting-criterion))
                                       (lambda (left right)
-                                        (apply 'merge 'list left right sorting-criterion)))))
+                                        (apply #'merge 'list left right sorting-criterion)))))
                  output))))))
 
 (defmethod get-output-functions ((output pathname) header &key (sorting-order :keep))
   (check-file-sorting-order sorting-order)
-  (let* ((mailbox (mp:make-mailbox))
-         (process (mp:process-run-function
-                   "file output process" ()
+  (let* ((mailbox (make-mailbox))
+         (process (process-run
+                   "file output process"
                    (lambda ()
-                     (with-open-stream (out (open-sam output :direction :output))
+                     (with-open-sam (out output :direction :output)
                        (format-sam-header out header)
                        (with-chunk-output (chunk) (mailbox (not (eq sorting-order :unsorted)))
                          (loop for aln in chunk do
-                               (stream:stream-write-sequence out aln 0 (length aln))))
-                       (stream:stream-flush-buffer out))))))
+                               #+lispworks (stream:stream-write-sequence out aln 0 (length aln))
+                               #+sbcl (write-sequence aln out :start 0 :end (length aln))))
+                       #+lispworks (stream:stream-flush-buffer out))))))
     (values (lambda (aln)
-              (with-output-to-string (s)
+              (with-output-to-string (s nil :element-type 'base-char)
                 (format-sam-alignment s aln)))
             nil
             (lambda (chunk)
-              (mp:mailbox-send mailbox chunk))
+              (mailbox-send mailbox chunk))
             (lambda ()
-              (mp:mailbox-send mailbox :eop)
-              (mp:process-join process)
+              (mailbox-send mailbox :eop)
+              (process-join process)
               output))))
 
 (defmethod get-output-functions ((output temporary-file) header &key (sorting-order :keep))
   (check-file-sorting-order sorting-order)
-  (let ((mailbox (mp:make-mailbox))
-        (outbox  (mp:make-mailbox)))
-    (mp:process-run-function
-     "temporary file output process" ()
+  (let ((mailbox (make-mailbox))
+        (outbox  (make-mailbox)))
+    (process-run
+     "temporary file output process"
      (lambda ()
        (multiple-value-bind
            (out pathname)
            (open-temporary-sam (temporary-file-sibling output))
-         (unwind-protectn
-           (format-sam-header out header)
-           (with-chunk-output (chunk) (mailbox (not (eq sorting-order :unsorted)))
-             (loop for aln in chunk do
-                   (stream:stream-write-sequence out aln 0 (length aln))))
-           (progn 
-             (stream:stream-flush-buffer out)
-             (close out)))
-         (mp:mailbox-send outbox pathname))))
+         (let ((out-stream (sam-input out)))
+           (unwind-protectn
+             (format-sam-header out-stream header)
+             (with-chunk-output (chunk) (mailbox (not (eq sorting-order :unsorted)))
+               (loop for aln in chunk do
+                     #+lispworks (stream:stream-write-sequence out-stream aln 0 (length aln))
+                     #+sbcl (write-sequence aln out-stream :start 0 :end (length aln))))
+             (progn 
+               #+lispworks (stream:stream-flush-buffer out-stream)
+               (close-sam out)))
+           (mailbox-send outbox pathname)))))
     (values (lambda (aln)
-              (with-output-to-string (s)
+              (with-output-to-string (s nil :element-type 'base-char)
                 (format-sam-alignment s aln)))
             nil
             (lambda (chunk)
-              (mp:mailbox-send mailbox chunk))
+              (mailbox-send mailbox chunk))
             (lambda ()
-              (mp:mailbox-send mailbox :eop)
-              (mp:mailbox-read outbox)))))
+              (mailbox-send mailbox :eop)
+              (mailbox-read outbox)))))
 
 (defmethod get-output-functions ((output null) header &key sorting-order)
   (declare (ignore header sorting-order))
@@ -393,10 +399,16 @@
   (let ((finalize (copy-symbol 'finalize)))
     `(multiple-value-bind
          (,output-filter ,wrap-thread ,receive-chunk ,finalize) ,form
-       (unless ,wrap-thread (setq ,wrap-thread 'funcall))
-       (flet ((,output-filter (aln) (funcall ,output-filter aln))
+       (when ,output-filter (setq ,output-filter (get-function ,output-filter)))
+       (unless ,wrap-thread (setq ,wrap-thread #'funcall))
+       (setq ,receive-chunk (get-function ,receive-chunk))
+       (flet ((,output-filter (aln)
+                (declare #.*optimization*)
+                (funcall (the function ,output-filter) aln))
               (,wrap-thread (thunk) (funcall ,wrap-thread thunk))
-              (,receive-chunk (chunk) (funcall ,receive-chunk chunk)))
+              (,receive-chunk (chunk)
+                (declare #.*optimization*)
+                (funcall (the function ,receive-chunk) chunk)))
          (declare (inline ,output-filter ,wrap-thread ,receive-chunk))
          (locally ,@body)
          (funcall ,finalize)))))
@@ -404,7 +416,7 @@
 ;;; filters and pipelines
 
 (defconstant +default-chunk-size+ #.(expt 2 13)
-  "The number of alignmenst to read from an input source at a time.
+  "The number of alignments to read from an input source at a time.
    Default is 8192.")
 
 (defmethod run-pipeline-in-situ :before ((sam t) &key (destructive t))
@@ -415,24 +427,25 @@
   (let ((input (make-sam :header (sam-header sam)
                          :alignments (sam-alignments sam))))
     (declare (dynamic-extent input))
-    (apply 'run-pipeline input sam :destructive t args)))
+    (apply #'run-pipeline input sam :destructive t args)))
 
 (defmethod run-pipeline-in-situ ((sam pathname) &rest args &key filters (sorting-order :keep))
   (declare (dynamic-extent args))
   (if (null filters)
     (check-file-sorting-order sorting-order)
-    (rename-file (apply 'run-pipeline sam (make-temporary-file sam) :destructive t args)
+    (rename-file (apply #'run-pipeline sam (make-temporary-file sam) :destructive t args)
                  sam))
   sam)
 
 (defmacro with-prepared-header ((header original-sorting-order alns) (input destructive) &body body)
   "Prepare the header for further processing, when input is in memory."
-  (lw:rebinding (input)
-    `(let* ((,header (sam-header ,input))
-            (,original-sorting-order (getf (sam-header-hd ,header) :so "unknown"))
-            (,alns (sam-alignments ,input)))
+  (let ((inputv (copy-symbol 'input)))
+    `(let* ((,inputv ,input)
+            (,header (sam-header ,inputv))
+            (,original-sorting-order (getf (sam-header-hd ,header) :so (sbs "unknown")))
+            (,alns (sam-alignments ,inputv)))
        (if ,destructive
-         (setf (sam-alignments ,input) '())
+         (setf (sam-alignments ,inputv) '())
          (setq ,header (copy-structure ,header)))
        ,@body)))
 
@@ -451,7 +464,7 @@
                  (sorting-criterion (sorting-criterion sorting-order)))
             (flet ((no-filter-case () (setf (sam-alignments output)
                                             (if sorting-criterion
-                                              (apply 'stable-sort
+                                              (apply #'stable-sort
                                                      (if destructive alns (copy-list alns))
                                                      sorting-criterion)
                                               alns))))
@@ -466,7 +479,7 @@
                                           (setq alns (funcall chunk-filter alns))
                                           (setf (sam-alignments output)
                                                 (if sorting-criterion
-                                                  (apply 'stable-sort alns sorting-criterion)
+                                                  (apply #'stable-sort alns sorting-criterion)
                                                   alns))
                                           (local-exit))))))
                          (global-exit))))))))
@@ -474,12 +487,11 @@
 
 (defmacro with-sam-chunk (sam-chunk &body body)
   "Access the components of a chunk of sam-alignment instances."
-  (lw:rebinding (sam-chunk)
-    (lw:with-unique-names (cons)
-      `(let* ((,cons (cdr ,sam-chunk))
-              (head (car ,cons))
-              (tail (cdr ,cons)))
-         ,@body))))
+  (let ((cons (copy-symbol 'cons)))
+    `(let* ((,cons (cdr ,sam-chunk))
+            (head (car ,cons))
+            (tail (cdr ,cons)))
+       ,@body)))
 
 (defmethod run-pipeline ((input sam) output &rest args &key
                          filters (sorting-order :keep) (destructive :default) (chunk-size +default-chunk-size+))
@@ -489,7 +501,7 @@
       (setq sorting-order (effective-sorting-order sorting-order header original-sorting-order))
       (with-output-functions
           (output-filter wrap-thread receive-chunk)
-          (apply 'get-output-functions output header :sorting-order sorting-order args)
+          (apply #'get-output-functions output header :sorting-order sorting-order args)
         (when alns
           (cond ((and (null thread-filters)
                       (null output-filter))
@@ -529,26 +541,29 @@
                            (with-alignment-filters (aln-filters local-init local-exit) (thread-filters)
                              (let ((chunk-filter (create-chunk-filter nil aln-filters output-filter destructive)))
                                (cond (chunk-filter
-                                      (local-init)
-                                      (unwind-protect
-                                          (if destructive
-                                            (loop for chunk = (mp:mailbox-read mailbox) until (eq chunk :eop) do
-                                                  (with-sam-chunk chunk
-                                                    (when tail (setf (cdr tail) nil))
-                                                    (setf (cdr chunk) (funcall chunk-filter head))
-                                                    (receive-chunk chunk)))
-                                            (loop for chunk = (mp:mailbox-read mailbox) until (eq chunk :eop) do
-                                                  (with-sam-chunk chunk
-                                                    (setf (cdr chunk) (funcall chunk-filter head (cdr tail)))
-                                                    (receive-chunk chunk))))
-                                        (local-exit)))
+                                      (macrolet ((chunk-filter (&rest args)
+                                                   `(locally (declare #.*optimization*)
+                                                      (funcall (the function chunk-filter) ,@args))))
+                                        (local-init)
+                                        (unwind-protect
+                                            (if destructive
+                                              (loop for chunk = (mailbox-read mailbox) until (eq chunk :eop) do
+                                                    (with-sam-chunk chunk
+                                                      (when tail (setf (cdr tail) nil))
+                                                      (setf (cdr chunk) (chunk-filter head))
+                                                      (receive-chunk chunk)))
+                                              (loop for chunk = (mailbox-read mailbox) until (eq chunk :eop) do
+                                                    (with-sam-chunk chunk
+                                                      (setf (cdr chunk) (chunk-filter head (cdr tail)))
+                                                      (receive-chunk chunk))))
+                                          (local-exit))))
                                      (t (if destructive
-                                          (loop for chunk = (mp:mailbox-read mailbox) until (eq chunk :eop) do
+                                          (loop for chunk = (mailbox-read mailbox) until (eq chunk :eop) do
                                                 (with-sam-chunk chunk
                                                   (when tail (setf (cdr tail) nil))
                                                   (setf (cdr chunk) head)
                                                   (receive-chunk chunk)))
-                                          (loop for chunk = (mp:mailbox-read mailbox) until (eq chunk :eop) do
+                                          (loop for chunk = (mailbox-read mailbox) until (eq chunk :eop) do
                                                 (with-sam-chunk chunk
                                                   (setf (cdr chunk) (ldiff head (cdr tail)))
                                                   (receive-chunk chunk)))))))))))
@@ -558,7 +573,7 @@
                               for mailbox-ring = mailboxes then (or (cdr mailbox-ring) mailboxes)
                               do (let ((head alns) (tail (nthcdr chunk-size-1 alns)))
                                    (setq alns (cdr tail))
-                                   (mp:mailbox-send (car mailbox-ring) (cons (incf serial) (cons head tail))))
+                                   (mailbox-send (car mailbox-ring) (cons (incf serial) (cons head tail))))
                               while alns)))
                    (global-exit)))))))))
 
@@ -566,39 +581,34 @@
   "Optimize when both input and output are files."
   (declare (dynamic-extent args))
   (let ((input-name (truename input)))
-    (when-let (output-name (probe-file output))
-      (when (equal input-name output-name)
-        (return-from run-pipeline (apply 'run-pipeline-in-situ input :destructive t args)))))
+    (let ((output-name (probe-file output)))
+      (when output-name
+        (when (equal input-name output-name)
+          (return-from run-pipeline (apply #'run-pipeline-in-situ input :destructive t args))))))
   (when (string-equal (pathname-type input) (pathname-type output))
     (unless filters
       (check-file-sorting-order sorting-order)
       (if (or (not destructive) (eq destructive :default))
-        (lw:copy-file input output)
+        #+lispworks (lw:copy-file input output)
+        #+sbcl (cl-fad:copy-file input output :overwrite t)
         (rename-file input output))
       (return-from run-pipeline output)))
   (call-next-method))
-
-(declaim (inline parse-sam-alignment-from-string))
-
-(defun parse-sam-alignment-from-string (aln)
-  "Parse a SAM file read alignment line from string.
-   Same as parse-sam-alignment."
-  (with-input-from-string (stream aln)
-    (parse-sam-alignment stream)))
 
 (defmethod run-pipeline ((input pathname) output &rest args &key
                          filters (sorting-order :keep) (destructive :default) (chunk-size +default-chunk-size+))
   (declare (dynamic-extent args))
   (unwind-protect
-      (with-open-stream (in (open-sam input :direction :input))
-        (let* ((header (parse-sam-header in))
-               (original-sorting-order (getf (sam-header-hd header) :so "unknown")))
+      (with-open-sam (raw-in input :direction :input)
+        (let* ((in (make-buffered-stream raw-in))
+               (header (parse-sam-header in))
+               (original-sorting-order (getf (sam-header-hd header) :so (sbs "unknown"))))
           (with-thread-filters (thread-filters global-init global-exit) (filters header)
             (setq sorting-order (effective-sorting-order sorting-order header original-sorting-order))
             (when (null thread-filters)
               (typecase output
                 (pathname       (check-file-sorting-order sorting-order)
-                                (with-open-stream (out (open-sam output :direction :output))
+                                (with-open-sam (out output :direction :output)
                                   (format-sam-header out header)
                                   (copy-stream in out))
                                 (return-from run-pipeline output))
@@ -606,14 +616,15 @@
                                 (multiple-value-bind
                                     (out pathname)
                                     (open-temporary-sam (temporary-file-sibling output))
-                                  (unwind-protectn
-                                    (format-sam-header out header)
-                                    (copy-stream in out)
-                                    (close out))
+                                  (let ((out-stream (sam-input out)))
+                                    (unwind-protectn
+                                      (format-sam-header out-stream header)
+                                      (copy-stream in out-stream)
+                                      (close-sam out)))
                                   (return-from run-pipeline pathname)))))
             (with-output-functions
                 (output-filter wrap-thread receive-chunk)
-                (apply 'get-output-functions output header :sorting-order sorting-order args)
+                (apply #'get-output-functions output header :sorting-order sorting-order args)
               (global-init)
               (unwind-protect
                   (call-with-processes
@@ -625,22 +636,25 @@
                         (with-alignment-filters (aln-filters local-init local-exit) (thread-filters)
                           (if (and (null aln-filters) (or (typep output 'pathname)
                                                           (typep output 'temporary-file)))
-                            (loop for chunk = (mp:mailbox-read mailbox) until (eq chunk :eop) do (receive-chunk chunk))
-                            (let ((chunk-filter (create-chunk-filter 'parse-sam-alignment-from-string aln-filters output-filter t)))
-                              (local-init)
-                              (unwind-protect
-                                  (loop for chunk = (mp:mailbox-read mailbox) until (eq chunk :eop) do
-                                        (setf (cdr chunk) (funcall chunk-filter (cdr chunk)))
-                                        (receive-chunk chunk))
-                                (local-exit))))))))
+                            (loop for chunk = (mailbox-read mailbox) until (eq chunk :eop) do (receive-chunk chunk))
+                            (let ((chunk-filter (create-chunk-filter #'parse-sam-alignment aln-filters output-filter t)))
+                              (macrolet ((chunk-filter (&rest args)
+                                           `(locally (declare #.*optimization*)
+                                              (funcall (the function chunk-filter) ,@args))))
+                                (local-init)
+                                (unwind-protect
+                                    (loop for chunk = (mailbox-read mailbox) until (eq chunk :eop) do
+                                          (setf (cdr chunk) (chunk-filter (cdr chunk)))
+                                          (receive-chunk chunk))
+                                  (local-exit)))))))))
                    (lambda (mailboxes)
                      (loop with serial = -1
                            for mailbox-ring = mailboxes then (or (cdr mailbox-ring) mailboxes)
-                           for alns = (loop with aln with eof
-                                            repeat chunk-size do
-                                            (setf (values aln eof) (stream-read-line in))
-                                            until eof collect aln)
-                           while alns do (mp:mailbox-send (car mailbox-ring) (cons (incf serial) alns)))))
+                           for alns = (when (buffered-listen in)
+                                        (loop repeat chunk-size
+                                              for aln = (buffered-read-line in)
+                                              collect aln while (buffered-listen in)))
+                           while alns do (mailbox-send (car mailbox-ring) (cons (incf serial) alns)))))
                 (global-exit))))))
     (unless (or (not destructive) (eq destructive :default))
       (delete-file input))))

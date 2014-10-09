@@ -1,8 +1,11 @@
 (in-package :elprep)
 
-(deftype int32 () '(signed-byte 32))
+(deftype  octet () '(unsigned-byte 8))
+(deftype  int16 () '(signed-byte 16))
+(deftype uint16 () '(unsigned-byte 16))
+(deftype  int32 () '(signed-byte 32))
 
-(defvar *sam-file-format-version* "1.4"
+(defvar *sam-file-format-version* (sbs "1.4")
   "The SAM file format version string supported by this library.
    This is entered by default in a @HD line in the header section of a SAM file, unless user code explicitly asks for a different version number.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3.
@@ -71,8 +74,8 @@
 
 (defun sam-header-user-tag-p (code)
   "Does this tag string represent a user-defined tag?"
-  (declare (simple-base-string code) #.*fixnum-optimization*)
-  (loop for c of-type base-char across code
+  (declare (simple-string code) #.*optimization*)
+  (loop for c of-type character across code
         thereis (and (char<= #\a c) (char<= c #\z))))
 
 (defstruct sam-alignment
@@ -93,20 +96,20 @@
    Accessor sam-alignment-tags of type property list refers to the optional fields in a read alignment.
    Accessor sam-alignment-xtags of type property list refers to additional optional fields not stored in SAM files, but reserved for other storage formats.
    Accessor sam-alignment-temps of type property list refers to additional optional fields not stored in any storage format, but reserved for temporary values in filters."
-  (qname   "" :type simple-base-string)
-  (flag    0  :type fixnum)
-  (rname   "" :type simple-base-string)
-  (pos     0  :type int32)
-  (mapq    0  :type fixnum)
-  (cigar   "" :type simple-base-string)
-  (rnext   "" :type simple-base-string)
-  (pnext   0  :type int32)
-  (tlen    0  :type int32)
-  (seq     "" :type simple-base-string)
-  (qual    "" :type simple-base-string)
-  (tags   '() :type list)
-  (xtags  '() :type list)
-  (temps  '() :type list))
+  (qname   empty-sbs :type simple-base-string)
+  (flag    0         :type uint16)
+  (rname   empty-sbs :type simple-base-string)
+  (pos     0         :type int32)
+  (mapq    0         :type octet)
+  (cigar   empty-sbs :type simple-base-string)
+  (rnext   empty-sbs :type simple-base-string)
+  (pnext   0         :type int32)
+  (tlen    0         :type int32)
+  (seq     empty-sbs :type simple-base-string)
+  (qual    empty-sbs :type simple-base-string)
+  (tags   '()        :type list)
+  (xtags  '()        :type list)
+  (temps  '()        :type list))
 
 (setf (documentation 'make-sam-alignment 'function)
       "Default constructor for struct sam-alignment."
@@ -194,8 +197,8 @@
 (defun check-refid-type (value)
   "Ensure that value is probably an int32."
   (check-type value
-              #+lispworks-32bit integer
-              #+lispworks-64bit fixnum
+              #+x86 integer
+              #+x86-64 fixnum
               "a 32-bit integer")
   value)
 
@@ -264,73 +267,73 @@
 (defun sam-alignment-multiple-p (aln)
   "Check for template having multiple segments in sequencing in sam-alignment-flag.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.2."
-  (declare (sam-alignment aln) #.*fixnum-optimization*)
+  (declare (sam-alignment aln) #.*optimization*)
   (/= (logand (sam-alignment-flag aln) +multiple+) 0))
 
 (defun sam-alignment-proper-p (aln)
   "Check for each segment being properly aligned according to the aligner in sam-alignment-flag.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.2."
-  (declare (sam-alignment aln) #.*fixnum-optimization*)
+  (declare (sam-alignment aln) #.*optimization*)
   (/= (logand (sam-alignment-flag aln) +proper+) 0))
 
 (defun sam-alignment-unmapped-p (aln)
   "Check for segment unmapped in sam-alignment-flag.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.2."
-  (declare (sam-alignment aln) #.*fixnum-optimization*)
+  (declare (sam-alignment aln) #.*optimization*)
   (/= (logand (sam-alignment-flag aln) +unmapped+) 0))
 
 (defun sam-alignment-next-unmapped-p (aln)
   "Check for next segment in the template unmapped in sam-alignment-flag.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.2."
-  (declare (sam-alignment aln) #.*fixnum-optimization*)
+  (declare (sam-alignment aln) #.*optimization*)
   (/= (logand (sam-alignment-flag aln) +next-unmapped+) 0))
 
 (defun sam-alignment-reversed-p (aln)
   "Check for SEQ being reversed complemented in sam-alignment-flag.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.2."
-  (declare (sam-alignment aln) #.*fixnum-optimization*)
+  (declare (sam-alignment aln) #.*optimization*)
   (/= (logand (sam-alignment-flag aln) +reversed+) 0))
 
 (defun sam-alignment-next-reversed-p (aln)
   "Check for SEQ of the next segment in the template being reversed in sam-alignment-flag.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.2."
-  (declare (sam-alignment aln) #.*fixnum-optimization*)
+  (declare (sam-alignment aln) #.*optimization*)
   (/= (logand (sam-alignment-flag aln) +next-reversed+) 0))
 
 (defun sam-alignment-first-p (aln)
   "Check for being the first segment in the template in sam-alignment-flag.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.2."
-  (declare (sam-alignment aln) #.*fixnum-optimization*)
+  (declare (sam-alignment aln) #.*optimization*)
   (/= (logand (sam-alignment-flag aln) +first+) 0))
 
 (defun sam-alignment-last-p (aln)
   "Check for being the last segment in the template in sam-alignment-flag.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.2."
-  (declare (sam-alignment aln) #.*fixnum-optimization*)
+  (declare (sam-alignment aln) #.*optimization*)
   (/= (logand (sam-alignment-flag aln) +last+) 0))
 
 (defun sam-alignment-secondary-p (aln)
   "Check for secondary alignment in sam-alignment-flag.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.2."
-  (declare (sam-alignment aln) #.*fixnum-optimization*)
+  (declare (sam-alignment aln) #.*optimization*)
   (/= (logand (sam-alignment-flag aln) +secondary+) 0))
 
 (defun sam-alignment-qc-failed-p (aln)
   "Check for not passing quality controls in sam-alignment-flag.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.2."
-  (declare (sam-alignment aln) #.*fixnum-optimization*)
+  (declare (sam-alignment aln) #.*optimization*)
   (/= (logand (sam-alignment-flag aln) +qc-failed+) 0))
 
 (defun sam-alignment-duplicate-p (aln)
   "Check for PCR or optical duplicate in sam-alignment-flag.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.2."
-  (declare (sam-alignment aln) #.*fixnum-optimization*)
+  (declare (sam-alignment aln) #.*optimization*)
   (/= (logand (sam-alignment-flag aln) +duplicate+) 0))
 
 (defun sam-alignment-supplementary-p (aln)
   "Check for supplementary alignment in sam-alignment-flag.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.2."
-  (declare (sam-alignment aln) #.*fixnum-optimization*)
+  (declare (sam-alignment aln) #.*optimization*)
   (/= (logand (sam-alignment-flag aln) +supplementary+) 0))
 
 (declaim (inline sam-alignment-flag-every
@@ -340,23 +343,25 @@
 
 (defun sam-alignment-flag-every (aln flag)
   "Check for every bit in flag being set in sam-alignment-flag."
-  (declare (sam-alignment aln) (fixnum flag) #.*fixnum-optimization*)
+  (declare (sam-alignment aln) (fixnum flag) #.*optimization*)
   (= (logand (sam-alignment-flag aln) flag) flag))
 
 (defun sam-alignment-flag-some (aln flag)
   "Check for some bits in flag being set in sam-alignment-flag."
-  (declare (sam-alignment aln) (fixnum flag) #.*fixnum-optimization*)
+  (declare (sam-alignment aln) (fixnum flag) #.*optimization*)
   (/= (logand (sam-alignment-flag aln) flag) 0))
 
 (defun sam-alignment-flag-notevery (aln flag)
   "Check for not every bit in flag being set in sam-alignment-flag."
-  (declare (sam-alignment aln) (fixnum flag) #.*fixnum-optimization*)
+  (declare (sam-alignment aln) (fixnum flag) #.*optimization*)
   (/= (logand (sam-alignment-flag aln) flag) flag))
 
 (defun sam-alignment-flag-notany (aln flag)
   "Check for not any bit in flag being set in sam-alignment-flag."
-  (declare (sam-alignment aln) (fixnum flag) #.*fixnum-optimization*)
+  (declare (sam-alignment aln) (fixnum flag) #.*optimization*)
   (= (logand (sam-alignment-flag aln) flag) 0))
+
+(declaim (inline make-sam))
 
 (defstruct sam
   "A complete SAM data set that can be contained in a SAM file.
@@ -380,53 +385,54 @@
 
 ;;; mapping cigar strings to alists or avectors
 
-(define-symbol-macro cigar-operations "MmIiDdNnSsHhPpXx=")
+(define-symbol-macro cigar-operations (sbs "MmIiDdNnSsHhPpXx="))
 
-(defconstant +min-cigar-operation+ (reduce 'min cigar-operations :key 'char-code)
+(defconstant +min-cigar-operation+ (reduce #'min cigar-operations :key #'char-code)
   "The smallest CIGAR operation.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.6.")
 
-(defconstant +max-cigar-operation+ (reduce 'max cigar-operations :key 'char-code)
+(defconstant +max-cigar-operation+ (reduce #'max cigar-operations :key #'char-code)
   "The largest CIGAR operation.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.6.")
 
-(defun make-cigar-operations-table ()
-  "Map CIGAR operations represented as characters to keywords.
+(eval-when (#+sbcl :compile-toplevel :load-toplevel :execute)
+  (defun make-cigar-operations-table ()
+    "Map CIGAR operations represented as characters to upcase characters.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.6."
-  (let ((table (make-array (1+ (- +max-cigar-operation+
-                                  +min-cigar-operation+))
-                           :initial-element nil
-                           :allocation :long-lived
-                           :single-thread t)))
-    (loop for char across cigar-operations do
-          (setf (svref table (- (char-code char) +min-cigar-operation+))
-                (intern-key (string (char-upcase char)))))
-    table))
+    (let ((table (make-array (1+ (- +max-cigar-operation+
+                                    +min-cigar-operation+))
+                             :initial-element nil
+                             #+lispworks :allocation #+lispworks :long-lived
+                             #+lispworks :single-thread #+lispworks t)))
+      (loop for char across cigar-operations do
+            (setf (svref table (- (char-code char) +min-cigar-operation+))
+                  (char-upcase char)))
+      table)))
 
-(hcl:defglobal-variable *cigar-operations*
+(defglobal *cigar-operations*
   (make-cigar-operations-table)
-  "Map CIGAR operations represented as characters to keywords.
+  "Map CIGAR operations represented as characters to upcase characters.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.6.")
 
 (declaim (inline make-cigar-operation))
 
 (defun make-cigar-operation (table cigar i)
   "Parse a CIGAR length + operation from position i in the cigar string.
-   Return a cons cell with keyword + length, and a next position in the cigar string.
+   Return a cons cell with upcase character + length, and a next position in the cigar string.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.6."
-  (declare (simple-base-string cigar) (fixnum i) #.*fixnum-optimization*)
+  (declare (simple-base-string cigar) (fixnum i) #.*optimization*)
   (loop for j of-type fixnum = i then (1+ j)
-        for char of-type fixnum = (char-code (sbchar cigar j))
+        for char of-type fixnum = (char-code (schar cigar j))
         when (or (< char #.(char-code #\0)) (> char #.(char-code #\9)))
         return (values (let ((length (parse-integer cigar :start i :end j))
-                             (operation (svref table (- char +min-cigar-operation+))))
+                             (operation (svref table (the fixnum (- char +min-cigar-operation+)))))
                          (if operation (cons operation length)
                            (error "Invalid CIGAR operation ~S." (code-char char))))
-                       (1+ j))))
+                       (the fixnum (1+ j)))))
 
-(hcl:defglobal-variable *cigar-list-cache*
-  (let ((table (make-hash-table :test 'equal)))
-    (setf (gethash "*" table) '())
+(defglobal *cigar-list-cache*
+  (let ((table (make-synchronized-hash-table :test #'equal)))
+    (setf (gethash (sbs "*") table) '())
     table)
   "Cache CIGAR Strings to association lists.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.6.")
@@ -436,7 +442,7 @@
 (defun slow-scan-cigar-string-to-list (cigar)
   "Convert a cigar string to an association list, slow path.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.6."
-  (declare (simple-base-string cigar) #.*fixnum-optimization*)
+  (declare (simple-base-string cigar) #.*optimization*)
   (loop with table = *cigar-operations*
         with i of-type fixnum = 0
         with cigar-operation do
@@ -457,9 +463,9 @@
       (gethash cigar (the hash-table *cigar-list-cache*))
     (if found value (slow-scan-cigar-string-to-list cigar))))
 
-(hcl:defglobal-variable *cigar-vector-cache*
-  (let ((table (make-hash-table :test 'equal)))
-    (setf (gethash "*" table) #())
+(defglobal *cigar-vector-cache*
+  (let ((table (make-synchronized-hash-table :test #'equal)))
+    (setf (gethash (sbs "*") table) #())
     table)
   "Cache CIGAR strings to assocation vectors.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.6.")
@@ -469,11 +475,11 @@
 (defun slow-scan-cigar-string-to-vector (cigar)
   "Convert a cigar string to an assocation vector, slow path.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.6."
-  (declare (simple-base-string cigar) #.*fixnum-optimization*)
+  (declare (simple-base-string cigar) #.*optimization*)
   (loop with table = *cigar-operations*
         with vector = (make-array (loop for i of-type fixnum = 0 then (1+ i)
                                         until (= i (length cigar))
-                                        count (let ((char (char-code (sbchar cigar i))))
+                                        count (let ((char (char-code (schar cigar i))))
                                                 (declare (fixnum char))
                                                 (or (< char #.(char-code #\0)) (> char #.(char-code #\9))))))
         with i of-type fixnum = 0
