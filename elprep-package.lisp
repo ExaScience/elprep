@@ -181,4 +181,17 @@ Refer to the documentation of run-pipeline as a starting point.")
    ;; ui
 
    #:elprep-script
+
+   ;; buffer
+   #:make-buffer
+   #:reinitialize-buffer
+   #:buffer-emptyp
+   #:buffer-extend
+   #:buffer-hash
+   #:buffer-partition
+   #:buffer-string
+   #:buffer=
+   #:read-line-into-buffer
+   #:write-buffer
+   #:buffer-parse-integer
 ))

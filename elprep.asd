@@ -26,5 +26,6 @@ met:
                (:file "clean-sam" :depends-on ("filter-pipeline"))
                (:file "mark-duplicates" :depends-on ("filter-pipeline"))
                (:file "user-interface" :depends-on ("filter-pipeline" "mark-duplicates" "clean-sam" "simple-filters"))
-               (:file "elprep-utils" :depends-on ("filter-pipeline")))
+               (:file "buffer" :depends-on ("elprep-package"))
+               (:file "elprep-utils" :depends-on ("filter-pipeline" "buffer")))
   :depends-on ("cl-date-time-parser" "claws" "string-case"))
