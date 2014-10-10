@@ -270,30 +270,6 @@
   (declare (fixnum n) #.*fixnum-optimization*)
   (logior (ash n -1) (ash (logand n 1) #.(1- (integer-length most-positive-fixnum)))))
 
-#|(defun buffer-hash (buf)
-  "get the hash code for a buffer; once a hash code is computed, the buffer shouldn't change anymore!
-   can be used for hash tables, like in (make-hash-table :test #'buffer= :hash-function #'buffer-hash)"
-  (declare (buffer buf) #.*fixnum-optimization*)
-  (let ((pos (buffer-pos buf))
-        (str (buffer-str buf))
-        (hash (buffer-hash-value buf)))
-    (declare (fixnum pos) (simple-vector str) (fixnum hash))
-    (if (> hash -1)
-      (return-from buffer-hash hash)
-      (setq hash 0))
-    (multiple-value-bind (hi lo) (floor pos +chunk-size+)
-      (declare (fixnum hi lo))
-      (loop for i of-type fixnum below hi
-            for chunk of-type simple-base-string = (svref str i) do
-            (setq hash (logxor (rotate-1 hash) (sxhash chunk))))
-      (when (> lo 0)
-        (let ((chunk (svref str hi)))
-          (declare (simple-base-string chunk))
-          (loop for j of-type fixnum from lo below +chunk-size+
-                do (setf (schar chunk j) #\Null))
-          (setq hash (logxor (rotate-1 hash) (sxhash chunk))))))
-    (setf (buffer-hash-value buf) hash)))|#
-
 (defun buffer-hash (buf)
   "get the hash code for a buffer; once a hash code is computed, the buffer shouldn't change anymore!
    can be used for hash tables, like in (make-hash-table :test #'buffer= :hash-function #'buffer-hash)"
