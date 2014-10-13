@@ -109,7 +109,7 @@ Refer to the documentation of run-pipeline as a starting point.")
    #:parse-sam-read-group
    #:parse-sam-program
    #:parse-sam-comment
-   #:parse-sam-header
+   #:parse-sam-header #:skip-sam-header
    #:parse-sam-alignment
    #:parse-sam
 

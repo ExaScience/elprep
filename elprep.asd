@@ -18,6 +18,7 @@ met:
  this software without specific prior written permission."
   :components ((:file "elprep-package")
                (:file "lisp-utils" :depends-on ("elprep-package"))
+               (:file "buffer" :depends-on ("lisp-utils"))
                (:file "sam-types" :depends-on ("lisp-utils"))
                (:file "sam-files" :depends-on ("sam-types"))
 	       (:file "simple-trees" :depends-on ("lisp-utils"))
@@ -26,6 +27,5 @@ met:
                (:file "clean-sam" :depends-on ("filter-pipeline"))
                (:file "mark-duplicates" :depends-on ("filter-pipeline"))
                (:file "user-interface" :depends-on ("filter-pipeline" "mark-duplicates" "clean-sam" "simple-filters"))
-               (:file "buffer" :depends-on ("elprep-package"))
                (:file "elprep-utils" :depends-on ("filter-pipeline" "buffer")))
   :depends-on ("cl-date-time-parser" "claws" "string-case"))

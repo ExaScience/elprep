@@ -1,15 +1,6 @@
 (in-package :elprep)
 
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (defvar *optimization*
-    '(optimize (speed 3) (space 0) (debug 1) (safety 0)
-               (compilation-speed 0)))
-
-  (defvar *fixnum-optimization*
-    '(optimize (speed 3) (space 0) (debug 1) (safety 0)
-               (compilation-speed 0) (hcl:fixnum-safety 0))))
-
-(defconstant +chunk-size+ 1024)
+(defconstant +buffer-chunk-size+ 1024)
 
 (declaim (inline make-buffer buffer-p))
 
@@ -41,7 +32,7 @@
           do (setf (svref new-str i) (svref old-str i)))
     (loop for i of-type fixnum from (length old-str) below (length new-str)
           do (setf (svref new-str i)
-                   (make-array +chunk-size+ :element-type 'base-char :single-thread t)))
+                   (make-array +buffer-chunk-size+ :element-type 'base-char :single-thread t)))
     (setf (buffer-str buf) new-str)))
 
 (declaim (inline ensure-chunk))
@@ -68,7 +59,7 @@
   (declare (buffer buf) (base-char char) #.*fixnum-optimization*)
   (let ((pos (buffer-pos buf)))
     (declare (fixnum width pos))
-    (multiple-value-bind (hi lo) (floor pos +chunk-size+)
+    (multiple-value-bind (hi lo) (floor pos +buffer-chunk-size+)
       (declare (fixnum hi lo))
       (let ((chunk (ensure-chunk buf hi)))
         (declare (simple-base-string chunk))
@@ -85,7 +76,7 @@
            (simple-base-string string) (fixnum start end length)
            #.*fixnum-optimization*)
   (loop with source of-type fixnum = start do
-        (loop for target of-type fixnum from lo below +chunk-size+ do
+        (loop for target of-type fixnum from lo below +buffer-chunk-size+ do
               (setf (schar chunk target)
                     (schar string source))
               (when (= (incf source) end)
@@ -104,11 +95,11 @@
          (length (- end start))
          (pos (buffer-pos buf)))
     (declare (fixnum end length pos))
-    (multiple-value-bind (hi lo) (floor pos +chunk-size+)
+    (multiple-value-bind (hi lo) (floor pos +buffer-chunk-size+)
       (declare (fixnum hi lo))
       (let ((chunk (ensure-chunk buf hi)))
         (declare (simple-base-string chunk))
-        (if (<= (+ lo length) +chunk-size+)
+        (if (<= (+ lo length) +buffer-chunk-size+)
           (loop for i of-type fixnum from start below end
                 for j of-type fixnum from lo do
                 (setf (schar chunk j)
@@ -127,10 +118,10 @@
   (let ((pos (buffer-pos buf))
         (str (buffer-str buf)))
     (declare (fixnum pos) (simple-vector str))
-    (multiple-value-bind (hi lo) (floor pos +chunk-size+)
+    (multiple-value-bind (hi lo) (floor pos +buffer-chunk-size+)
       (declare (fixnum hi lo))
       (loop for i of-type fixnum below hi
-            do (stream:stream-write-string stream (svref str i) 0 +chunk-size+)) ; buffer
+            do (stream:stream-write-string stream (svref str i) 0 +buffer-chunk-size+)) ; buffer
       (when (> lo 0) (stream:stream-write-string stream (svref str hi) 0 lo)))) ; buffer
   (values))
 
@@ -177,12 +168,12 @@
           (let ((pos (buffer-pos buf))
                 (str (buffer-str buf)))
             (declare (fixnum pos) (simple-vector str))
-            (multiple-value-bind (hi lo) (floor pos +chunk-size+)
+            (multiple-value-bind (hi lo) (floor pos +buffer-chunk-size+)
               (declare (fixnum hi lo))
               (loop for i of-type fixnum below hi
                     for chunk of-type simple-base-string = (svref str i)
                     for start of-type fixnum = 0 do
-                    (loop for end of-type fixnum below +chunk-size+ do
+                    (loop for end of-type fixnum below +buffer-chunk-size+ do
                           (when (char= (schar chunk end) separator)
                             (when target-buf
                               (buffer-extend target-buf chunk start end))
@@ -190,11 +181,11 @@
                             (setq start (+ end 1)))
                           finally
                           (when target-buf
-                            (buffer-extend target-buf chunk start +chunk-size+))))
+                            (buffer-extend target-buf chunk start +buffer-chunk-size+))))
               (when (> lo 0)
                 (loop with chunk of-type simple-base-string = (svref str hi)
                       with start of-type fixnum = 0
-                      for end of-type fixnum below +chunk-size+ do
+                      for end of-type fixnum below +buffer-chunk-size+ do
                       (when (char= (schar chunk end) separator)
                         (when target-buf
                           (buffer-extend target-buf chunk start end))
@@ -211,14 +202,14 @@
   (let ((pos (buffer-pos buf))
         (str (buffer-str buf)))
     (declare (fixnum pos) (simple-vector str))
-    (multiple-value-bind (hi lo) (floor pos +chunk-size+)
+    (multiple-value-bind (hi lo) (floor pos +buffer-chunk-size+)
       (declare (fixnum hi lo))
       (let ((result (make-array pos :element-type 'base-char :single-thread t))
             (target -1))
         (declare (simple-base-string result) (fixnum target))
         (loop for i of-type fixnum below hi
               for chunk of-type simple-base-string = (svref str i) do
-              (loop for j of-type fixnum below +chunk-size+ do
+              (loop for j of-type fixnum below +buffer-chunk-size+ do
                     (setf (schar result (incf target))
                           (schar chunk j))))
         (when (> lo 0)
@@ -238,12 +229,12 @@
             (str2 (buffer-str buf2)))
         (declare (fixnum pos1 pos2) (simple-vector str1 str2))
         (when (= pos1 pos2)
-          (multiple-value-bind (hi lo) (floor pos1 +chunk-size+)
+          (multiple-value-bind (hi lo) (floor pos1 +buffer-chunk-size+)
             (declare (fixnum hi lo))
             (loop for i of-type fixnum below hi
                   for chunk1 of-type simple-base-string = (svref str1 i)
                   for chunk2 of-type simple-base-string = (svref str2 i) do
-                  (loop for j of-type fixnum below +chunk-size+ do
+                  (loop for j of-type fixnum below +buffer-chunk-size+ do
                         (when (char/= (schar chunk1 j)
                                       (schar chunk2 j))
                           (return-from buffer= nil))))
@@ -258,10 +249,46 @@
 
 (defun buffer-parse-integer (buf)
   "convert a buffer to an integer"
-  (declare (buffer buf) #.*fixnum-optimization*)
+  (declare (buffer buf) #.*optimization*)
   (let ((pos (buffer-pos buf))
-        (str (buffer-str buf)))
-    (parse-integer (the simple-base-string (subseq (svref str 0) 0 pos)))))
+        (str (buffer-str buf))
+        (sign +1)
+        (result 0))
+    (declare (fixnum pos) (simple-vector str) (fixnum sign) (integer result))
+    (flet ((update-result (char)
+             (declare (base-char char))
+             (assert (and (char<= #\0) (char<= #\9)))
+             (let ((digit (- (char-code char) #.(char-code #\0))))
+               (declare (fixnum digit))
+               (if (and (typep result 'fixnum) (< (the fixnum result) #.(floor most-positive-fixnum 10)))
+                 (setq result (the fixnum (+ (the fixnum (* (the fixnum result) 10)) digit)))
+                 (setq result (+ (* result 10) digit))))))
+      (declare (inline update-result))
+      (multiple-value-bind (hi lo) (floor pos +buffer-chunk-size+)
+        (declare (fixnum hi lo))
+        (cond ((= hi 0)
+               (assert (> lo 0))
+               (let* ((chunk (svref str 0)) (char (schar chunk 0)) (start 0))
+                 (declare (simple-base-string chunk) (base-char char) (fixnum start))
+                 (cond ((char= char #\+)                (setq start 1) (assert (> lo 1)))
+                       ((char= char #\-) (setq sign -1) (setq start 1) (assert (> lo 1))))
+                 (loop for j of-type fixnum from start below lo
+                       do (update-result (schar chunk j)))))
+              (t (let* ((chunk (svref str 0)) (char (schar chunk 0)) (start 0))
+                   (declare (simple-base-string chunk) (base-char char) (fixnum start))
+                   (cond ((char= char #\+)                (setq start 1))
+                         ((char= char #\-) (setq sign -1) (setq start 1)))
+                   (loop for j of-type fixnum from start below +buffer-chunk-size+
+                         do (update-result (schar chunk j))))
+                 (loop for i of-type fixnum from 1 below hi
+                       for chunk of-type simple-base-string = (svref str i) do
+                       (loop for j of-type fixnum below +buffer-chunk-size+
+                             do (update-result (schar chunk j))))
+                 (when (> lo 0)
+                   (loop with chunk of-type simple-base-string = (svref str hi)
+                         for j of-type fixnum below lo
+                         do (update-result (schar chunk j))))))))
+    (* sign result)))
 
 (declaim (inline rotate-1))
 
@@ -281,37 +308,14 @@
     (if (> hash -1)
       (return-from buffer-hash hash)
       (setq hash 0))
-    (multiple-value-bind (hi lo) (floor pos +chunk-size+)
+    (multiple-value-bind (hi lo) (floor pos +buffer-chunk-size+)
       (declare (fixnum hi lo))
       (loop for i of-type fixnum below hi
             for chunk of-type simple-base-string = (svref str i) do
-            (loop for j of-type fixnum below +chunk-size+ do
+            (loop for j of-type fixnum below +buffer-chunk-size+ do
                   (setq hash (logxor (rotate-1 hash) (char-code (schar chunk j))))))
       (when (> lo 0)
         (loop with chunk of-type simple-base-string = (svref str hi)
               for j of-type fixnum below lo do
               (setq hash (logxor (rotate-1 hash) (char-code (schar chunk j)))))))
     (setf (buffer-hash-value buf) hash)))
-
-#| test code
-
-(defparameter *buf* (make-buffer))
-
-(defun test ()
-  (let ((buf *buf*))
-    (reinitialize-buffer buf)
-    (loop for char from (char-code #\a) upto (char-code #\z)
-          for string = (make-string 25 :initial-element (code-char char) :element-type 'base-char)
-          do (buffer-extend buf string) (buffer-push buf #\Tab))
-    (let ((bufd (make-buffer))
-          (bufk (make-buffer))
-          (buft (make-buffer)))
-      (buffer-partition buf #\Tab
-                        (- (char-code #\d) (char-code #\a)) bufd
-                        (- (char-code #\k) (char-code #\a)) bufk
-                        (- (char-code #\t) (char-code #\a)) buft)
-      (print (buffer-string bufd))
-      (print (buffer-string bufk))
-      (print (buffer-string buft))
-      (values))))
-|#

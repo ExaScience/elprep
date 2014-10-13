@@ -103,6 +103,20 @@
                 (return-from %scan-string (car strings)))
               (return-from %scan-string ""))))))
 
+(declaim (inline %skip-string))
+
+(defun %skip-string (stream predicate)
+  "Skip character from stream until predicate on a character returns true."
+  (declare (buffered-stream stream) #.*fixnum-optimization*)
+  (loop (with-stream-input-buffer (source index limit) stream
+          (declare (simple-base-string source) (fixnum index limit))
+          (loop for pos of-type fixnum from index below limit
+                when (funcall predicate (sbchar source pos))
+                do (setq index pos) (return-from %skip-string)
+                finally (setq index pos)))
+        (unless (stream-fill-buffer stream)
+          (return-from %skip-string))))
+
 (defun scan-string (stream)
   "Read a tab-delimited entry as string from stream."
   (declare (buffered-stream stream) #.*optimization*)
@@ -414,6 +428,14 @@
                            :user-tags (loop for cons on user-tags by 'cddr
                                             do (setf (cdr cons) (nreverse (cdr cons)))
                                             finally (return user-tags)))))))
+
+(defun skip-sam-header (stream)
+  "Skip the SAM file header section."
+  (declare (buffered-stream stream) #.*fixnum-optimization*)
+  (loop for char of-type base-char = (peekc stream)
+        until (or (end-of-file-p char) (char/= char #\@))
+        do (%skip-string stream 'end-of-line-p) (advance stream))
+  (values))
 
 (define-symbol-macro optional-field-type-tags "AifZHB")
 (defconstant +min-optional-field-type-tag+ (reduce 'min optional-field-type-tags :key 'char-code)

@@ -131,7 +131,7 @@
   (let ((files (loop for sn-form in (sam-header-sq header)
                      collect (let* ((chrom (getf sn-form :SN))
                                     (file (open-sam (format nil "~a~a-~a~a" input-path input-prefix chrom input-extension) :direction :input)))
-                               (parse-sam-header file) ; skip header
+                               (skip-sam-header file)
                                file)))
         (unmapped-file (open-sam (format nil "~a~a-unmapped~a" input-path input-prefix input-extension) :direction :input))
         (spread-reads-file (open-sam (format nil "~a~a-spread~a" input-path input-prefix input-extension) :direction :input)))
