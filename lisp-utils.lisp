@@ -614,11 +614,31 @@
 
 (defgeneric copy-stream (input output)
   (:documentation "Efficient copying of the contents of an input stream to an output stream.")
-  (:method ((input stream) (output stream))
-   (cl-fad:copy-stream input output nil))
   #+lispworks
   (:method ((input buffered-stream) (output stream))
+   (declare #.*optimization*)
    (loop do (stream:with-stream-input-buffer (buffer index limit) input
+              (declare (simple-base-string buffer) (fixnum index limit))
               (when (< index limit)
                 (stream:stream-write-sequence output buffer index limit)))
-         while (stream:stream-fill-buffer input))))
+         while (stream:stream-fill-buffer input)))
+  #+sbcl
+  (:method ((input buffered-stream) (output stream))
+   (declare #.*optimization*)
+   (loop with buffer of-type stream-buffer = (buffered-stream-buffer input)
+         with stream of-type stream = (buffered-stream-stream input)
+         do (let ((index (buffered-stream-index input))
+                  (limit (buffered-stream-limit input)))
+              (delare (fixnum index limit))
+              (when (< index limit)
+                (write-sequence buffer output index limit)))
+         until (let ((position (read-sequence buffer stream)))
+                 (declare (fixnum position))
+                 (setf (buffered-stream-index stream) 0
+                       (buffered-stream-limit stream) position)
+                 (= position 0))))
+  #+sbcl
+  (:method ((input stream) (output stream))
+   (let ((buffered-input (make-buffered-stream input)))
+     (declare (dynamic-extent buffered-input))
+     (copy-stream buffered-input output))))
