@@ -7,7 +7,7 @@
     "Standard optimization settings without fixnum optimizations.")
 
   (defparameter *fixnum-optimization*
-    '(optimize (speed 3) (space 0) (debug 1) (safety 0)
+    '(optimize (speed 3) (space 0) (debug 1) (safety 0) 
                (compilation-speed 0) (hcl:fixnum-safety 0))
     "Standard optimizations settings with fixnum optimizations."))
 

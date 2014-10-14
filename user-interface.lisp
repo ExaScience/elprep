@@ -56,10 +56,6 @@
 
 (defun elprep-filter-script ()
   "Command line script for elprep filter script."
-  ;;;; change output to stderr
-  ;;;(setq *standard-output* (system:make-stderr-stream))
-  ;;;(format t "~A version ~A. See ~A for more information.~%"
-  ;;;        *program-name* *program-version* *program-url*)
   (let ((cmd-line (rest sys:*line-arguments-list*))
         (sorting-order :keep)
         (nr-of-threads 1)
@@ -305,6 +301,46 @@
                 (push `(*number-of-threads* . ,nr-of-threads) mp:*process-initial-bindings*)
                 (merge-sorted-files-split-per-chromosome input-path output input-prefix input-extension header)))))))
 
+(defvar *compare-program-help* "compare sam-file1 sam-file2 ~% --diff sam-file3 ~%"
+  "Help string for the elprep-compare-script binary.")
+
+(defun elprep-compare-script ()
+  (let ((cmd-line (rest (rest sys:*line-arguments-list*))) ; skip elprep compare part of the command
+        (file1 nil) (file2 nil) (file3 "/dev/stdout"))
+    (loop with entry while cmd-line do (setq entry (pop cmd-line))
+          if (string= entry "-h") do
+          (format t *compare-program-help*)
+          (return-from elprep-compare-script)
+          if (string= entry "--diff") do
+          (setf file3 (pop cmd-line))
+          else collect entry into io-parameters
+          finally         
+          (when (/= (length io-parameters) 2)
+            (format t "Incorrect number of parameters: Expected 2, got ~S~@[ ~A~].~%"
+                    (length io-parameters) io-parameters)
+            (format t *compare-program-help*)
+            (return-from elprep-compare-script))
+          (setf file1 (first io-parameters))
+          (setf file2 (second io-parameters))
+          (let* ((header1 (with-open-stream (in (open-sam file1 :direction :input)) (parse-sam-header in)))
+                 (header2 (with-open-stream (in (open-sam file2 :direction :input)) (parse-sam-header in)))
+                 (so1 (getf (sam-header-hd header1) :so))
+                 (so2 (getf (sam-header-hd header2) :so)))
+            (when (not (and so1 (string= so1 "coordinate")))
+              (format t "ERROR: elprep compare only operates on input files sorted by coordinate order.~%")
+              (format t "File ~a is not sorted by coordinate order.~%" file1)
+              (return-from elprep-compare-script))
+            (when (not (and so2 (string= so2 "coordinate")))
+              (format t "ERROR: elprep compare only operates on input files sorted by coordinate order.~%")
+              (format t "File ~a is not sorted by coordinate order.~%" file2)
+              (return-from elprep-compare-script)))
+          ; print feedback
+          (let ((cmd-string
+                 (with-output-to-string (s)
+                   (format s "~a compare ~a ~a --diff ~a" (first sys:*line-arguments-list*) file1 file2 file3))))
+            (format t "Executing command:~%  ~a~%" cmd-string))
+          (compare-sam-files file1 file2 file3))))
+
 (defun elprep-script ()
   "Command line script for elPrep."
   ; change output to stderr
@@ -321,9 +357,12 @@
           (format t *split-program-help*)
           (format t "Merge parameters: ~%")
           (format t *merge-program-help*)
+          (format t "Compare parameters: ~%")
+          (format t *compare-program-help*)
           (return-from elprep-script))
         (cond ((string= (first cmd-line) "split") (elprep-split-script))
               ((string= (first cmd-line) "merge") (elprep-merge-script))
+              ((string= (first cmd-line) "compare") (elprep-compare-script))
               (t 
                (elprep-filter-script))))
     (error (condition) (format t "ERROR: ~A.~%" condition))))
