@@ -791,6 +791,14 @@
   (loop for aln in (sam-alignments sam)
         do (format-sam-alignment out aln)))
 
+(defglobal *stdin* *standard-input*)
+(defglobal *stdout* *standard-output*)
+(defglobal *stderr* #+lispworks (sys:make-stderr-stream) #+sbcl sb-sys:*stderr*)
+
+(defun setup-standard-streams ()
+  (setq *standard-output* *stderr*
+        *error-output* *stderr*
+        *trace-output* *stderr*))
 
 (defglobal *samtools* nil
   "Location of the samtools binary.")
@@ -822,7 +830,7 @@
     ;; In SBCL, :latin-1 is the fastest for input. Since we expect only ASCII characters, this is also fine for base-char.
     (:input (cond ((eq kind :sam)
                    (if (check-stdin pathname)
-                     (make-synonym-stream '*terminal-io*)
+                     *stdin*
                      (open pathname
                            :direction :input
                            :element-type #+lispworks 'base-char #+sbcl 'character
@@ -841,7 +849,7 @@
     ;; In SBCL, :utf-8 is the fastest for output. Since we write only ASCII / base-char characters, this is fine.
     (:output (cond ((eq kind :sam)
                     (if (check-stdout pathname)
-                      (make-synonym-stream '*terminal-io*)
+                      *stdout*
                       (open pathname
                             :direction :output
                             :element-type #+lispworks 'base-char #+sbcl 'character
@@ -888,6 +896,8 @@
 
   (defun close-sam (sam)
     "Close a SAM file, no matter whether it is an actual file or a pipe."
+    (when (output-stream-p sam)
+      (stream:stream-flush-buffer sam))
     (close sam))
 
   (defun sam-input (sam)

@@ -629,13 +629,13 @@
          with stream of-type stream = (buffered-stream-stream input)
          do (let ((index (buffered-stream-index input))
                   (limit (buffered-stream-limit input)))
-              (delare (fixnum index limit))
+              (declare (fixnum index limit))
               (when (< index limit)
                 (write-sequence buffer output index limit)))
          until (let ((position (read-sequence buffer stream)))
                  (declare (fixnum position))
-                 (setf (buffered-stream-index stream) 0
-                       (buffered-stream-limit stream) position)
+                 (setf (buffered-stream-index input) 0
+                       (buffered-stream-limit input) position)
                  (= position 0))))
   #+sbcl
   (:method ((input stream) (output stream))

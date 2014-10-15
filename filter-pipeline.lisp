@@ -346,8 +346,7 @@
                        (with-chunk-output (chunk) (mailbox (not (eq sorting-order :unsorted)))
                          (loop for aln in chunk do
                                #+lispworks (stream:stream-write-sequence out aln 0 (length aln))
-                               #+sbcl (write-sequence aln out :start 0 :end (length aln))))
-                       #+lispworks (stream:stream-flush-buffer out))))))
+                               #+sbcl (write-sequence aln out :start 0 :end (length aln)))))))))
     (values (lambda (aln)
               (with-output-to-string (s nil :element-type 'base-char)
                 (format-sam-alignment s aln)))
@@ -376,9 +375,7 @@
                (loop for aln in chunk do
                      #+lispworks (stream:stream-write-sequence out-stream aln 0 (length aln))
                      #+sbcl (write-sequence aln out-stream :start 0 :end (length aln))))
-             (progn 
-               #+lispworks (stream:stream-flush-buffer out-stream)
-               (close-sam out)))
+             (close-sam out))
            (mailbox-send outbox pathname)))))
     (values (lambda (aln)
               (with-output-to-string (s nil :element-type 'base-char)

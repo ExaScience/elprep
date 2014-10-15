@@ -144,6 +144,8 @@ Refer to the documentation of run-pipeline as a starting point.")
 
    #:format-sam
 
+   #:setup-standard-streams
+
    #:get-samtools
    #:sam-file-kind
    #:open-sam

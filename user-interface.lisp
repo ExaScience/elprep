@@ -71,10 +71,7 @@
 
 (defun elprep-script ()
   "Command line script for the best practices pipeline."
-  ; change output to stderr
-  (setq *standard-output*
-        #+lispworks (system:make-stderr-stream)
-        #+sbcl sb-sys:*stderr*)
+  (setup-standard-streams)
   (format t "~A version ~A. See ~A for more information.~%"
           *program-name* *program-version* *program-url*)
   (let ((cmd-line 
