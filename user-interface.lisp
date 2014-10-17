@@ -178,7 +178,7 @@
                                  clean-sam-filter
                                  replace-ref-seq-dct-filter       
                                  replace-read-group-filter
-                                 (when (or replace-ref-seq-dct-filter mark-duplicates-filter (member :sorting-order '(:coordinate :queryname))) (list 'add-refid))
+                                 (when (or replace-ref-seq-dct-filter mark-duplicates-filter (member sorting-order '(:coordinate :queryname))) (list 'add-refid))
                                  mark-duplicates-filter))
                  (filters2 remove-duplicates-filter)) ; only used in conjuction with filters that split up processing in multiple phases
             (format t "Executing command:~%  ~a~%" cmd-string)
@@ -204,6 +204,7 @@
   "Help string for the elprep-split-script binary.")
 
 (defun elprep-split-script ()
+  "Command line script for elprep split script."
   (let ((cmd-line (rest (rest sys:*line-arguments-list*))) ; skip elprep split part of the command
         (input nil) (output-path nil) (output-prefix nil) (output-type :sam) (output-extension nil) (nr-of-threads 1))
     (loop with entry while cmd-line do (setq entry (pop cmd-line))
@@ -258,6 +259,7 @@
   "Help string for the elprep-merge-script binary.")
                     
 (defun elprep-merge-script ()
+  "Command line script for elprep merge script."
   (let ((cmd-line (rest (rest sys:*line-arguments-list*))) ; skip elprep merge part of the command
         (input-path nil) (output nil) (nr-of-threads 1))
     (loop with entry while cmd-line do (setq entry (pop cmd-line))
@@ -301,10 +303,11 @@
                 (push `(*number-of-threads* . ,nr-of-threads) mp:*process-initial-bindings*)
                 (merge-sorted-files-split-per-chromosome input-path output input-prefix input-extension header)))))))
 
-(defvar *compare-program-help* "compare sam-file1 sam-file2 ~% --diff sam-file3 ~%"
+(defvar *compare-program-help* "compare sam-file1 sam-file2 ~% [--diff sam-file3] ~%"
   "Help string for the elprep-compare-script binary.")
 
 (defun elprep-compare-script ()
+  "Command line script for elprep compare script."
   (let ((cmd-line (rest (rest sys:*line-arguments-list*))) ; skip elprep compare part of the command
         (file1 nil) (file2 nil) (file3 "/dev/stdout"))
     (loop with entry while cmd-line do (setq entry (pop cmd-line))
