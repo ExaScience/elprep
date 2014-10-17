@@ -14,7 +14,7 @@
 (defmethod split-file-per-chromosome ((input pathname))
   (let ((nr-of-threads *nr-of-threads*))
     (with-open-file (raw-in input :direction :input)
-      (let* ((in (make-buffered-stream raw-in))
+      (let* ((in (ensure-buffered-stream raw-in))
              (header (parse-sam-header in)))
         ; each thread will be responsible for processing a chromosome (or a bunch of chromosomes)
         (let ((workers (make-array number-of-threads)))

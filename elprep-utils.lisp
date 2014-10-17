@@ -97,7 +97,7 @@
 
 (defun split-file-per-chromosome (input &aux (input-prefix (subseq input 0 (- (length input) 4))))
   (with-open-sam (raw-in input :direction :input)
-    (let* ((in (make-buffered-stream raw-in))
+    (let* ((in (ensure-buffered-stream raw-in))
            (header (parse-sam-header in))
            (reference-sequence-table (make-single-thread-hash-table :test #'equal))
            (chroms-encountered (make-single-thread-hash-table :test #'equal))

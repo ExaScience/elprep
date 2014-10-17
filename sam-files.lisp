@@ -439,10 +439,8 @@
   "Parse a complete SAM file.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1."
   (make-sam :header     (parse-sam-header stream)
-            :alignments (when (buffered-listen stream)
-                          (loop for aln-string = (buffered-read-line stream)
-                                collect (parse-sam-alignment aln-string)
-                                while (buffered-listen stream)))))
+            :alignments (loop while (buffered-listen stream)
+                              collect (parse-sam-alignment (buffered-read-line stream)))))
 
 
 ;;; output
@@ -786,7 +784,7 @@
 (defun format-sam (out sam)
   "Write a complete SAM file.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1."
-  (declare (buffered-stream out) (sam sam) #.*optimization*)
+  (declare (stream out) (sam sam) #.*optimization*)
   (format-sam-header out (sam-header sam))
   (loop for aln in (sam-alignments sam)
         do (format-sam-alignment out aln)))

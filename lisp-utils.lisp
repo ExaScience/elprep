@@ -120,11 +120,12 @@
      (unwind-protect (progn ,@body)
        (close-program ,program))))
 
-(declaim (inline make-buffered-stream))
+
+(declaim (inline ensure-buffered-stream))
 
 #+lispworks
 (progn
-  (defun make-buffered-stream (stream)
+  (defun ensure-buffered-stream (stream)
     "Create a wrapper around a stream to enable buffers that can be explicitly accessed.
      This is a no-op in LispWorks, but creates a separater buffer in SBCL."
     (etypecase stream (buffered-stream stream)))
@@ -162,6 +163,8 @@
   (deftype stream-buffer ()
     '(simple-array character (8192)))
 
+  (declaim (inline make-buffered-stream))
+
   (defstruct (buffered-stream (:constructor make-buffered-stream (stream))
                               (:copier nil)
                               (:predicate nil))
@@ -170,9 +173,12 @@
     (limit +buffered-stream-limit+ :type fixnum)
     (stream nil :type stream))
 
-  (setf (documentation 'make-buffered-stream 'function)
-        "Create a wrapper around a stream to enable buffers that can be explicitly accessed.
-         This is a no-op in LispWorks, but creates a separater buffer in SBCL.")
+  (defun ensure-buffered-stream (stream)
+    "Create a wrapper around a stream to enable buffers that can be explicitly accessed.
+     This is a no-op in LispWorks, but may create a separater buffer in SBCL."
+    (etypecase stream
+      (buffered-stream stream)
+      (stream (make-buffered-stream stream))))
 
   (defun buffered-listen-slow-path (stream)
     "Like listen, but on buffered-stream, slow path."

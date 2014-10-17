@@ -597,7 +597,7 @@
   (declare (dynamic-extent args))
   (unwind-protect
       (with-open-sam (raw-in input :direction :input)
-        (let* ((in (make-buffered-stream raw-in))
+        (let* ((in (ensure-buffered-stream raw-in))
                (header (parse-sam-header in))
                (original-sorting-order (getf (sam-header-hd header) :so (sbs "unknown"))))
           (with-thread-filters (thread-filters global-init global-exit) (filters header)
