@@ -1,29 +1,5 @@
 (in-package :elprep)
 
-(defmacro with-string-dispatch (string &body body)
-  `(etypecase ,string
-     (simple-base-string
-      (let ((,string ,string))
-        (declare (simple-base-string ,string))
-        (macrolet ((dchar (string index) `(the base-char (schar ,string ,index))))
-          ,@body)))
-     #+lispworks
-     (lw:simple-text-string
-      (let ((,string ,string))
-        (declare (lw:simple-text-string ,string))
-        (macrolet ((dchar (string index) `(the base-char (schar ,string ,index))))
-          ,@body)))
-     ((simple-array character (*))
-      (let ((,string ,string))
-        (declare ((simple-array character (*)) ,string))
-        (macrolet ((dchar (string index) `(the base-char (schar ,string ,index))))
-          ,@body)))
-     (string
-      (let ((,string ,string))
-        (declare (string ,string))
-        (macrolet ((dchar (string index) `(the base-char (char ,string ,index))))
-          ,@body)))))
-
 #+sbcl
 (progn
   (defconstant +ascii-stream-buffer-size+ (expt 2 13))
@@ -77,7 +53,7 @@
     (declare (ascii-stream stream) #.*optimization*)
     (let ((position (read-sequence (ascii-stream-buffer stream)
                                    (ascii-stream-base stream))))
-      (declare (ascii-stream stream) (fixnum position))
+      (declare (fixnum position))
       (setf (ascii-stream-index stream) 0
             (ascii-stream-limit stream) position)
       (> position 0)))
@@ -191,6 +167,29 @@
               (return-from ascii-stream-listen t)))
           (unless (stream-fill-buffer stream)
             (return-from ascii-stream-listen nil))))
+
+  (defmacro with-string-dispatch (string &body body)
+    `(etypecase ,string
+       (simple-base-string
+        (let ((,string ,string))
+          (declare (simple-base-string ,string))
+          (macrolet ((dchar (string index) `(the base-char (schar ,string ,index))))
+            ,@body)))
+       (lw:simple-text-string
+        (let ((,string ,string))
+          (declare (lw:simple-text-string ,string))
+          (macrolet ((dchar (string index) `(the base-char (schar ,string ,index))))
+            ,@body)))
+       ((simple-array character (*))
+        (let ((,string ,string))
+          (declare ((simple-array character (*)) ,string))
+          (macrolet ((dchar (string index) `(the base-char (schar ,string ,index))))
+            ,@body)))
+       (string
+        (let ((,string ,string))
+          (declare (string ,string))
+          (macrolet ((dchar (string index) `(the base-char (char ,string ,index))))
+            ,@body)))))
 
   (defun ascii-stream-write-string (stream string)
     (declare (buffered-stream stream) (string string) (fixnum start) #.*optimization*)
