@@ -11,6 +11,13 @@
                (compilation-speed 0) #+lispworks (hcl:fixnum-safety 0))
     "Standard optimizations settings with fixnum optimizations."))
 
+;;; low-level types
+
+(deftype  octet () '(unsigned-byte 8))
+(deftype  int16 () '(signed-byte 16))
+(deftype uint16 () '(unsigned-byte 16))
+(deftype  int32 () '(signed-byte 32))
+
 ;;; portability
 
 (defmacro sbs (string)
@@ -31,276 +38,6 @@
   (if docp
     `(sb-ext:defglobal ,var ,value ,doc)
     `(sb-ext:defglobal ,var ,value)))
-
-(declaim (inline make-single-thread-hash-table make-synchronized-hash-table))
-
-(defun make-single-thread-hash-table (&rest args &key test size rehash-size rehash-treshold hash-function)
-  "Like make-hash-table, but ensure it is single-thread, not synchronized."
-  (declare (dynamic-extent args) (ignore test size rehash-size rehash-treshold hash-function))
-  #+lispworks (apply #'cl:make-hash-table :single-thread t args)
-  #+sbcl (apply #'cl:make-hash-table :synchronized nil args))
-
-(defun make-synchronized-hash-table (&rest args &key test size rehash-size rehash-treshold hash-function)
-  "Like make-hash-table, but ensure it is synchronized, not single-thread."
-  (declare (dynamic-extent args) (ignore test size rehash-size rehash-treshold hash-function))
-  #+lispworks (apply #'cl:make-hash-table :single-thread nil args)
-  #+sbcl (apply #'cl:make-hash-table :synchronized t args))
-
-#+sbcl
-(defun modify-hash (hash-table key function)
-  "Similar to LispWorks's hcl:modify-hash."
-  (if (sb-ext:hash-table-synchronized-p hash-table)
-    (sb-ext:with-locked-hash-table (hash-table)
-      (multiple-value-bind (value foundp)
-          (gethash key hash-table)
-        (values (setf (gethash key hash-table)
-                      (locally (declare #.*optimization*)
-                        (funcall (the function function) key value foundp)))
-                key)))
-    (multiple-value-bind (value foundp)
-        (gethash key hash-table)
-      (values (setf (gethash key hash-table)
-                    (locally (declare #.*optimization*)
-                      (funcall (the function function) key value foundp)))
-              key))))
-
-#+sbcl
-(defmacro with-hash-table-locked (hash-table &body body)
-  "Renamed sb-ext:with-locked-hash-table."
-  `(sb-ext:with-locked-hash-table (,hash-table) ,@body))
-
-(declaim (inline open-program close-program program-input program-output))
-
-#+lispworks
-(progn
-  (defun open-program (command &rest args &key (direction :input))
-    "Similar to LispWorks's sys:open-pipe, to enable portability between LispWorks and SBCL."
-    (declare (dynamic-extent args) (ignore direction))
-    (apply #'sys:open-pipe command args))
-
-  (defun close-program (program)
-    "Close a program opened with open-program."
-    (close program))
-
-  (defun program-input (program)
-    "Get the stream of a prgoram that expects input."
-    program)
-
-  (defun program-output (program)
-    "Get the stream of a program that produces output."
-    program))
-
-#+sbcl
-(progn
-  (defun open-program (command &key (direction :input) (external-format :default))
-    "Similar to LispWorks's sys:open-pipe, to enable portability between LispWorks and SBCL."
-    (etypecase command
-      (string (sb-ext:run-program "/bin/sh" (list "-c" command)
-                                  :wait nil (ecase direction (:input :output) (:output :input)) :stream
-                                  :external-format external-format))
-      (list   (sb-ext:run-program (first command) (rest command)
-                                  :wait nil (ecase direction (:input :output) (:output :input)) :stream
-                                  :external-format external-format))))
-
-  (defun close-program (program)
-    "Close a program opened with open-program."
-    (sb-ext:process-close program))
-
-  (defun program-input (program)
-    "Get the stream of a program that expects input."
-    (sb-ext:process-input program))
-
-  (defun program-output (program)
-    "Get the stream of a program that produces output."
-    (sb-ext:process-output program)))
-
-(defmacro with-open-program ((program command &rest args) &body body)
-  "Open a program for a block of code, and ensure that it is closed again in the end."
-  `(let ((,program (open-program ,command ,@args)))
-     (unwind-protect (progn ,@body)
-       (close-program ,program))))
-
-
-(declaim (inline ensure-buffered-stream))
-
-#+lispworks
-(progn
-  (defun ensure-buffered-stream (stream)
-    "Create a wrapper around a stream to enable buffers that can be explicitly accessed.
-     This is a no-op in LispWorks, but creates a separater buffer in SBCL."
-    (etypecase stream (buffered-stream stream)))
-
-  (declaim (inline buffered-listen buffered-peek buffered-read-line))
-
-  (defun buffered-listen (stream)
-    "Like listen, but on buffered-stream."
-    (declare (buffered-stream stream) #.*optimization*)
-    (loop (stream:with-stream-input-buffer (buffer index limit) stream
-            (declare (ignore buffer) (fixnum index limit))
-            (when (< index limit)
-              (return-from buffered-listen t)))
-          (unless (stream:stream-fill-buffer stream)
-            (return-from buffered-listen nil))))
-
-  (defun buffered-peek (stream)
-    "Like (peek-char nil ... nil #\EOT), but on buffered-stream."
-    (declare (buffered-stream stream) #.*optimization*)
-    (loop (stream:with-stream-input-buffer (buffer index limit) stream
-            (declare (simple-base-string buffer) (fixnum index limit))
-            (when (< index limit)
-              (return-from buffered-peek (lw:sbchar buffer index))))
-          (unless (stream:stream-fill-buffer stream)
-            (return-from buffered-peek #\EOT))))
-
-  (defun buffered-read-line (stream)
-    "Like read-line, but on buffered-stream."
-    (stream:stream-read-line stream)))
-
-#+sbcl
-(progn
-  (defconstant +buffered-stream-limit+ 8192)
-
-  (deftype stream-buffer ()
-    '(simple-array character (8192)))
-
-  (declaim (inline make-buffered-stream))
-
-  (defstruct (buffered-stream (:constructor make-buffered-stream (stream))
-                              (:copier nil)
-                              (:predicate nil))
-    (buffer (make-array +buffered-stream-limit+ :element-type 'character) :type stream-buffer :read-only t)
-    (index +buffered-stream-limit+ :type fixnum)
-    (limit +buffered-stream-limit+ :type fixnum)
-    (stream nil :type stream))
-
-  (defun ensure-buffered-stream (stream)
-    "Create a wrapper around a stream to enable buffers that can be explicitly accessed.
-     This is a no-op in LispWorks, but may create a separater buffer in SBCL."
-    (etypecase stream
-      (buffered-stream stream)
-      (stream (make-buffered-stream stream))))
-
-  (defun buffered-listen-slow-path (stream)
-    "Like listen, but on buffered-stream, slow path."
-    (declare (buffered-stream stream) #.*optimization*)
-    (let ((position (read-sequence
-                     (buffered-stream-buffer stream)
-                     (buffered-stream-stream stream))))
-      (declare (fixnum position))
-      (setf (buffered-stream-index stream) 0
-            (buffered-stream-limit stream) position)
-      (> position 0)))
-
-  (declaim (inline buffered-listen))
-
-  (defun buffered-listen (stream)
-    "Like listen, but on buffered-stream."
-    (declare (buffered-stream stream) #.*optimization*)
-    (let ((index (buffered-stream-index stream))
-          (limit (buffered-stream-limit stream)))
-      (declare (fixnum index limit))
-      (or (< index limit)
-          (buffered-listen-slow-path stream))))
-
-  (defun buffered-peek-slow-path (stream buffer)
-    "Like (peek-char nil ... nil #\EOT), but on buffered-stream, slow path."
-    (declare (buffered-stream stream) (simple-base-string buffer) #.*optimization*)
-    (let ((position (read-sequence
-                     (buffered-stream-buffer stream)
-                     (buffered-stream-stream stream))))
-      (declare (fixnum position))
-      (setf (buffered-stream-index stream) 0
-            (buffered-stream-limit stream) position)
-      (if (= position 0) #\EOT (schar buffer 0))))
-
-  (declaim (inline buffered-peek))
-
-  (defun buffered-peek (stream)
-    "Like (peek-char nil ... nil #\EOT), but on buffered-stream."
-    (declare (buffered-stream stream) #.*optimization*)
-    (let ((buffer (buffered-stream-buffer stream))
-          (index (buffered-stream-index stream))
-          (limit (buffered-stream-limit stream)))
-      (declare (stream-buffer buffer) (fixnum index limit))
-      (if (< index limit)
-        (schar buffer index)
-        (buffered-peek-slow-path stream buffer))))
-
-  (defun buffered-read-line (stream)
-    "Like read-line, but on buffered-stream."
-    (declare (buffered-stream stream) #.*optimization*)
-    (loop with strings of-type list = '()
-          with buffer of-type stream-buffer = (buffered-stream-buffer stream) do
-          (loop with index of-type fixnum = (buffered-stream-index stream)
-                with limit of-type fixnum = (buffered-stream-limit stream)
-                for end of-type fixnum from index below limit
-                for flag of-type boolean = (char= (schar buffer end) #\Newline)
-                until flag finally
-                (let ((string (make-array (- end index) :element-type 'base-char)))
-                  (declare (simple-base-string string))
-                  (loop for j of-type fixnum from index below end
-                        for i of-type fixnum from 0
-                        do (setf (schar string i) (schar buffer j)))
-                  (cond (flag (setf (buffered-stream-index stream) (1+ end))
-                              (cond (strings (push string strings)
-                                             (return-from buffered-read-line (values (apply #'concatenate 'simple-base-string (nreverse strings)) nil)))
-                                    (t       (return-from buffered-read-line (values string nil)))))
-                        (t    (setf (buffered-stream-index stream) end)
-                              (push string strings)))))
-          (let ((position (read-sequence buffer (buffered-stream-stream stream))))
-            (declare (fixnum position))
-            (setf (buffered-stream-index stream) 0
-                  (buffered-stream-limit stream) position)
-            (when (= position 0)
-              (if strings
-                (if (cdr strings)
-                  (return-from buffered-read-line (values (apply #'concatenate 'simple-base-string (nreverse strings)) t))
-                  (return-from buffered-read-line (values (car strings) t)))
-                (return-from buffered-read-line (values empty-sbs t))))))))
-
-#+sbcl
-(progn
-  (defglobal *working-directory-name* "" "Cached working directory name.")
-  (defglobal *working-directory* nil "Cached working directory.")
-
-  (defun get-working-directory ()
-    "Similar to LispWorks's hcl:get-working-directory."
-    (let ((cwd (sb-posix:getcwd)))
-      (if (string= cwd *working-directory-name*)
-        *working-directory*
-        (setq *working-directory-name* cwd
-              *working-directory*
-              (parse-namestring (concatenate 'string (sb-posix:getcwd) "/")))))))
-
-(defvar *number-of-threads* 1
-  "The number of threads used by run-pipeline and run-pipeline-in-situ to parallelize the filtering process.
-   Default is 1, which results in sequential execution. Usually, parallelization only occurs when this value is greater than 3.")
-
-(defun process-run (name function &rest arguments)
-  "Wrapper around mp:process-run-function / sb-thread:make-thread."
-  (declare (dynamic-extent arguments))
-  #+lispworks (apply #'mp:process-run-function name '() function arguments)
-  #+sbcl (sb-thread:make-thread function :name name :arguments (copy-list arguments)))
-
-#+sbcl
-(progn
-  (declaim (inline make-mailbox mailbox-send mailbox-read process-join))
-
-  (defun make-mailbox ()
-    "Similar to LispWorks's mp:make-mailbox."
-    (sb-concurrency:make-mailbox))
-
-  (defun mailbox-send (mailbox object)
-    "Similar to LispWorks's mp:mailbox-send."
-    (sb-concurrency:send-message mailbox object))
-
-  (defun mailbox-read (mailbox)
-    "Similar to LispWorks's mp:mailbox-read."
-    (sb-concurrency:receive-message mailbox))
-
-  (defun process-join (process)
-    "Similar to LispWorks's mp:process-join."
-    (sb-thread:join-thread process)))
 
 ;;; utilities
 
@@ -339,12 +76,6 @@
   (assert (not (presentp indicator plist)))
   indicator)
 
-(defmacro with-modify-hash ((key value found) (hash-table form) &body body)
-  "Macro version of LispWorks's modify-hash function."
-  `(modify-hash ,hash-table ,form (lambda (,key ,value ,found)
-                                    (declare (ignorable ,key ,value ,found))
-                                    (block nil ,@body))))
-
 (defmacro unwind-protectn (&body forms)
   "Like unwind-protect, except that all forms but the last are protected, and only the last form is used for cleanup"
   `(unwind-protect (progn ,@(butlast forms)) ,@(last forms)))
@@ -355,6 +86,83 @@
     (function object)
     (symbol (symbol-function object))
     (cons (fdefinition object))))
+
+;;; multi-threading
+
+(defvar *number-of-threads* 1
+  "The number of threads used by run-pipeline and run-pipeline-in-situ to parallelize the filtering process.
+   Default is 1, which results in sequential execution. Usually, parallelization only occurs when this value is greater than 3.")
+
+(defun process-run (name function &rest arguments)
+  "Wrapper around mp:process-run-function / sb-thread:make-thread."
+  (declare (dynamic-extent arguments))
+  #+lispworks (apply #'mp:process-run-function name '() function arguments)
+  #+sbcl (sb-thread:make-thread function :name name :arguments (copy-list arguments)))
+
+#+sbcl
+(progn
+  (declaim (inline make-mailbox mailbox-send mailbox-read process-join))
+
+  (defun make-mailbox ()
+    "Similar to LispWorks's mp:make-mailbox."
+    (sb-concurrency:make-mailbox))
+
+  (defun mailbox-send (mailbox object)
+    "Similar to LispWorks's mp:mailbox-send."
+    (sb-concurrency:send-message mailbox object))
+
+  (defun mailbox-read (mailbox)
+    "Similar to LispWorks's mp:mailbox-read."
+    (sb-concurrency:receive-message mailbox))
+
+  (defun process-join (process)
+    "Similar to LispWorks's mp:process-join."
+    (sb-thread:join-thread process)))
+
+(declaim (inline make-single-thread-hash-table make-synchronized-hash-table))
+
+(defun make-single-thread-hash-table (&rest args &key test size rehash-size rehash-treshold hash-function)
+  "Like make-hash-table, but ensure it is single-thread, not synchronized."
+  (declare (dynamic-extent args) (ignore test size rehash-size rehash-treshold hash-function))
+  #+lispworks (apply #'cl:make-hash-table :single-thread t args)
+  #+sbcl (apply #'cl:make-hash-table :synchronized nil args))
+
+(defun make-synchronized-hash-table (&rest args &key test size rehash-size rehash-treshold hash-function)
+  "Like make-hash-table, but ensure it is synchronized, not single-thread."
+  (declare (dynamic-extent args) (ignore test size rehash-size rehash-treshold hash-function))
+  #+lispworks (apply #'cl:make-hash-table :single-thread nil args)
+  #+sbcl (apply #'cl:make-hash-table :synchronized t args))
+
+#+sbcl
+(defmacro with-hash-table-locked (hash-table &body body)
+  "Renamed sb-ext:with-locked-hash-table."
+  `(sb-ext:with-locked-hash-table (,hash-table) ,@body))
+
+#+sbcl
+(defun modify-hash (hash-table key function)
+  "Similar to LispWorks's hcl:modify-hash."
+  (if (sb-ext:hash-table-synchronized-p hash-table)
+    (sb-ext:with-locked-hash-table (hash-table)
+      (multiple-value-bind (value foundp)
+          (gethash key hash-table)
+        (values (setf (gethash key hash-table)
+                      (locally (declare #.*optimization*)
+                        (funcall (the function function) key value foundp)))
+                key)))
+    (multiple-value-bind (value foundp)
+        (gethash key hash-table)
+      (values (setf (gethash key hash-table)
+                    (locally (declare #.*optimization*)
+                      (funcall (the function function) key value foundp)))
+              key))))
+
+(defmacro with-modify-hash ((key value found) (hash-table form) &body body)
+  "Macro version of LispWorks's modify-hash function."
+  `(modify-hash ,hash-table ,form (lambda (,key ,value ,found)
+                                    (declare (ignorable ,key ,value ,found))
+                                    (block nil ,@body))))
+
+;;; higher-order functions
 
 (defun compose-thunks (thunks)
   "Return a single thunk that executes the given thunks in sequence."
@@ -617,34 +425,3 @@
         (vector (split-hash-table-vector table)))
     (declare (function hash-function) (vector vector))
     (svref vector (rem (rotate-15 (funcall hash-function key)) (length vector)))))
-
-(defgeneric copy-stream (input output)
-  (:documentation "Efficient copying of the contents of an input stream to an output stream.")
-  #+lispworks
-  (:method ((input buffered-stream) (output stream))
-   (declare #.*optimization*)
-   (loop do (stream:with-stream-input-buffer (buffer index limit) input
-              (declare (simple-base-string buffer) (fixnum index limit))
-              (when (< index limit)
-                (stream:stream-write-sequence output buffer index limit)))
-         while (stream:stream-fill-buffer input)))
-  #+sbcl
-  (:method ((input buffered-stream) (output stream))
-   (declare #.*optimization*)
-   (loop with buffer of-type stream-buffer = (buffered-stream-buffer input)
-         with stream of-type stream = (buffered-stream-stream input)
-         do (let ((index (buffered-stream-index input))
-                  (limit (buffered-stream-limit input)))
-              (declare (fixnum index limit))
-              (when (< index limit)
-                (write-sequence buffer output index limit)))
-         until (let ((position (read-sequence buffer stream)))
-                 (declare (fixnum position))
-                 (setf (buffered-stream-index input) 0
-                       (buffered-stream-limit input) position)
-                 (= position 0))))
-  #+sbcl
-  (:method ((input stream) (output stream))
-   (let ((buffered-input (make-buffered-stream input)))
-     (declare (dynamic-extent buffered-input))
-     (copy-stream buffered-input output))))

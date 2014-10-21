@@ -1,5 +1,27 @@
 (in-package :elprep)
 
+(defun explain-flag (flag)
+  (let ((result '()))
+    (macrolet ((test (&rest bits)
+                 `(progn ,@(loop for bit in bits
+                                 for bitn = (symbol-name bit)
+                                 for bitk = (intern (subseq bitn 1 (1- (length bitn))) :keyword)
+                                 collect `(when (/= (logand flag ,bit) 0)
+                                            (push ,bitk result))))))
+      (test +supplementary+
+            +duplicate+
+            +qc-failed+
+            +secondary+
+            +last+
+            +first+
+            +next-reversed+
+            +reversed+
+            +next-unmapped+
+            +unmapped+
+            +proper+
+            +multiple+))
+    result))
+ 
 (defun sam-alignment-differ (aln1 aln2)
   (declare (sam-alignment aln1 aln2) #.*optimization*)
   ; check that all mandatory fields are =
@@ -96,21 +118,20 @@
               ((= entry-nr 6) (write-char c mate-refid)))))))
 
 (defun split-file-per-chromosome (input &aux (input-prefix (subseq input 0 (- (length input) 4))))
-  (with-open-sam (raw-in input :direction :input)
-    (let* ((in (ensure-buffered-stream raw-in))
-           (header (parse-sam-header in))
-           (reference-sequence-table (make-single-thread-hash-table :test #'equal))
-           (chroms-encountered (make-single-thread-hash-table :test #'equal))
-           (ctr -1))
+  (with-open-sam (in input :direction :input)
+    (let ((header (parse-sam-header in))
+          (reference-sequence-table (make-single-thread-hash-table :test #'equal))
+          (chroms-encountered (make-single-thread-hash-table :test #'equal))
+          (ctr -1))
       ; fill in a file for unmapped reads
       (setf (gethash "*" chroms-encountered)
             (let ((file (open-sam (format nil "~a-unmapped.sam" input-prefix) :direction :output)))
-              (format-sam-header (sam-input file) header) ; fill in the header
+              (format-sam-header (sam-stream file) header) ; fill in the header
               file))
       (loop for sn-form in (sam-header-sq header)
             do (setf (gethash (getf sn-form :SN) reference-sequence-table) (incf ctr)))
-      (loop while (buffered-listen in) do
-            (let ((aln-string (buffered-read-line in)))
+      (loop while (ascii-stream-listen in) do
+            (let ((aln-string (ascii-stream-read-line in)))
               (multiple-value-bind (rname rnext)
                   (scan-refids aln-string)
                 (let* ((refid (gethash rname reference-sequence-table -1))
@@ -119,7 +140,7 @@
                        (file (or (gethash max-chrom chroms-encountered)
                                  (setf (gethash max-chrom chroms-encountered)
                                        (let ((file (open-sam (format nil "~a-~a.sam" input-prefix max-chrom) :direction :output)))
-                                         (format-sam-header (sam-input file) header)
+                                         (format-sam-header (sam-stream file) header)
                                          file)))))
-                  (write-line aln-string (sam-input file))))))
+                  (write-line aln-string (sam-stream file))))))
       (loop for file being each hash-value of chroms-encountered do (close-sam file)))))

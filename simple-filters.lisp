@@ -34,9 +34,8 @@
 
 (defun replace-reference-sequence-dictionary-from-sam-file (sam-file)
   "A filter for replacing the reference sequence dictionary in a sam-header with one parsed from the given SAM/DICT file."
-  (with-open-sam (raw-in sam-file :direction :input :header-only t)
-    (let* ((in (ensure-buffered-stream raw-in))
-           (header (parse-sam-header in))
+  (with-open-sam (in sam-file :direction :input :header-only t)
+    (let* ((header (parse-sam-header in))
            (dictionary (sam-header-sq header))) 
       (replace-reference-sequence-dictionary dictionary))))
 

@@ -331,15 +331,13 @@
 (defun parse-sam-header (stream)
   "Parse a SAM file header section.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3."
-  (declare (buffered-stream stream) #.*optimization*)
+  (declare (stream stream) #.*optimization*)
   (let ((scanner (make-scanner))
         (code (make-array 3 :element-type 'base-char))
         hd sq rg pg co user-tags)
     (declare (scanner scanner) (simple-base-string code) (dynamic-extent scanner code))
-    (loop until (let ((char (buffered-peek stream)))
-                  (declare (base-char char))
-                  (or (char/= char #\@) (char= char #\EOT))) do
-          (reinitialize-scanner scanner (buffered-read-line stream))
+    (loop until (char/= (the base-char (ascii-stream-peek-char stream #\EOT)) #\@) do
+          (reinitialize-scanner scanner (ascii-stream-read-line stream))
           (parse-sam-header-code scanner code)
           (string-case (code :default (if (sam-header-user-tag-p code)
                                         (push (parse-sam-comment scanner) (getf user-tags (intern-key/copy code)))
@@ -439,67 +437,30 @@
   "Parse a complete SAM file.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1."
   (make-sam :header     (parse-sam-header stream)
-            :alignments (loop while (buffered-listen stream)
-                              collect (parse-sam-alignment (buffered-read-line stream)))))
+            :alignments (loop while (ascii-stream-listen stream)
+                              collect (parse-sam-alignment (ascii-stream-read-line stream)))))
 
 
 ;;; output
 
-(declaim (inline writec))
+(declaim (inline writec write-newline write-tab))
 
-#+lispworks
 (defun writec (out c)
   "Write a character to output stream."
-  (declare (buffered-stream out) (base-char c) #.*optimization*)
-  (loop (stream:with-stream-output-buffer (buffer index limit) out
-          (declare (simple-base-string buffer) (fixnum index limit))
-          (when (< index limit)
-            (setf (lw:sbchar buffer index) c)
-            (setq index (the fixnum (1+ index)))
-            (return-from writec)))
-        (stream:stream-flush-buffer out)))
+  (ascii-stream-write-char out c))
 
-#+sbcl
-(defun writec (out c)
-  "Write a character to output stream."
-  (write-char c out))
-
-(declaim (inline write-tab write-newline))
+(defun write-newline (out)
+  "Write a newline to output stream."
+  (writec out #\Newline))
 
 (defun write-tab (out)
   "Write a tabulator to output stream."
-  (declare (stream out) #.*optimization*)
   (writec out #\Tab))
-
-(defun write-newline (out)
-  "Write an end-of-line to output stream."
-  (declare (stream out) #.*optimization*)
-  (writec out #\Newline))
 
 (declaim (inline writestr))
 
-#+lispworks
-(defun writestr (out s)
-  "Write a string to output stream."
-  (declare (buffered-stream out) (simple-base-string s) #.*fixnum-optimization*)
-  (let ((sindex 0) (length (length s)))
-    (declare (fixnum sindex length))
-    (when (> length 0)
-      (loop (stream:with-stream-output-buffer (buffer tindex limit) out
-              (declare (simple-base-string buffer) (fixnum tindex limit))
-              (loop with rlen of-type fixnum = (min (- length sindex) (- limit tindex))
-                    for i of-type fixnum below rlen
-                    do (setf (lw:sbchar buffer (+ tindex i))
-                             (lw:sbchar s (+ sindex i)))
-                    finally (incf sindex rlen) (incf tindex rlen)))
-            (if (< sindex length)
-              (stream:stream-flush-buffer out)
-              (return-from writestr))))))
-
-#+sbcl
-(defun writestr (out s)
-  "Write a string to output stream."
-  (write-string s out))
+(defun writestr (out string)
+  (ascii-stream-write-string out string))
 
 (defun format-sam-string (out tag string)
   "Write a SAM file TAG of type string."
@@ -749,7 +710,8 @@
     (integer      (format out (sbs ":f:~D") value))                        ; single-precision floating point number
     (single-float (format out (sbs ":f:~E") value))                        ; single-precision floating point number
     (double-float (format out (sbs ":f:~E") (coerce value 'single-float))) ; single-precision floating point number
-    (string       (writestr out (sbs ":Z:")) (writestr out value))         ; printable string
+    (string       (writestr out (sbs ":Z:"))                               ; printable string
+                  (writestr out value))
     (vector       (writestr out (sbs ":H:"))                               ; byte array in hex format
                   (loop for byte across (the vector value)
                         do (format out (sbs "~2,'0X") byte)))
@@ -765,8 +727,8 @@
 (defun format-sam-alignment (out aln)
   "Write a SAM file read alignment line.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Sections 1.4 and 1.5."
-  (declare (stream out)  (sam-alignment aln) #.*optimization*)
-  (writestr out          (sam-alignment-qname aln)) (write-tab out)
+  (declare (stream out) (sam-alignment aln) #.*optimization*)
+  (writestr out (sam-alignment-qname aln)) (write-tab out)
   (format out (sbs "~D") (sam-alignment-flag aln))  (write-tab out)
   (writestr out          (sam-alignment-rname aln)) (write-tab out)
   (format out (sbs "~D") (sam-alignment-pos aln))   (write-tab out)
@@ -789,8 +751,6 @@
   (loop for aln in (sam-alignments sam)
         do (format-sam-alignment out aln)))
 
-(defglobal *stdin* *standard-input*)
-(defglobal *stdout* *standard-output*)
 (defglobal *stderr* #+lispworks (sys:make-stderr-stream) #+sbcl sb-sys:*stderr*)
 
 (defun setup-standard-streams ()
@@ -804,8 +764,8 @@
 (defun get-samtools ()
   "Determine location of the samtools binary."
   (or *samtools* 
-      (with-open-program (program "command -v samtools")
-        (let ((line (read-line (program-output program) nil)))
+      (with-open-program (program "command -v samtools" :buffered nil)
+        (let ((line (read-line (program-stream program) nil)))
           (if line
             (setq *samtools* line)
             (error "samtools not found. Please download it from http://samtools.sourceforge.net and make sure that its binary is present in your PATH."))))))
@@ -825,38 +785,28 @@
    Tell samtools view to only return the header for :input when :header-only is true."
   (ecase direction
     ;; In LispWorks, :latin-1 is the default, fast, and fully compatible with ASCII / base-char.
-    ;; In SBCL, :latin-1 is the fastest for input. Since we expect only ASCII characters, this is also fine for base-char.
+    ;; In SBCL, :latin-1 is the fastest for character input. Since we expect only ASCII characters, this is also fine for base-char.
     (:input (cond ((eq kind :sam)
-                   (if (check-stdin pathname)
-                     *stdin*
-                     (open pathname
-                           :direction :input
-                           :element-type #+lispworks 'base-char #+sbcl 'character
-                           :external-format :latin-1
-                           :if-does-not-exist :error)))
-                  (t (open pathname
-                           :direction :probe
-                           :element-type #+lispworks 'base-char #+sbcl 'character
-                           :external-format :latin-1
-                           :if-does-not-exist :error)
+                   #+lispworks
+                   (if (check-stdin pathname) *terminal-io*
+                     (open pathname :direction :input :element-type 'base-char :if-does-not-exist :error))
+                   #+sbcl
+                   (make-ascii-stream (open pathname :direction :input :element-type 'octet :if-does-not-exist :error)))
+                  (t (open pathname :direction :probe :if-does-not-exist :error)
                      (open-program (list (get-samtools) "view" (if header-only "-H" "-h") "-@" (write-to-string *number-of-threads*)
                                          (namestring (translate-logical-pathname pathname)))
-                                   :direction :input
-                                   #+sbcl :external-format #+sbcl :latin-1))))
+                                   :direction :input #+sbcl :external-format #+sbcl :latin-1))))
     ;; In LispWorks, :latin-1 is the default, fast, and fully compatible with ASCII / base-char.
-    ;; In SBCL, :utf-8 is the fastest for output. Since we write only ASCII / base-char characters, this is fine.
+    ;; In SBCL, :utf-8 is the fastest for character output. Since we write only ASCII / base-char characters, this is fine.
     (:output (cond ((eq kind :sam)
-                    (if (check-stdout pathname)
-                      *stdout*
-                      (open pathname
-                            :direction :output
-                            :element-type #+lispworks 'base-char #+sbcl 'character
-                            :external-format #+lispworks :latin-1 #+sbcl :utf-8
-                            :if-exists :supersede)))
+                    #+lispworks
+                    (if (check-stdout pathname) *terminal-io*
+                      (open pathname :direction :output :element-type 'base-char :if-exists :supersede))
+                    #+sbcl
+                    (open pathname :direction :output :element-type 'base-char :external-format :utf-8 :if-exists :supersede))
                    (t (open-program (list (get-samtools) "view" (ecase kind (:bam "-Sb") (:cram "-C")) "-@" (write-to-string *number-of-threads*)
                                           "-o" (namestring (translate-logical-pathname pathname)) "-")
-                                    :direction :output
-                                    #+sbcl :external-format #+sbcl :utf-8))))))
+                                    :direction :output #+sbcl :external-format #+sbcl :utf-8))))))
 
 (defun sam-file-kind (filename)
   "Determine whether the file is :bam for .bam, :cram for .cram, or :sam in all other cases."
@@ -876,10 +826,19 @@
 
 (defun open-temporary-sam (sibling)
   "Open a temporary SAM file for :output in the same folder as the sibling file. If the file is .bam or .cram, use samtools view for output."
+  #+lispworks
+  (let ((location (lw:pathname-location (pathname sibling)))
+        (kind (sam-file-kind sibling)))
+    (cond ((eq kind :sam)
+           (let ((stream (hcl:open-temp-file :directory location)))
+             (values stream (pathname stream))))
+          (t (let ((pathname (hcl:create-temp-file :directory location)))
+               (assert (delete-file pathname))
+               (values (%open-sam pathname :output nil kind) pathname)))))
+  #+sbcl
   (let* ((stream (cl-fad:open-temporary
                   :template (merge-pathnames "%" (merge-pathnames sibling (get-working-directory)))
-                  :element-type #+lispworks 'base-char #+sbcl 'character
-                  :external-format #+lispworks :latin-1 #+sbcl :utf-8))
+                  :element-type 'octet))
          (pathname (pathname stream))
          (kind (sam-file-kind sibling)))
     (cond ((eq kind :sam)
@@ -894,16 +853,11 @@
 
   (defun close-sam (sam)
     "Close a SAM file, no matter whether it is an actual file or a pipe."
-    (when (output-stream-p sam)
-      (stream:stream-flush-buffer sam))
-    (close sam))
+    (when (output-stream-p sam) (stream-flush-buffer sam))
+    (unless (eq sam *terminal-io*) (close sam)))
 
-  (defun sam-input (sam)
-    "Get the stream for writing a SAM file."
-    sam)
-
-  (defun sam-output (sam)
-    "Get the stream for reading a SAM file."
+  (defun sam-stream (sam)
+    "Get the stream for a SAM file."
     sam))
 
 #+sbcl
@@ -911,19 +865,15 @@
   (defun close-sam (sam)
     "Close a SAM file, no matter whether it is an actual file or a pipe."
     (cond ((streamp sam) (close sam))
-          ((sb-ext:process-p sam) (sb-ext:process-close sam))
+          ((ascii-stream-p sam) (close-ascii-stream sam))
+          ((program-p sam) (close-program sam))
           (t (error "Not a proper sam file connection: ~S." sam))))
 
-  (defun sam-input (sam)
-    "Get the stream for writing a SAM file."
+  (defun sam-stream (sam)
+    "Get the stream for a SAM file."
     (cond ((streamp sam) sam)
-          ((sb-ext:process-p sam) (sb-ext:process-input sam))
-          (t (error "Not a proper sam file connection: ~S." sam))))
-
-  (defun sam-output (sam)
-    "Get the stream for reading a SAM file."
-    (cond ((streamp sam) sam)
-          ((sb-ext:process-p sam) (sb-ext:process-output sam))
+          ((ascii-stream-p sam) sam)
+          ((program-p sam) (program-stream sam))
           (t (error "Not a proper sam file connection: ~S." sam)))))
 
 (defun invoke-with-open-sam (function filename &rest args &key (direction :input) header-only)
@@ -931,14 +881,7 @@
   (declare (dynamic-extent args) (ignorable direction header-only))
   (let ((sam (apply #'open-sam filename args)))
     (unwind-protect
-        (funcall function
-                 #+lispworks sam
-                 #+sbcl (cond ((streamp sam) sam)
-                              ((eq direction :input)
-                               (sb-ext:process-output sam))
-                              ((eq direction :output)
-                               (sb-ext:process-input sam))
-                              (t (error "Not a proper sam file connection: ~S." sam))))
+        (funcall function (sam-stream sam))
       (close-sam sam))))
 
 (defmacro with-open-sam ((stream filename &rest args &key (direction :input) header-only) &body body)

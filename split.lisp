@@ -8,14 +8,13 @@
                                 (format-sam-alignment out aln))))))
 
 (defun parse-sam-alignment-from-stream (stream)
-  (when (buffered-listen stream)
-    (parse-sam-alignment (buffered-read-line stream))))
+  (when (ascii-stream-listen stream)
+    (parse-sam-alignment (ascii-stream-read-line stream))))
 
 (defmethod split-file-per-chromosome ((input pathname))
   (let ((nr-of-threads *nr-of-threads*))
-    (with-open-file (raw-in input :direction :input)
-      (let* ((in (ensure-buffered-stream raw-in))
-             (header (parse-sam-header in)))
+    (with-open-file (in input :direction :input)
+      (let ((header (parse-sam-header in)))
         ; each thread will be responsible for processing a chromosome (or a bunch of chromosomes)
         (let ((workers (make-array number-of-threads)))
           (dotimes (i nr-of-threads)

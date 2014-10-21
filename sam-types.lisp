@@ -1,10 +1,5 @@
 (in-package :elprep)
 
-(deftype  octet () '(unsigned-byte 8))
-(deftype  int16 () '(signed-byte 16))
-(deftype uint16 () '(unsigned-byte 16))
-(deftype  int32 () '(signed-byte 32))
-
 (defvar *sam-file-format-version* (sbs "1.4")
   "The SAM file format version string supported by this library.
    This is entered by default in a @HD line in the header section of a SAM file, unless user code explicitly asks for a different version number.

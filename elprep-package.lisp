@@ -9,6 +9,7 @@ Refer to the documentation of run-pipeline as a starting point.")
   (:use 
    #:cl-date-time-parser
    #:common-lisp
+   #+lispworks #:stream
    #:string-case)
   (:shadow #:byte #:make-hash-table)
   #+lispworks
@@ -16,14 +17,13 @@ Refer to the documentation of run-pipeline as a starting point.")
   #+lispworks
   (:import-from #:mp #:mailbox #:make-mailbox #:mailbox-send #:mailbox-read #:process-join)
   #+lispworks
-  (:import-from #:stream #:buffered-stream)
-  #+lispworks
   (:import-from #:sys #:compare-and-swap)
   #+sbcl
   (:import-from #:sb-concurrency #:mailbox)
   #+sbcl
   (:import-from #:sb-ext #:compare-and-swap)
   (:export 
+   #:*number-of-threads*
 
    ;; sam-types
 
@@ -151,13 +151,11 @@ Refer to the documentation of run-pipeline as a starting point.")
    #:open-sam
    #:open-temporary-sam
    #:close-sam
-   #:sam-input
-   #:sam-output
+   #:sam-stream
    #:invoke-with-open-sam #:with-open-sam
 
    ;; filter-pipeline
 
-   #:*number-of-threads*
    #:+default-chunk-size+
 
    #:run-pipeline
@@ -196,4 +194,8 @@ Refer to the documentation of run-pipeline as a starting point.")
    ;; ui
 
    #:elprep-script
+
+   ;; utils
+
+   #:explain-flag
 ))
