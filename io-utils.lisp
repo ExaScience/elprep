@@ -12,6 +12,7 @@
   (defun make-ascii-stream-buffer (element-type)
     (ecase element-type
       (octet (make-array +ascii-stream-buffer-size+ :element-type 'octet))
+      ; TODO: drop the 'character case when SBCL's run-program supports :element-type 'octet
       (character (make-array +ascii-stream-buffer-size+ :element-type 'character))))
                    
   (defmacro with-buffer-dispatch (buffer &body body)
@@ -224,10 +225,10 @@
 
 #+lispworks
 (progn
-  (defun open-program (command &rest args &key (direction :input) (buffered t))
+  (defun open-program (command &key (direction :input) (buffered t))
     "Similar to LispWorks's sys:open-pipe, to enable portability between LispWorks and SBCL."
-    (declare (dynamic-extent args) (ignore direction buffered))
-    (apply #'sys:open-pipe command args))
+    (declare (ignore buffered))
+    (sys:open-pipe command :direction direction))
 
   (defun close-program (program)
     "Close a program opened with open-program."
@@ -241,19 +242,21 @@
 (progn
   (defstruct (program
               (:constructor open-program
-               (command &key (direction :input) (external-format :default) (buffered t) &aux
-                        (process 
-                         (etypecase command
-                           (string (sb-ext:run-program
-                                    "/bin/sh" (list "-c" command)
-                                    :wait nil (ecase direction (:input :output) (:output :input)) :stream
-                                    :external-format external-format))
-                           (list   (sb-ext:run-program
-                                    (first command) (rest command)
-                                    :wait nil (ecase direction (:input :output) (:output :input)) :stream
-                                    :external-format external-format))))
+               (command &key (direction :input) (buffered t) &aux
+                        ; We can currently not choose an :element-type for sb-ext:run-program.
+                        ; It seems that :latin-1 is currently the fastest for ASCII input (but still quite slow).
+                        ; For ASCII output, :utf-8 seems to be actually quite fast.
+                        ; TODO: The input case should use :element-type 'octet when this becomes possible.
+                        (process
+                         (let ((io-keys (ecase direction
+                                          (:input '(:wait nil :output :stream #|:element-type 'octet|# :external-format :latin-1))
+                                          (:output '(:wait nil :input :stream :external-format :utf-8)))))
+                           (etypecase command
+                             (string (apply #'sb-ext:run-program "/bin/sh" (list "-c" command) io-keys))
+                             (list   (apply #'sb-ext:run-program (first command) (rest command) io-keys)))))
                         (stream (ecase direction
                                   (:input (let ((stream (sb-ext:process-output process)))
+                                            ; TODO: drop 'character if :element-type 'octet becomes supported
                                             (if buffered (make-ascii-stream stream 'character) stream)))
                                   (:output (sb-ext:process-input process))))))
               (:copier nil))

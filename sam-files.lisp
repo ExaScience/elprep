@@ -783,9 +783,15 @@
 (defun %open-sam (pathname direction header-only kind)
   "Open a SAM file for :input or :output. If kind is :bam or :cram, use samtools view for input or output.
    Tell samtools view to only return the header for :input when :header-only is true."
+  ;
+  ; In LispWorks, :element-type 'base-char and :external-format :latin-1 is the default.
+  ; This is both fast and fully compatible with all ASCII I/O to and from files and pipes.
+  ;
+  ; In SBCL, we use :element-type 'octet for input files and wrap them with our own ASCII conversion.
+  ; For fast ASCII output, we use :element-type 'base-char and :external-format :utf-8.
+  ; See open-program for details on pipes.
+  ;
   (ecase direction
-    ;; In LispWorks, :latin-1 is the default, fast, and fully compatible with ASCII / base-char.
-    ;; In SBCL, :latin-1 is the fastest for character input. Since we expect only ASCII characters, this is also fine for base-char.
     (:input (cond ((eq kind :sam)
                    #+lispworks
                    (if (check-stdin pathname) *terminal-io*
@@ -794,10 +800,7 @@
                    (make-ascii-stream (open pathname :direction :input :element-type 'octet :if-does-not-exist :error)))
                   (t (open pathname :direction :probe :if-does-not-exist :error)
                      (open-program (list (get-samtools) "view" (if header-only "-H" "-h") "-@" (write-to-string *number-of-threads*)
-                                         (namestring (translate-logical-pathname pathname)))
-                                   :direction :input #+sbcl :external-format #+sbcl :latin-1))))
-    ;; In LispWorks, :latin-1 is the default, fast, and fully compatible with ASCII / base-char.
-    ;; In SBCL, :utf-8 is the fastest for character output. Since we write only ASCII / base-char characters, this is fine.
+                                         (namestring (translate-logical-pathname pathname))) :direction :input))))
     (:output (cond ((eq kind :sam)
                     #+lispworks
                     (if (check-stdout pathname) *terminal-io*
@@ -805,8 +808,7 @@
                     #+sbcl
                     (open pathname :direction :output :element-type 'base-char :external-format :utf-8 :if-exists :supersede))
                    (t (open-program (list (get-samtools) "view" (ecase kind (:bam "-Sb") (:cram "-C")) "-@" (write-to-string *number-of-threads*)
-                                          "-o" (namestring (translate-logical-pathname pathname)) "-")
-                                    :direction :output #+sbcl :external-format #+sbcl :utf-8))))))
+                                          "-o" (namestring (translate-logical-pathname pathname)) "-") :direction :output))))))
 
 (defun sam-file-kind (filename)
   "Determine whether the file is :bam for .bam, :cram for .cram, or :sam in all other cases."
