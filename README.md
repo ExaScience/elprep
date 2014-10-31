@@ -42,11 +42,11 @@ elPrep is released as an open-source project under a BSD 3-Clause License (BSD 2
 
 ## Binaries
 
-You can download a precompiled binary of elPrep [here](https://github.com/ExaScience/elprep/releases) upon accepting the license agreement. This binary was created using the 64-bit LispWorks 6.1 Professional Edition for Linux. 
+You can download a precompiled binary of elPrep [here](https://github.com/ExaScience/elprep/releases) upon accepting the license agreement. This binary was created using the 64-bit LispWorks 6.1.1 Professional Edition for Linux. 
 
 ## GitHub
 
-The elPrep source code is freely available on GitHub. elPrep is implemented in Common Lisp using the LispWorks compiler for Linux.
+The elPrep source code is freely available on GitHub. elPrep is implemented in Common Lisp using the LispWorks compiler for Linux. We have an experimental branch for SBCL, which will merged with the main branch in the next release.
 
 	elPrep GitHub clone URL:
 	
@@ -112,9 +112,11 @@ elPrep is designed to operate in memory, i.e. data is stored in RAM during compu
 
 The in-memory sort and mark duplicates filter require keeping the entire input file in memory, and therefore use an amount of RAM that is proportional to the size of the input file. As a rule of thumb, elPrep requires 6x times more RAM memory than the size of the input file in .sam format when it is used for sorting or marking duplicates. 
 
+elPrep provides a tool for splitting .sam files "per chromosome", and guarantees that processing these split files and then merging the results, is without information loss compared to processing a .sam file as a whole. Using the split/merge tool greatly reduces the RAM required to process a .sam file, but it comes at the cost of an additional processing step. 
+
 For whole-genome sequencing, we recommend a server with at least 256GB RAM and processing the data per chromosome. For exome sequencing, we recommend a server with 256GB of RAM, or processing the data per chromosome on a server with 20GB RAM.
 
-If your machine has less RAM than your input requires, you have a couple of options. One solution is to split up your input file per chromosomal region, which is for example also done to run analyses in a distributed setup. A variety of tools, such as SAMtools, provide commands to split up your input files in this way.
+If your machine has less RAM than your input requires (after splitting), you have a couple of options. One solution is to (further) split up your input file per chromosomal region, which is for example also done to run analyses in a distributed setup. A variety of tools, such as SAMtools, provide commands to split up your input files in this way.
 
 Alternatively, you may configure a disk to extend the swap space of your server. Using swap space may have a penalty on execution time for a job compared to running the same job fully in RAM, but it does not change how elPrep is used. If configuring additional swap space is not an option, you may also run elPrep with the gc execution option. This option triggers more aggressive garbage collection during execution and may save peak memory use, but may significantly slow down execution compared to running fully in memory. See our manual reference pages for more details. 
 
@@ -144,13 +146,13 @@ We have a seperate [GitHub repository](https://github.com/ExaScience/elprep-demo
 
 ## Synopsis
 
-	elprep input.sam output.sam --filter-unmapped-reads --replace-refernce-sequences $gatkdict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --sorting-order coordinate --nr-of-threads $threads
+	elprep input.sam output.sam --filter-unmapped-reads --replace-reference-sequences $gatkdict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --sorting-order coordinate --nr-of-threads $threads
 	
-	elprep input.bam output.bam --filter-unmapped-reads --replace-refernce-sequences $gatkdict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --sorting-order coordinate --nr-of-threads $threads
+	elprep input.bam output.bam --filter-unmapped-reads --replace-reference-sequences $gatkdict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --sorting-order coordinate --nr-of-threads $threads
 	
-	elprep input.cram output.cram --filter-unmapped-reads --replace-refernce-sequences $gatkdict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --sorting-order coordinate --nr-of-threads $threads
+	elprep input.cram output.cram --filter-unmapped-reads --replace-reference-sequences $gatkdict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --sorting-order coordinate --nr-of-threads $threads
 	
-	elprep /dev/stdin /dev/stdout --filter-unmapped-reads --replace-refernce-sequences $gatkdict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --sorting-order coordinate --nr-of-threads $threads
+	elprep /dev/stdin /dev/stdout --filter-unmapped-reads --replace-reference-sequences $gatkdict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --sorting-order coordinate --nr-of-threads $threads
 
 ## Description
 
@@ -290,6 +292,80 @@ There are three options:
 * 2: elPrep performs garbage collection interleaved with the execution at regular intervals. This may reduce peak memory significantly, but may slow down execution considerably.
 
 If the option is not passed explicitly, elPrep assumes —gc-on 0 is intended.
+
+## Split and Merge tools
+
+The elprep split command can be used to split up .sam files into smaller files that store the reads "per chromosome". elPrep determines the "chromosomes" by analyzing sequence dictionary in the header of the input file and generates a split file for each chromosome that stores all read pairs that map to that chromosome. Additonally, elPrep creates a file for storing the unmapped reads, as well as a file for storing the pairs where reads map to different chromosomes. elPrep also duplicates the latter pairs across chromosome files so that preparation pipelines have access to all information they need to run correctly. Once processed, use the elprep merge command to merge the merge the split files back into a single .sam file. 
+
+Splitting the .sam file into smaller files for processing "per chromosome" is useful for reducing the memory pressure as these split files are typically significantly smaller than the  input file as a whole. Splitting also makes it possible to paralellize the processing of a single .sam file by distributing the different split files across different processing nodes.
+
+We provide an example python script "elprep-sfm.py" that illustrates how to use the split and merge commands to process a .sam file. For a detailed description, see below.    
+
+## Name
+
+### elprep split - a commandline tool for splitting .sam/.bam/.cram files per chromosome so they can be processed without information loss
+
+## Synopsis
+
+	elprep split sam-file /path/to/output/ --output-prefix "split-sam-file" --output-type sam --nr-of-threads $threads
+	
+## Description
+
+The elprep split command requires two arguments: the input file and a path to a directory where elPrep can store the split files. The input file can be .sam, .bam, or .cram. It is also possible to use /dev/stdin as the input for using unix pipes. There are no structural requirements on the input file for using elprep split. For example, it is not necessary to sort the input file, nor is it necessary to convert to .bam or index the input file.
+
+elPrep creates the output directory denoted by the output path, unless the directory already exists, in which case elPrep may override the existing files in that directory. Please make sure elPrep has the correct permissions for writing that directory.
+
+By default, the split files will be in the same format as the input file (.sam, .bam, or .cram), but this can be changed using the --ouput-type option.
+
+## Options
+
+### --output-prefix name
+
+The names of the split files created by elprep split are generated by combing a prefix and a chromosome name. The --output-prefix option sets that prefix. For example, if the prefix is "NA12878", and sequence dictionary of the input file contains the chromosomes "chr1", "chr2", and "chr3", and so on, then the names of the split files will be "NA12878-chr1.sam", "NA12878-chr2.sam", "NA12878-chr3.sam", and so on.
+
+If the user does not specify the --output-prefix option, the name of the input file, minus the file extension, is used as a prefix.
+ 
+### --output-type [sam | bam | cram] 
+
+This command option sets the format of the split files. By default, elprep uses the same format as the input file for the split files.
+ 
+### --nr-of-threads number
+
+This command option sets the number of threads that elPrep uses during execution for converting between .bam/.sam formats. The default number of threads is 1. This option is only useful when the input file is in .bam format or when the --output-type of the split files is chosen to be .bam.
+
+## Name 
+
+### elprep merge - a commandline tool for merging .sam/.bam/.cram files created by elprep split
+
+## Synopsis
+
+	elprep merge /path/to/input/ sam-output-file --nr-of-threads $threads
+	
+## Description
+
+The elprep merge command requires two arguments: a path to the files that need to be merged, and an output file. Use this command to merge files created with elprep split. The output file can be .sam, .bam, or .cram. It is also possible to use /dev/stdout as output when using unix pipes for connecting other tools.
+
+## Options
+
+### --nr-of-threads number
+
+This command option sets the number of threads that elPrep uses during execution for converting between .bam/.sam formats. The default number of threads is 1. This option is only useful when the files to be marged are in .bam format or when the output-file is in .bam format.
+
+## Name
+
+### elprep-sfm - a Python script that illustrates the use of elprep split and merge
+
+## Synopsis
+
+	./elprep-sfm.py $input $output --filter-unmapped-reads strict --replace-reference-sequences ucsc.hg19.dict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --sorting-order coordinate --nr-of-threads $threads
+
+## Description
+
+A Python script that combines the elprep split, filter, and merge commands. The script may be used as a drop-in replacement for the elprep filter command, except that:
+	
+	*	 It first calls elprep split to split up the input file per chromosome. The script creates a temp folder in the current working directory for storing the split files created this way.
+	*	 It then calls the elprep filter command for processing the split files one by one.
+	*	 Finally, it calls the elprep merge command to create the output file from the split files.
 
 <!--### --timed
 
