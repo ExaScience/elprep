@@ -167,6 +167,7 @@ Refer to the documentation of run-pipeline as a starting point.")
    #:filter-unmapped-reads
    #:filter-unmapped-reads-strict
    #:filter-duplicate-reads
+   #:filter-optional-reads
    #:add-or-replace-read-group
    #:parse-read-group-from-string
    #:add-pg-line

@@ -75,12 +75,16 @@
 
 ; code for splitting up sam files into chromosomes
 
+(define-symbol-macro optional-data-tag "sr:i:1")
+
 (defun split-file-per-chromosome (input output-path output-prefix output-extension)
   "A function for splitting a sam file into : a file containing all unmapped reads, a file containing all pairs where reads map to different chromosomes, a file per chromosome containing all pairs where the reads map to that chromosome. There are no requirements on the input file for splitting."
   (with-open-stream (in (open-sam input :direction :input))
     (let* ((header (parse-sam-header in))
            (chroms-encountered (make-hash-table :test 'buffer= :hash-function 'buffer-hash :single-thread t))
            (buf-unmapped (make-buffer)))
+      ; tag the header as one created with elPrep split
+      (setf (sam-header-user-tag header :|@sr|) (list "This file was created using elprep slit."))
       ; fill in a file for unmapped reads
       (reinitialize-buffer buf-unmapped)
       (buffer-extend buf-unmapped "*")
@@ -110,9 +114,16 @@
                      (reinitialize-buffer rnext)
                      (read-line-into-buffer in aln-string)
                      (buffer-partition aln-string #\Tab 2 rname 6 rnext)
-                     (let ((file (cond ((or (buffer= buf-= rnext) (buffer= buf-unmapped rname) (buffer= rname rnext)) (gethash rname chroms-encountered))
-                                       (t file-spread-reads))))
-                       (write-buffer aln-string file)))))
+                     (let ((file (gethash rname chroms-encountered)))
+                       (cond ((or (buffer= buf-= rnext) (buffer= buf-unmapped rname) (buffer= rname rnext)) (write-buffer aln-string file))
+                             (t ; the read is part of a pair mapping to two different chromosomes
+                              (write-buffer aln-string file-spread-reads)
+                              ; duplicate the info in the chromosome file so it can be used; mark the read as duplicate info
+                              (setf (buffer-pos aln-string) (- (buffer-pos aln-string) 1)) ; strip newline
+                              (buffer-push aln-string #\Tab)
+                              (buffer-extend aln-string optional-data-tag)
+                              (buffer-push aln-string #\Newline)
+                              (write-buffer aln-string file)))))))
         ; close files
         (close file-spread-reads)
         (loop for file being each hash-value of chroms-encountered do (close file))))))
@@ -130,10 +141,10 @@
   ; when a file is empty, close it and remove it from the list of files to merge
   ; loop for identifying and opening the files to merge
   (let ((files (loop for sn-form in (sam-header-sq header)
-                     collect (let* ((chrom (getf sn-form :SN))
-                                    (file (open-sam (format nil "~a~a-~a~a" input-path input-prefix chrom input-extension) :direction :input)))
-                               (skip-sam-header file)
-                               file)))
+                     append (let* ((chrom (getf sn-form :SN))
+                                    (file-name (format nil "~a~a-~a~a" input-path input-prefix chrom input-extension))
+                                    (file (when (probe-file file-name) (open-sam file-name :direction :input))))
+                              (when file (skip-sam-header file) (list file)))))
         (unmapped-file (open-sam (format nil "~a~a-unmapped~a" input-path input-prefix input-extension) :direction :input))
         (spread-reads-file (open-sam (format nil "~a~a-spread~a" input-path input-prefix input-extension) :direction :input)))
     (skip-sam-header unmapped-file) 
@@ -164,22 +175,23 @@
                   (buffer-partition spread-read #\Tab 2 spread-read-refid 4 spread-read-pos))
                 (read-line-into-buffer file chromosome-read)
                 (buffer-partition chromosome-read #\Tab 2 chromosome-read-refid 4 chromosome-read-pos)
-                (when (buffer= spread-read-refid chromosome-read-refid)
-                  (loop do 
-                        (let ((pos1 (buffer-parse-integer spread-read-pos))
-                              (pos2 (buffer-parse-integer chromosome-read-pos)))
-                          (cond ((< pos1 pos2) 
-                                 (write-buffer spread-read out) 
-                                 (reset-spread-read)
-                                 (read-line-into-buffer spread-reads-file spread-read)
-                                 (buffer-partition spread-read #\Tab 2 spread-read-refid 4 spread-read-pos))
-                                (t
-                                 (write-buffer chromosome-read out)
-                                 (reset-chromosome-read)
-                                 (read-line-into-buffer file chromosome-read)
-                                 (buffer-partition chromosome-read #\Tab 4 chromosome-read-pos))))
-                        until (or (not (buffer= chromosome-read-refid spread-read-refid)) (end-of-file-p (peekc file)))))
-                ; copy remaining reads in the file; is there a faster way to concatenate files?
+                (unless (buffer-emptyp spread-read)
+                  (when (buffer= spread-read-refid chromosome-read-refid)
+                    (loop do 
+                          (let ((pos1 (buffer-parse-integer spread-read-pos))
+                                (pos2 (buffer-parse-integer chromosome-read-pos)))
+                            (cond ((< pos1 pos2) 
+                                   (write-buffer spread-read out) 
+                                   (reset-spread-read)
+                                   (read-line-into-buffer spread-reads-file spread-read)
+                                   (buffer-partition spread-read #\Tab 2 spread-read-refid 4 spread-read-pos))
+                                  (t
+                                   (write-buffer chromosome-read out)
+                                   (reset-chromosome-read)
+                                   (read-line-into-buffer file chromosome-read)
+                                   (buffer-partition chromosome-read #\Tab 4 chromosome-read-pos))))
+                          until (or (not (buffer= chromosome-read-refid spread-read-refid)) (end-of-file-p (peekc file))))))
+                  ; copy remaining reads in the file
                 (when (not (buffer-emptyp chromosome-read)) (write-buffer chromosome-read out) (reinitialize-buffer chromosome-read))
                 (loop until (end-of-file-p (peekc file))
                       do 

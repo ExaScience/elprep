@@ -64,6 +64,15 @@
       (declare (sam-alignment alignment) #.*optimization*)
       (= 0 (logand (sam-alignment-flag alignment) +duplicate+)))))
 
+(defun filter-optional-reads (header)
+  "A filter for removing sam-alignment instances that represent optional information in elPrep."
+  (when (sam-header-user-tag header :|@sr|)
+    (remf (sam-header-user-tags header) :|@sr|)
+    (lambda ()
+      (lambda (alignment)
+        (declare (sam-alignment alignment) #.*optimization*)
+        (not (sam-alignment-tag alignment :|sr|))))))
+           
 (defun add-or-replace-read-group (read-group)
   "A filter for adding or replacing the read group both in sam-header and each sam-alignment."
   (lambda (header)

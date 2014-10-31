@@ -221,7 +221,7 @@
   (declare (fixnum threads) #.*fixnum-optimization*)
   (loop repeat threads
         for mailbox = (mp:make-mailbox)
-        for process = (mp:process-run-function name () filter-process mailbox)
+        for process = (process-run name filter-process mailbox)
         collect mailbox into mailboxes
         collect process into processes
         finally (unwind-protect
@@ -294,8 +294,8 @@
      (let* ((head (cons nil nil))
             (tail head)
             (mailbox (mp:make-mailbox))
-            (process (mp:process-run-function
-                      "in-memory output process" ()
+            (process (process-run
+                      "in-memory output process"
                       (lambda ()
                         (setf (sam-header output) header)
                         (with-chunk-output (chunk) (mailbox (not (eq sorting-order :unsorted)))
@@ -311,8 +311,8 @@
     ((:coordinate :queryname)
      (let* ((tree    (make-simple-tree 16))
             (mailbox (mp:make-mailbox))
-            (process (mp:process-run-function
-                      "in-memory output process with sorting" ()
+            (process (process-run
+                      "in-memory output process with sorting"
                       (lambda ()
                         (setf (sam-header output) header)
                         (with-chunk-output (chunk) (mailbox nil)
@@ -335,8 +335,8 @@
 (defmethod get-output-functions ((output pathname) header &key (sorting-order :keep))
   (check-file-sorting-order sorting-order)
   (let* ((mailbox (mp:make-mailbox))
-         (process (mp:process-run-function
-                   "file output process" ()
+         (process (process-run
+                   "file output process"
                    (lambda ()
                      (with-open-stream (out (open-sam output :direction :output))
                        (format-sam-header out header)
@@ -359,8 +359,8 @@
   (check-file-sorting-order sorting-order)
   (let ((mailbox (mp:make-mailbox))
         (outbox  (mp:make-mailbox)))
-    (mp:process-run-function
-     "temporary file output process" ()
+    (process-run
+     "temporary file output process"
      (lambda ()
        (multiple-value-bind
            (out pathname)

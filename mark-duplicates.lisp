@@ -234,7 +234,7 @@
           (t ; the aln is a true pair object, there may be a true fragment stored in the hash table which we then need to mark and swap out
            (loop for best-aln = (handle-object best)
                  until (cond ((true-pair-p best-aln) t) ; stop, the best in the hash tab is a pair, this is marked via mark-duplicates
-                             ((sys:compare-and-swap (handle-object best) best-aln aln)
+                             ((sys:compare-and-swap (handle-object best) best-aln aln)                              
                               (mark-as-duplicate best-aln) t)))))))
 
 (defun sam-alignment-pair= (aln1 aln2)
@@ -370,7 +370,13 @@
                                           (return-from classify-pair)))))))))))
         (declare (dynamic-extent keypair pairkey))
         (loop for best-pair = (handle-object best)
-              until (cond ((>= (pair-score best-pair) score)
+              until (cond #|((= (pair-score best-pair) score) ; code for correctness checks
+                           (cond ((string> (sam-alignment-qname aln1) (sam-alignment-qname (pair-aln1 best-pair)))
+                                  (mark-as-duplicate aln1) (mark-as-duplicate aln2) t)
+                                 ((sys:compare-and-swap (handle-object best) best-pair
+                                                        (or entry (setq entry (make-pair score aln1 aln2))))
+                                  (mark-as-duplicate (pair-aln1 best-pair)) (mark-as-duplicate (pair-aln2 best-pair)) t)))|#
+                          ((>= (pair-score best-pair) score)
                            (mark-as-duplicate aln1)
                            (mark-as-duplicate aln2) t)
                           ((sys:compare-and-swap (handle-object best) best-pair

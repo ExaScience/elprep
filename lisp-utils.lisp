@@ -315,3 +315,12 @@
               (when (< index limit)
                 (stream-write-sequence output buffer index limit)))
          while (stream-fill-buffer input))))
+
+(defun elprep-debugger-hook (condition hook)
+  (declare (ignore hook))
+  (dbg:log-bug-form (format nil "An error occurred in elPrep: ~A" condition) :message-stream t)
+  (lw:quit :status -1 :confirm nil :ignore-errors-p t))
+
+(defun process-run (name function &rest arguments)
+  (declare (dynamic-extent arguments))
+  (apply #'mp:process-run-function name '() function arguments))

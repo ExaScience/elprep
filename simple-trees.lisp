@@ -91,7 +91,7 @@
                  (declare (simple-vector vector) (fixnum start end))
                  (let ((length (- end start)))
                    (declare (fixnum length))
-                   (cond ((= length 0))
+                   (cond ((= length 0) '())
                          ((= length 1)
                           (funcall map (svref vector start)))
                          (t (let* ((half (ash length -1))
