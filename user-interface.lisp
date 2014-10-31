@@ -51,7 +51,7 @@
 (defvar *program-url* "http://github.com/exascience/elprep"
   "URL for more information about elprep.")
 
-(defvar *program-help* "sam-file sam-output-file ~% [--replace-reference-sequences sam-file] ~% [--filter-unmapped-reads [strict]] ~% [--replace-read-group read-group-string]~% [--mark-duplicates [remove]] ~% [--sorting-order [keep | unknown | unsorted | queryname | coordinate]] ~% [--clean-sam] ~% [--nr-of-threads nr] ~% [--gc-on [0 | 1 | 2]] ~% [--timed] ~% [--reference-t fai-file] ~% [--reference-T fasta-file] ~% [--split] ~%"
+(defvar *program-help* "sam-file sam-output-file ~% [--replace-reference-sequences sam-file] ~% [--filter-unmapped-reads [strict]] ~% [--replace-read-group read-group-string]~% [--mark-duplicates [remove]] ~% [--sorting-order [keep | unknown | unsorted | queryname | coordinate]] ~% [--clean-sam] ~% [--nr-of-threads nr] ~% [--gc-on [0 | 1 | 2]] ~% [--timed] ~% [--reference-t fai-file] ~% [--reference-T fasta-file] ~%"
   "Help string for the elprep-script binary.")
 
 (defun elprep-filter-script ()
