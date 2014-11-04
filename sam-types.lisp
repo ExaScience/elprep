@@ -1,6 +1,8 @@
 (in-package :elprep)
 
 (deftype int32 () '(signed-byte 32))
+(deftype uint16 () '(unsigned-byte 16))
+(deftype uint8 () '(unsigned-byte 8))
 
 (defvar *sam-file-format-version* "1.4"
   "The SAM file format version string supported by this library.
@@ -94,10 +96,10 @@
    Accessor sam-alignment-xtags of type property list refers to additional optional fields not stored in SAM files, but reserved for other storage formats.
    Accessor sam-alignment-temps of type property list refers to additional optional fields not stored in any storage format, but reserved for temporary values in filters."
   (qname   "" :type simple-base-string)
-  (flag    0  :type fixnum)
+  (flag    0  :type uint16)
   (rname   "" :type simple-base-string)
   (pos     0  :type int32)
-  (mapq    0  :type fixnum)
+  (mapq    0  :type uint8)
   (cigar   "" :type simple-base-string)
   (rnext   "" :type simple-base-string)
   (pnext   0  :type int32)
