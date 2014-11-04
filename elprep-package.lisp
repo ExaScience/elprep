@@ -9,15 +9,25 @@ Refer to the documentation of run-pipeline as a starting point.")
   (:use 
    #:cl-date-time-parser
    #:common-lisp
-   #:stream 
+   #+lispworks #:stream
    #:string-case)
-  (:import-from #:lispworks 
-   #:current-pathname #:nconcf #:sbchar #:string-append #:if-let #:when-let)
+  (:shadow #:byte #:make-hash-table)
+  #+lispworks
+  (:import-from #:hcl #:get-working-directory #:modify-hash #:with-hash-table-locked)
+  #+lispworks
+  (:import-from #:mp #:mailbox #:make-mailbox #:mailbox-send #:mailbox-read #:process-join)
+  #+lispworks
+  (:import-from #:sys #:compare-and-swap)
+  #+sbcl
+  (:import-from #:sb-concurrency #:mailbox)
+  #+sbcl
+  (:import-from #:sb-ext #:compare-and-swap)
   (:export 
+   #:*number-of-threads*
 
    ;; sam-types
 
-   #:int32
+   #:octet #:uint16 #:int32
 
    #:*sam-file-format-version*
 
@@ -97,6 +107,8 @@ Refer to the documentation of run-pipeline as a starting point.")
 
    ;; sam-files
 
+   #:make-scanner
+
    #:scan-string
    #:scan-stringn
    #:scan-integer
@@ -132,17 +144,21 @@ Refer to the documentation of run-pipeline as a starting point.")
 
    #:format-sam
 
+   #:setup-standard-streams
+
    #:get-samtools
    #:sam-file-kind
    #:open-sam
    #:open-temporary-sam
+   #:close-sam
+   #:sam-stream
+   #:invoke-with-open-sam #:with-open-sam
 
    #:*reference-fasta*
    #:*reference-fai*
 
    ;; filter-pipeline
 
-   #:*number-of-threads*
    #:+default-chunk-size+
 
    #:run-pipeline
@@ -195,4 +211,8 @@ Refer to the documentation of run-pipeline as a starting point.")
    #:read-line-into-buffer
    #:write-buffer
    #:buffer-parse-integer
+
+   ;; utils
+
+   #:explain-flag
 ))

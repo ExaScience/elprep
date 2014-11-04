@@ -12,7 +12,7 @@
 (declaim (inline reinitialize-buffer))
 
 (defun reinitialize-buffer (buf)
-  (declare (buffer buf) #.*fixnum-optimization*)
+  (declare (buffer buf) #.*optimization*)
   (setf (buffer-pos buf) 0)
   (setf (buffer-hash-value buf) -1)
   buf)
@@ -20,30 +20,31 @@
 (declaim (inline buffer-emptyp))
 
 (defun buffer-emptyp (buf)
-  (declare (buffer buf) #.*fixnum-optimization*)
+  (declare (buffer buf) #.*optimization*)
   (= (buffer-pos buf) 0))
 
 (defun ensure-str (buf old-str n)
   "internal"
-  (declare (buffer buf) (simple-vector old-str) (fixnum n) #.*fixnum-optimization*)
-  (let ((new-str (make-array n :single-thread t)))
+  (declare (buffer buf) (simple-vector old-str) (fixnum n) #.*optimization*)
+  (let ((new-str (make-array n #+lispworks :single-thread #+lispworks t)))
     (declare (simple-vector new-str))
     (loop for i of-type fixnum below (length old-str)
           do (setf (svref new-str i) (svref old-str i)))
     (loop for i of-type fixnum from (length old-str) below (length new-str)
           do (setf (svref new-str i)
-                   (make-array +buffer-chunk-size+ :element-type 'base-char :single-thread t)))
+                   (make-array +buffer-chunk-size+ :element-type 'base-char
+                               #+lispworks :single-thread #+lispworks t)))
     (setf (buffer-str buf) new-str)))
 
 (declaim (inline ensure-chunk))
 
 (defun ensure-chunk (buf hi)
   "internal"
-  (declare (buffer buf) (fixnum hi) #.*fixnum-optimization*)
+  (declare (buffer buf) (fixnum hi) #.*optimization*)
   (let ((str (buffer-str buf)))
     (declare (simple-vector str))
     (svref (if (< hi (length str)) str
-             (ensure-str buf str (1+ hi))) hi)))
+             (ensure-str buf str (the fixnum (1+ hi)))) hi)))
 
 (defmethod print-object ((buf buffer) stream)
   "internal"
@@ -56,15 +57,15 @@
 
 (defun buffer-push (buf char)
   "add a character to a buffer"
-  (declare (buffer buf) (base-char char) #.*fixnum-optimization*)
+  (declare (buffer buf) (base-char char) #.*optimization*)
   (let ((pos (buffer-pos buf)))
-    (declare (fixnum width pos))
+    (declare (fixnum pos))
     (multiple-value-bind (hi lo) (floor pos +buffer-chunk-size+)
       (declare (fixnum hi lo))
       (let ((chunk (ensure-chunk buf hi)))
         (declare (simple-base-string chunk))
         (setf (schar chunk lo) char)
-        (setf (buffer-pos buf) (1+ pos))))))
+        (setf (buffer-pos buf) (the fixnum (1+ pos)))))))
 
 (declaim (notinline buffer-push))
 
@@ -73,14 +74,13 @@
 (defun slow-buffer-extend (buf pos hi lo chunk string start end length)
   "internal"
   (declare (buffer buf) (fixnum pos hi lo) (simple-base-string chunk)
-           (simple-base-string string) (fixnum start end length)
-           #.*fixnum-optimization*)
+           (simple-base-string string) (fixnum start end length) #.*optimization*)
   (loop with source of-type fixnum = start do
         (loop for target of-type fixnum from lo below +buffer-chunk-size+ do
               (setf (schar chunk target)
                     (schar string source))
               (when (= (incf source) end)
-                (setf (buffer-pos buf) (+ pos length))
+                (setf (buffer-pos buf) (the fixnum (+ pos length)))
                 (return-from slow-buffer-extend)))
         (incf hi) (setq lo 0)
         (setq chunk (ensure-chunk buf hi))))
@@ -89,23 +89,22 @@
 
 (defun buffer-extend (buf string &optional (start 0) end)
   "add a string to a buffer"
-  (declare (buffer buf) (simple-base-string string) (fixnum start)
-           #.*fixnum-optimization*)
+  (declare (buffer buf) (simple-base-string string) (fixnum start) #.*optimization*)
   (let* ((end (or end (length string)))
-         (length (- end start))
+         (length (the fixnum (- end start)))
          (pos (buffer-pos buf)))
     (declare (fixnum end length pos))
     (multiple-value-bind (hi lo) (floor pos +buffer-chunk-size+)
       (declare (fixnum hi lo))
       (let ((chunk (ensure-chunk buf hi)))
         (declare (simple-base-string chunk))
-        (if (<= (+ lo length) +buffer-chunk-size+)
+        (if (<= (the fixnum (+ lo length)) +buffer-chunk-size+)
           (loop for i of-type fixnum from start below end
                 for j of-type fixnum from lo do
                 (setf (schar chunk j)
                       (schar string i))
                 finally
-                (setf (buffer-pos buf) (+ pos length))
+                (setf (buffer-pos buf) (the fixnum (+ pos length)))
                 (return (values)))
           (slow-buffer-extend buf pos hi lo chunk string start end length))))))
 
@@ -113,34 +112,61 @@
 
 (defun write-buffer (buf stream)
   "write a buffer to a stream"
-  (declare (buffer buf) (stream:buffered-stream stream)
-           #.*fixnum-optimization*)
+  (declare (buffer buf) (stream stream) #.*optimization*)
   (let ((pos (buffer-pos buf))
         (str (buffer-str buf)))
     (declare (fixnum pos) (simple-vector str))
     (multiple-value-bind (hi lo) (floor pos +buffer-chunk-size+)
       (declare (fixnum hi lo))
-      (loop for i of-type fixnum below hi
-            do (stream:stream-write-string stream (svref str i) 0 +buffer-chunk-size+)) ; buffer
-      (when (> lo 0) (stream:stream-write-string stream (svref str hi) 0 lo)))) ; buffer
+      (loop for i of-type fixnum below hi do
+            #+lispworks (stream-write-string stream (svref str i) 0 +buffer-chunk-size+)
+            #+sbcl (write-string (svref str i) stream :end +buffer-chunk-size+))
+      (when (> lo 0)
+        #+lispworks (stream-write-string stream (svref str hi) 0 lo)
+        #+sbcl (write-string (svref str hi) stream :end lo))))
   (values))
 
+#+lispworks
 (defun read-line-into-buffer (stream buf)
   "read a line into a buffer"
-  (declare (stream:buffered-stream stream) (buffer buf)
-           #.*fixnum-optimization*)
+  (declare (buffered-stream stream) (buffer buf) #.*fixnum-optimization*)
   (loop (stream:with-stream-input-buffer (buffer index limit) stream
           (declare (simple-base-string buffer) (fixnum index limit))
           (loop for i of-type fixnum from index below limit do
                 (when (char= (schar buffer i) #\Newline)
-                  (buffer-extend buf buffer index (1+ i)) ;make sure to include the newline
-                  (setq index (1+ i))
-                  (return-from read-line-into-buffer buf))
+                  (let ((new-index (1+ i))) ;make sure to include the newline
+                    (declare (fixnum new-index))
+                    (buffer-extend buf buffer index new-index)
+                    (setq index new-index)
+                    (return-from read-line-into-buffer buf)))
                 finally
                 (buffer-extend buf buffer index limit)
                 (setq index limit)))
         (unless (stream:stream-fill-buffer stream)
           (return-from read-line-into-buffer buf))))
+
+#+sbcl
+(defun read-line-into-buffer (stream buf)
+  "read a line into a buffer"
+  (declare (ascii-stream stream) (buffer buf) #.*optimization*)
+  (let ((buffer (ascii-stream-buffer stream)))
+    (declare (ascii-stream-buffer buffer))
+    (with-buffer-dispatch buffer
+      (loop (let ((index (ascii-stream-index stream))
+                  (limit (ascii-stream-limit stream)))
+              (declare (fixnum index limit))
+              (loop for i of-type fixnum from index below limit do
+                    (when (char= (bchar buffer i) #\Newline)
+                      (let ((new-index (the fixnum (1+ i)))) ;make sure to include the newline
+                        (declare (fixnum new-index))
+                        (buffer-extend buf buffer index new-index)
+                        (setf (ascii-stream-index stream) new-index)
+                        (return-from read-line-into-buffer buf)))
+                    finally
+                    (buffer-extend buf buffer index limit)
+                    (setf (ascii-stream-index stream) limit)))
+            (unless (ascii-stream-fill-buffer stream)
+              (return-from read-line-into-buffer buf))))))
 
 (defun buffer-partition (buf separator &rest targets)
   "get substrings from a buffer and feed them to target buffers;
@@ -148,8 +174,7 @@
    targets is a property list with numbers as keys and buffers as values;
    the targets need to be sorted by key;
    for example (buffer-partition buf #\Tab 3 buf1 6 buf2)"
-  (declare (buffer buf) (base-char separator) (dynamic-extent targets) ;
-           #.*fixnum-optimization*)
+  (declare (buffer buf) (base-char separator) (dynamic-extent targets) #.*optimization*)
   (let ((current-target 0))
     (declare (fixnum current-target))
     (flet ((get-target-buf ()
@@ -157,7 +182,7 @@
                (when (= current-target (the fixnum (car targets)))
                  (pop targets)
                  (pop targets))
-               (return-from buffer-partition))))
+               (return-from buffer-partition (values)))))
       (declare (inline get-target-buf))
       (let ((target-buf (get-target-buf)))
         (declare ((or buffer null) target-buf))
@@ -178,7 +203,7 @@
                             (when target-buf
                               (buffer-extend target-buf chunk start end))
                             (next-target)
-                            (setq start (+ end 1)))
+                            (setq start (the fixnum (1+ end))))
                           finally
                           (when target-buf
                             (buffer-extend target-buf chunk start +buffer-chunk-size+))))
@@ -190,7 +215,7 @@
                         (when target-buf
                           (buffer-extend target-buf chunk start end))
                         (next-target)
-                        (setq start (+ end 1)))
+                        (setq start (the fixnum (1+ end))))
                       finally
                       (when target-buf
                         (buffer-extend target-buf chunk start lo))))))))))
@@ -198,13 +223,14 @@
 
 (defun buffer-string (buf)
   "turn a buffer into a string representation; only for debugging"
-  (declare (buffer buf) #.*fixnum-optimization*)
+  (declare (buffer buf) #.*optimization*)
   (let ((pos (buffer-pos buf))
         (str (buffer-str buf)))
     (declare (fixnum pos) (simple-vector str))
     (multiple-value-bind (hi lo) (floor pos +buffer-chunk-size+)
       (declare (fixnum hi lo))
-      (let ((result (make-array pos :element-type 'base-char :single-thread t))
+      (let ((result (make-array pos :element-type 'base-char
+                                #+lispworks :single-thread #+lispworks t))
             (target -1))
         (declare (simple-base-string result) (fixnum target))
         (loop for i of-type fixnum below hi
@@ -221,7 +247,7 @@
 
 (defun buffer= (buf1 buf2)
   "compare the contents of two buffers"
-  (declare (buffer buf1 buf2) #.*fixnum-optimization*)
+  (declare (buffer buf1 buf2) #.*optimization*)
   (or (eq buf1 buf2)
       (let ((pos1 (buffer-pos buf1))
             (str1 (buffer-str buf1))
@@ -294,13 +320,13 @@
 
 (defun rotate-1 (n)
   "internal"
-  (declare (fixnum n) #.*fixnum-optimization*)
-  (logior (ash n -1) (ash (logand n 1) #.(1- (integer-length most-positive-fixnum)))))
+  (declare (fixnum n) #.*optimization*)
+  (the fixnum (logior (ash n -1) (the fixnum (ash (logand n 1) #.(1- (integer-length most-positive-fixnum)))))))
 
 (defun buffer-hash (buf)
   "get the hash code for a buffer; once a hash code is computed, the buffer shouldn't change anymore!
    can be used for hash tables, like in (make-hash-table :test #'buffer= :hash-function #'buffer-hash)"
-  (declare (buffer buf) #.*fixnum-optimization*)
+  (declare (buffer buf) #.*optimization*)
   (let ((pos (buffer-pos buf))
         (str (buffer-str buf))
         (hash (buffer-hash-value buf)))

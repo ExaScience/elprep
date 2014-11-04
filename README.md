@@ -6,22 +6,22 @@ elPrep is designed as an in-memory and multi-threaded application to fully take 
 
 The main advantage of elPrep is very fast execution times on high-end backend servers, as is available for example through Amazon cloud computing services or custom server setups. We do not recommend using elPrep on laptops, desktops, or low-end servers. Please consult the system requirements below for more details.
 
-The table below shows the execution time of the preparation phases in a whole-genome-sequencing pipeline for NA12878 on a 4x10-core Intel Xeon E7-4870 server with 512GB RAM. The sam file is split up and processed per chromosome. The preparation phases in this example include filtering unmapped reads, sorting for coordinate order, marking duplicates, adding read group information, and reordering the reference sequence dictionary for GATK. 
+The table below shows the execution time of the preparation phases in a whole-genome-sequencing pipeline for NA12878 on a 4x10-core Intel Xeon E7-4870 server with 512GB RAM. The sam file is split up and processed per chromosome. The preparation phases in this example include filtering unmapped reads, sorting for coordinate order, marking duplicates, adding read group information, and reordering the reference sequence dictionary for GATK.
 
 The table shows that the preparation phase with elPrep is 25x faster than with SAMtools and Picard. The output of elPrep is 100% equivalent to output produced by SAMtools and Picard.
 
 	Preparation of NA12878 on one 4x10-core Intel Xeon E7-4870 server
-	
-							Number of Threads	Execution Time	
-		SAMtools/Picard					   40	   29h 44m 55s				
+
+							Number of Threads	Execution Time
+		SAMtools/Picard					   40	   29h 44m 55s
 		elPrep							   40	    1h 11m 38s
 
 We also excuted the same pipeline on a 2x8-core hyperthreaded Intel Xeon E5-2680 server with 256GB RAM. On this configuration, elPrep is 10.5 times faster than SAMtools and Picard.
 
 	Preparation of NA12878 on one 2x8-core hyperthreaded Intel Xeon E5-2680 server
-	
-							Number of Threads	Execution Time	
-		SAMtools/Picard					   32	   19h 19m 29s				
+
+							Number of Threads	Execution Time
+		SAMtools/Picard					   32	   19h 19m 29s
 		elPrep							   32	    1h 54m 51s
 
 elPrep is being developed at the [ExaScience Life Lab](http://www.exascience.com), a collaboration between Imec, Intel, and Janssen Pharmaceutica.
@@ -31,32 +31,32 @@ elPrep is being developed at the [ExaScience Life Lab](http://www.exascience.com
 The advantages of elPrep include:
 
 * efficient multi-threaded execution
-* operates completely in-memory, no intermediate files are generated 
+* operates completely in-memory, no intermediate files are generated
 * 100% equivalent output to output produced by SAMtools and Picard for overlapping functionality
 * compatible with existing tools such as GATK, SAMtools, and Picard
 * modular implementation
 
-# Availability 
+# Availability
 
 elPrep is released as an open-source project under a BSD 3-Clause License (BSD 2.0). We also provide a download of a precompiled binary to which a specific license applies.
 
 ## Binaries
 
-You can download a precompiled binary of elPrep [here](https://github.com/ExaScience/elprep/releases) upon accepting the license agreement. This binary was created using the 64-bit LispWorks 6.1.1 Professional Edition for Linux. 
+You can download a precompiled binary of elPrep [here](https://github.com/ExaScience/elprep/releases) upon accepting the license agreement. This binary was created using the 64-bit LispWorks 6.1.1 Professional Edition for Linux.
 
 ## GitHub
 
-The elPrep source code is freely available on GitHub. elPrep is implemented in Common Lisp using the LispWorks compiler for Linux. We have an experimental branch for SBCL, which will merged with the main branch in the next release.
+The elPrep source code is freely available on GitHub. elPrep is implemented in Common Lisp using the LispWorks compiler for Linux.
 
 	elPrep GitHub clone URL:
-	
+
 		https://github.com/ExaScience/elprep.git
 
 ## Dependencies
 
 elPrep works with the .sam, .bam, and .cram formats as input/output. To use .bam or .cram, SAMtools must be installed in addition to the elPrep binary:
 
-	
+
 		http://www.htslib.org
 
 The .cram format is only supported for samtools-1.0 and up.
@@ -64,14 +64,14 @@ The .cram format is only supported for samtools-1.0 and up.
 The elPrep implementation depends on the Claws and cl-date-time-parser libraries:
 
 	Claws GitHub clone URL:
-	
+
 		https://github.com/pcostanza/claws.git
-		
+
 	cl-date-time-parser GitHub clone URL:
-	
+
 		https://github.com/ExaScience/cl-date-time-parser
 
-The elPrep implementation also depends on the string-case library which is available through the [quicklisp](http://www.quicklisp.org) package manager. 
+The elPrep implementation also depends on the string-case library which is available through the [quicklisp](http://www.quicklisp.org) package manager.
 
 Installing these libraries is only necessary if you wish to build elPrep yourself. It is not necessary to use the elPrep binary we provide above.
 
@@ -80,12 +80,26 @@ Installing these libraries is only necessary if you wish to build elPrep yoursel
 A build script is provided with the source code if you wish to build elPrep yourself.
 
 	Building elPrep using LispWorks:
-	
+
 		lispworks -build save-elprep-script.lisp
 
-Please ensure that the elPrep repository and its dependencies are visible to the asdf path of your LispWorks compiler.
+	Building elPrep using SBCL:
 
-## Compatibility 
+		sbcl --script save-elprep-script.lisp
+
+Please ensure that the elPrep repository and its dependencies are visible to the asdf path of your LispWorks or SBCL compiler.
+
+### SBCL-specific notes
+
+Data sets in sequencing pipelines can become very large. Therefore you may need to tweak the default heap size of SBCL to be able to use an SBCL-based version of elPrep.
+
+Specifically, you may need to increase the value of \*backend-page-bytes\* before building SBCL itself. In the source distribution of SBCL, you can edit this variable in the file src/compiler/target/backend-parms.lisp, where target is the platform where you want to run elPrep, so for example in src/compiler/x86-64/backend-parms.lisp.
+
+You may also need to specify a larger dynamic space size when building elPrep. You can do this by building elPrep as follows:
+
+	 	sbcl --dynamic-space-size NNNNNN --script save-elprep-script.lisp
+
+## Compatibility
 
 The output of elPrep is compatible (as input) with:
 
@@ -110,25 +124,25 @@ elPrep has been developed for Linux and has not been tested for other operating 
 
 elPrep is designed to operate in memory, i.e. data is stored in RAM during computation. As long as you do not use the in-memory sort or mark duplicates filter, elPrep operates as a streaming tool, and peak memory use is limited to a few GB.
 
-The in-memory sort and mark duplicates filter require keeping the entire input file in memory, and therefore use an amount of RAM that is proportional to the size of the input file. As a rule of thumb, elPrep requires 6x times more RAM memory than the size of the input file in .sam format when it is used for sorting or marking duplicates. 
+The in-memory sort and mark duplicates filter require keeping the entire input file in memory, and therefore use an amount of RAM that is proportional to the size of the input file. As a rule of thumb, elPrep requires 6x times more RAM memory than the size of the input file in .sam format when it is used for sorting or marking duplicates.
 
-elPrep provides a tool for splitting .sam files "per chromosome", and guarantees that processing these split files and then merging the results, is without information loss compared to processing a .sam file as a whole. Using the split/merge tool greatly reduces the RAM required to process a .sam file, but it comes at the cost of an additional processing step. 
+elPrep provides a tool for splitting .sam files "per chromosome", and guarantees that processing these split files and then merging the results, is without information loss compared to processing a .sam file as a whole. Using the split/merge tool greatly reduces the RAM required to process a .sam file, but it comes at the cost of an additional processing step.
 
 For whole-genome sequencing, we recommend a server with at least 256GB RAM and processing the data per chromosome. For exome sequencing, we recommend a server with 256GB of RAM, or processing the data per chromosome on a server with 20GB RAM.
 
 If your machine has less RAM than your input requires (after splitting), you have a couple of options. One solution is to (further) split up your input file per chromosomal region, which is for example also done to run analyses in a distributed setup. A variety of tools, such as SAMtools, provide commands to split up your input files in this way.
 
-Alternatively, you may configure a disk to extend the swap space of your server. Using swap space may have a penalty on execution time for a job compared to running the same job fully in RAM, but it does not change how elPrep is used. If configuring additional swap space is not an option, you may also run elPrep with the gc execution option. This option triggers more aggressive garbage collection during execution and may save peak memory use, but may significantly slow down execution compared to running fully in memory. See our manual reference pages for more details. 
+Alternatively, you may configure a disk to extend the swap space of your server. Using swap space may have a penalty on execution time for a job compared to running the same job fully in RAM, but it does not change how elPrep is used. If configuring additional swap space is not an option, you may also run elPrep with the gc execution option. This option triggers more aggressive garbage collection during execution and may save peak memory use, but may significantly slow down execution compared to running fully in memory. See our manual reference pages for more details.
 
 ## Disk Space
 
-elPrep does not write any intermediate files, and therefore does not require additional (peek) disk space beyond what is needed for storing the input and output files.  
+elPrep does not write any intermediate files, and therefore does not require additional (peek) disk space beyond what is needed for storing the input and output files.
 
 # Mailing List
 
 Use the Google [forum](https://groups.google.com/d/forum/elprep) for discussions. You need a Google account to subscribe through the forum URL. You can also subscribe without a Google account by sending an email to elprep+subscribe@googlegroups.com.
 
-# Citing elPrep  
+# Citing elPrep
 
 As of today, there is no publication on elPrep yet. Please cite the ExaScience Life Lab with a link to the GitHub repository:
 
@@ -147,18 +161,18 @@ We have a seperate [GitHub repository](https://github.com/ExaScience/elprep-demo
 ## Synopsis
 
 	elprep input.sam output.sam --filter-unmapped-reads --replace-reference-sequences $gatkdict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --sorting-order coordinate --nr-of-threads $threads
-	
+
 	elprep input.bam output.bam --filter-unmapped-reads --replace-reference-sequences $gatkdict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --sorting-order coordinate --nr-of-threads $threads
-	
+
 	elprep input.cram output.cram --filter-unmapped-reads --replace-reference-sequences $gatkdict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --sorting-order coordinate --nr-of-threads $threads
-	
+
 	elprep /dev/stdin /dev/stdout --filter-unmapped-reads --replace-reference-sequences $gatkdict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --sorting-order coordinate --nr-of-threads $threads
 
 ## Description
 
 The elprep command requires two arguments: the input file and the output file. The input/output format can be .sam, .bam. or .cram. To use .bam or .cram, SAMtools must be installed. elPrep determines the format by looking at the file extension. elPrep also allows to use /dev/stdin and /dev/stdout as respective input or output sources for using unix pipes. When doing so, elPrep assumes the input and output are in .sam format.
 
-The elprep commandline tool has three types of command options: filters, which implement actual .sam/.bam/.cram manipulations, sorting options, and execution-related options, for example for setting the number of threads. For optimal performance, issue a single elprep call that combines all filters you wish to apply. 
+The elprep commandline tool has three types of command options: filters, which implement actual .sam/.bam/.cram manipulations, sorting options, and execution-related options, for example for setting the number of threads. For optimal performance, issue a single elprep call that combines all filters you wish to apply.
 
 The order in which command options are passed is ignored. For optimal performance, elPrep always applies filters in the following order:
 
@@ -174,7 +188,7 @@ Sorting is done after filtering.
 
 elPrep is compatible with unix pipes and allows using /dev/stdin and /dev/stdout as input or output sources. elPrep assumes that input and output on /dev/stdin and /dev/stdout are in .sam format.
 
-### Using .bam or .cram 
+### Using .bam or .cram
 
 elPrep uses SAMtools for compression and decompression of .bam and .cram files. When the user specifies the input or ouput to be in .bam or .cram, a call to SAMtools is generated to compress or decompress the data. The SAMtools and elPrep commands are connected via unix pipes to avoid generating intermediate files.
 
@@ -204,7 +218,7 @@ The actual command that is executed is the following:
 
 	 elprep input.sam /dev/stdout | samtools view -C -T ucsc.hg19.fasta -o output.cram /dev/stdin
 
-elPrep may pass additional options to the SAMtools command shown above. 
+elPrep may pass additional options to the SAMtools command shown above.
 
 See the [SAMtools manual](http://www.htslib.org/man/samtools/) for more documentation on .cram conversion and the "-T" option to the view command in particular.
 
@@ -224,15 +238,15 @@ elPrep may pass additional options to the SAMtools command shown above.
 
 See the [SAMtools manual](http://www.htslib.org/man/samtools/) for more documentation on .cram conversion and the "-t" option to the view command in particular.
 
-## Filter Command Options  
+## Filter Command Options
 
 ### --replace-reference-sequences file
 
-This filter is used for replacing the header of a .sam/.bam/.cram file by a new header. The new header is passed as a single argument following the command option. The format of the new header can either be a .dict file, for example ucsc.hg19.dict from the GATK bundle, or another .sam/.bam/.cram file from which you wish to extract the new header. 
+This filter is used for replacing the header of a .sam/.bam/.cram file by a new header. The new header is passed as a single argument following the command option. The format of the new header can either be a .dict file, for example ucsc.hg19.dict from the GATK bundle, or another .sam/.bam/.cram file from which you wish to extract the new header.
 
 All alignments in the input file that do not map to a chromosome that is present in the new header are removed. Therefore, there should be some overlap between the old and the new header for this command option to be meaningful. The option is typically used to reorder the reference sequence dictionary in the header, for example to reflect the order required by GATK.
 
-Replacing the header of a .sam/.bam/.cram file may destroy the sorting order of the file. In this case, the sorting order in the header is set to "unknown" by elPrep in the output file (cf. the 'so' tag). 
+Replacing the header of a .sam/.bam/.cram file may destroy the sorting order of the file. In this case, the sorting order in the header is set to "unknown" by elPrep in the output file (cf. the 'so' tag).
 
 ### --filter-unmapped-reads [strict]
 
@@ -295,11 +309,11 @@ If the option is not passed explicitly, elPrep assumes —gc-on 0 is intended.
 
 ## Split and Merge tools
 
-The elprep split command can be used to split up .sam files into smaller files that store the reads "per chromosome". elPrep determines the "chromosomes" by analyzing sequence dictionary in the header of the input file and generates a split file for each chromosome that stores all read pairs that map to that chromosome. Additonally, elPrep creates a file for storing the unmapped reads, as well as a file for storing the pairs where reads map to different chromosomes. elPrep also duplicates the latter pairs across chromosome files so that preparation pipelines have access to all information they need to run correctly. Once processed, use the elprep merge command to merge the merge the split files back into a single .sam file. 
+The elprep split command can be used to split up .sam files into smaller files that store the reads "per chromosome". elPrep determines the "chromosomes" by analyzing the sequence dictionary in the header of the input file and generates a split file for each chromosome that stores all read pairs that map to that chromosome. Additonally, elPrep creates a file for storing the unmapped reads, as well as a file for storing the pairs where reads map to different chromosomes. elPrep also duplicates the latter pairs across chromosome files so that preparation pipelines have access to all information they need to run correctly. Once processed, use the elprep merge command to merge the split files back into a single .sam file.
 
-Splitting the .sam file into smaller files for processing "per chromosome" is useful for reducing the memory pressure as these split files are typically significantly smaller than the  input file as a whole. Splitting also makes it possible to paralellize the processing of a single .sam file by distributing the different split files across different processing nodes.
+Splitting the .sam file into smaller files for processing "per chromosome" is useful for reducing the memory pressure as these split files are typically significantly smaller than the  input file as a whole. Splitting also makes it possible to parallelize the processing of a single .sam file by distributing the different split files across different processing nodes.
 
-We provide an example python script "elprep-sfm.py" that illustrates how to use the split and merge commands to process a .sam file. For a detailed description, see below.    
+We provide an example python script "elprep-sfm.py" that illustrates how to use the split and merge commands to process a .sam file. For a detailed description, see below.
 
 ## Name
 
@@ -308,7 +322,7 @@ We provide an example python script "elprep-sfm.py" that illustrates how to use 
 ## Synopsis
 
 	elprep split sam-file /path/to/output/ --output-prefix "split-sam-file" --output-type sam --nr-of-threads $threads
-	
+
 ## Description
 
 The elprep split command requires two arguments: the input file and a path to a directory where elPrep can store the split files. The input file can be .sam, .bam, or .cram. It is also possible to use /dev/stdin as the input for using unix pipes. There are no structural requirements on the input file for using elprep split. For example, it is not necessary to sort the input file, nor is it necessary to convert to .bam or index the input file.
@@ -324,23 +338,23 @@ By default, the split files will be in the same format as the input file (.sam, 
 The names of the split files created by elprep split are generated by combing a prefix and a chromosome name. The --output-prefix option sets that prefix. For example, if the prefix is "NA12878", and sequence dictionary of the input file contains the chromosomes "chr1", "chr2", and "chr3", and so on, then the names of the split files will be "NA12878-chr1.sam", "NA12878-chr2.sam", "NA12878-chr3.sam", and so on.
 
 If the user does not specify the --output-prefix option, the name of the input file, minus the file extension, is used as a prefix.
- 
-### --output-type [sam | bam | cram] 
+
+### --output-type [sam | bam | cram]
 
 This command option sets the format of the split files. By default, elprep uses the same format as the input file for the split files.
- 
+
 ### --nr-of-threads number
 
 This command option sets the number of threads that elPrep uses during execution for converting between .bam/.sam formats. The default number of threads is 1. This option is only useful when the input file is in .bam format or when the --output-type of the split files is chosen to be .bam.
 
-## Name 
+## Name
 
 ### elprep merge - a commandline tool for merging .sam/.bam/.cram files created by elprep split
 
 ## Synopsis
 
 	elprep merge /path/to/input/ sam-output-file --nr-of-threads $threads
-	
+
 ## Description
 
 The elprep merge command requires two arguments: a path to the files that need to be merged, and an output file. Use this command to merge files created with elprep split. The output file can be .sam, .bam, or .cram. It is also possible to use /dev/stdout as output when using unix pipes for connecting other tools.
@@ -362,13 +376,12 @@ This command option sets the number of threads that elPrep uses during execution
 ## Description
 
 A Python script that combines the elprep split, filter, and merge commands. The script may be used as a drop-in replacement for the elprep filter command, except that:
-	
-	*	 It first calls elprep split to split up the input file per chromosome. The script creates a temp folder in the current working directory for storing the split files created this way.
-	*	 It then calls the elprep filter command for processing the split files one by one.
-	*	 Finally, it calls the elprep merge command to create the output file from the split files.
+
+* It first calls elprep split to split up the input file per chromosome. The script creates a temp folder in the current working directory for storing the split files created this way.
+* It then calls the elprep filter command for processing the split files one by one.
+* Finally, it calls the elprep merge command to create the output file from the split files.
 
 <!--### --timed
 
 When this option is passed, elPrep times and prints the execution spent per phase --filtering, sorting, I/O-- to the standard output.
 -->
-
