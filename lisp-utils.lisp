@@ -87,6 +87,21 @@
     (symbol (symbol-function object))
     (cons (fdefinition object))))
 
+;;; error handling
+
+#+lispworks
+(defun elprep-debugger-hook (condition hook)
+  (declare (ignore hook))
+  (dbg:log-bug-form (format nil "An error occurred in elPrep: ~A" condition) :message-stream t)
+  (lw:quit :status -1 :confirm nil :ignore-errors-p t))
+
+#+sbcl
+(defun elprep-debugger-hook (condition hook)
+  (declare (ignore hook))
+  (format t "An error occurred in elPrep: ~A" condition)
+  #| TODO: generate a backtrace |#
+  (sb-ext:exit :code -1 :abort t))
+  
 ;;; multi-threading
 
 (defvar *number-of-threads* 1

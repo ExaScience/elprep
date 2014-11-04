@@ -71,6 +71,7 @@
 
 (defun elprep-script ()
   "Command line script for the best practices pipeline."
+  (setq *debugger-hook* #'elprep-debugger-hook)
   (setup-standard-streams)
   (format t "~A version ~A. See ~A for more information.~%"
           *program-name* *program-version* *program-url*)
