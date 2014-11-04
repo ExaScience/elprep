@@ -292,7 +292,7 @@
                    (first-file-name (file-namestring (first files-to-merge)))
                    (input-prefix (loop for sn-form in (sam-header-sq header)
                                        do (let* ((chrom (getf sn-form :SN))
-                                                 (idx (search chrom first-file-name)))
+                                                 (idx (search chrom first-file-name :from-end t)))
                                             (when idx (return (subseq first-file-name 0 (- idx 1)))))))
                    (input-extension (ecase (sam-file-kind first-file-name) (:bam ".bam") (:sam ".sam") (:cram ".cram"))))
               ; print feedback
