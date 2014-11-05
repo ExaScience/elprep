@@ -193,6 +193,7 @@
                   for file-name = (format nil "~a~a-~a~a" input-path input-prefix chrom input-extension)
                   when (probe-file file-name) do
                   (with-open-sam (file file-name :direction :input)
+                    (skip-sam-header file)
                     (when (buffer-emptyp spread-read) ; if the buffer is not empty, the current entry is potentially an entry for this file and it should not be overwritten
                       (read-line-into-buffer spread-reads-file spread-read)
                       (buffer-partition spread-read #\Tab 2 spread-read-refid 4 spread-read-pos))
