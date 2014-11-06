@@ -851,7 +851,6 @@
                       (open pathname :direction :output :element-type 'base-char :if-exists :supersede))
                     #+sbcl
                     (open pathname :direction :output :element-type 'base-char :external-format :utf-8 :if-exists :supersede))
-
                    ((eq kind :cram)
                     (let ((reference-fasta *reference-fasta*)
                           (reference-fai *reference-fai*))

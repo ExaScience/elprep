@@ -188,7 +188,6 @@
                   (read-line-into-buffer unmapped-file chromosome-read)
                   (write-buffer chromosome-read out)
                   (reinitialize-buffer chromosome-read))
-            (reinitialize-buffer chromosome-read)
             ; then merge the rest of the files
             (loop for sn-form in (sam-header-sq header)
                   for chrom = (getf sn-form :SN)
