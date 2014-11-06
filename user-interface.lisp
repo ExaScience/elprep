@@ -306,7 +306,7 @@
                    (format t *merge-program-help*)
                    (return-from elprep-merge-script)))
             ; extract the input prefix
-            (let* ((header (with-open-stream (in (open-sam (first files-to-merge) :direction :input)) (parse-sam-header in)))
+            (let* ((header (with-open-sam (in (first files-to-merge) :direction :input) (parse-sam-header in)))
                    (first-file-name (file-namestring (first files-to-merge)))
                    (input-prefix (loop for sn-form in (sam-header-sq header)
                                        do (let* ((chrom (getf sn-form :SN))
