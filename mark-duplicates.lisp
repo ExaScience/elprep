@@ -378,7 +378,7 @@
               until (cond #|((= (pair-score best-pair) score) ; code for correctness checks
                            (cond ((string> (sam-alignment-qname aln1) (sam-alignment-qname (pair-aln1 best-pair)))
                                   (mark-as-duplicate aln1) (mark-as-duplicate aln2) t)
-                                 ((sys:compare-and-swap (handle-object best) best-pair
+                                 ((compare-and-swap (handle-object best) best-pair
                                                         (or entry (setq entry (make-pair score aln1 aln2))))
                                   (mark-as-duplicate (pair-aln1 best-pair)) (mark-as-duplicate (pair-aln2 best-pair)) t)))|#
                           ((>= (pair-score best-pair) score)

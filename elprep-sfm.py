@@ -40,7 +40,6 @@ def elprep_sfm ():
     for file in files:
       ffile = os.path.join(root, file)
       processed_file = os.path.join(result_dir, os.path.basename(file))
-      print ["elprep", ffile, processed_file] + sys.argv[3:]
       subprocess.call(["elprep", ffile, processed_file] + sys.argv[3:]) 
       os.remove(ffile)
   os.rmdir(split_dir)

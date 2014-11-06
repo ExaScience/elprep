@@ -30,7 +30,7 @@ met:
                (:file "user-interface" :depends-on ("filter-pipeline" "mark-duplicates" "clean-sam" "simple-filters"))
                (:file "elprep-utils" :depends-on ("filter-pipeline" "buffer")))
   :depends-on ("cl-date-time-parser"
-               #+sbcl "cl-fad"
+               "cl-fad"
                "claws"
                "string-case"
                #+sbcl (:require :sb-concurrency)))

@@ -114,7 +114,7 @@
       (reinitialize-buffer buf-unmapped)
       (buffer-extend buf-unmapped (sbs "*"))
       (setf (gethash buf-unmapped chroms-encountered)
-            (let ((file (open-sam (format nil "~a~a-unmapped~a" output-path output-prefix output-extension) :direction :output)))
+            (let ((file (open-sam (merge-pathnames output-path (make-pathname :name (format nil "~a-unmapped" output-prefix) :type output-extension)) :direction :output)))
               (format-sam-header (sam-stream file) header) ; fill in the header
               file))
       (loop for sn-form in (sam-header-sq header)
@@ -123,11 +123,13 @@
                  (reinitialize-buffer buf-chrom)
                  (buffer-extend buf-chrom chrom)
                  (setf (gethash buf-chrom chroms-encountered)
-                       (let ((file (open-sam (format nil "~a~a-~a~a" output-path output-prefix chrom output-extension) :direction :output)))
+                       (let ((file (open-sam (merge-pathnames output-path (make-pathname :name (format nil "~a-~a" output-prefix chrom) :type output-extension))
+                                             :direction :output)))
                          (format-sam-header (sam-stream file) header)
                          file))))
       (unwind-protect
-          (with-open-sam (spread-reads-stream (format nil "~a~a-spread~a" output-path output-prefix output-extension) :direction :output)
+          (with-open-sam (spread-reads-stream (merge-pathnames output-path (make-pathname :name (format nil "~a-spread" output-prefix) :type output-extension))
+                                              :direction :output)
             (let ((buf-= (make-buffer)))
               (format-sam-header spread-reads-stream header)
               (buffer-extend buf-= (sbs "="))
@@ -165,9 +167,9 @@
   ; is encountered on the refid position.
   ; when a file is empty, close it and remove it from the list of files to merge
   ; loop for identifying and opening the files to merge
-  (with-open-sam (unmapped-file (format nil "~a~a-unmapped~a" input-path input-prefix input-extension) :direction :input)
+  (with-open-sam (unmapped-file (merge-pathnames input-path (make-pathname :name (format nil "~a-unmapped" input-prefix) :type input-extension)) :direction :input)
     (skip-sam-header unmapped-file) 
-    (with-open-sam (spread-reads-file (format nil "~a~a-spread~a" input-path input-prefix input-extension) :direction :input)
+    (with-open-sam (spread-reads-file (merge-pathnames input-path (make-pathname :name (format nil "~a-spread" input-prefix) :type input-extension)) :direction :input)
       (skip-sam-header spread-reads-file)
       ; merge loop
       (with-open-sam (out output :direction :output)
@@ -190,7 +192,7 @@
             ; then merge the rest of the files
             (loop for sn-form in (sam-header-sq header)
                   for chrom = (getf sn-form :SN)
-                  for file-name = (format nil "~a~a-~a~a" input-path input-prefix chrom input-extension)
+                  for file-name = (merge-pathnames input-path (make-pathname :name (format nil "~a-~a" input-prefix chrom) :type input-extension))
                   when (probe-file file-name) do
                   (with-open-sam (file file-name :direction :input)
                     (skip-sam-header file)

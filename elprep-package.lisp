@@ -215,4 +215,9 @@ Refer to the documentation of run-pipeline as a starting point.")
    ;; utils
 
    #:explain-flag
+
+   ;; elprep utils
+   
+   #:merge-sorted-files-split-per-chromosome
+   #:split-file-per-chromosome
 ))

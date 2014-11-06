@@ -238,7 +238,7 @@
                       (return-from elprep-split-script))
                      (t (pop cmd-line)
                         (setf output-type output-kind)
-                        (setf output-extension (ecase output-type (:bam ".bam") (:sam ".sam") (:cram ".cram"))))))
+                        (setf output-extension (ecase output-type (:bam "bam") (:sam "sam") (:cram "cram"))))))
           else if (string= entry "--output-prefix")
           do (let ((prefix (first cmd-line)))
                (cond ((or (not prefix) (search "--" cmd-line)) ; no prefix given
@@ -260,8 +260,8 @@
           ; fill in defaults
           (setf input (first io-parameters))
           (setf output-path (second io-parameters))
-          (unless output-prefix (setf output-prefix (subseq input 0 (- (length input) 4))))
-          (unless output-extension (setf output-extension (ecase (sam-file-kind input) (:bam ".bam") (:sam ".sam") (:cram ".cram"))))
+          (unless output-prefix (setf output-prefix (pathname-name input)))
+          (unless output-extension (setf output-extension (ecase (sam-file-kind input) (:bam "bam") (:sam "sam") (:cram "cram"))))
           ; print feedback
           (let ((cmd-string
                  (with-output-to-string (s nil :element-type 'base-char)
@@ -271,7 +271,8 @@
             (format t "Executing command:~%  ~a~%" cmd-string))
           (setq *number-of-threads* nr-of-threads)
           (ensure-directories-exist output-path)
-          (split-file-per-chromosome input output-path output-prefix output-extension))))
+          (let ((working-directory (get-working-directory)))
+            (split-file-per-chromosome (merge-pathnames input working-directory) (merge-pathnames output-path working-directory) output-prefix output-extension)))))
 
 (defvar *merge-program-help* "merge /path/to/input/ sam-output-file ~% [--nr-of-threads nr] ~%"
   "Help string for the elprep-merge-script binary.")
@@ -295,7 +296,7 @@
             (return-from elprep-merge-script))
           (setf input-path (first io-parameters))
           (setf output (second io-parameters))
-          (let ((files-to-merge (directory input-path)))
+          (let ((files-to-merge (cl-fad:list-directory input-path)))
             (cond ((not files-to-merge)
                    (format t "Given directory ~a does not exist. ~%" input-path)
                    (format t *merge-program-help*)
@@ -311,14 +312,15 @@
                                        do (let* ((chrom (getf sn-form :SN))
                                                  (idx (search chrom first-file-name :from-end t)))
                                             (when idx (return (subseq first-file-name 0 (- idx 1)))))))
-                   (input-extension (ecase (sam-file-kind first-file-name) (:bam ".bam") (:sam ".sam") (:cram ".cram"))))
+                   (input-extension (ecase (sam-file-kind first-file-name) (:bam "bam") (:sam "sam") (:cram "cram"))))
               ; print feedback
               (let ((cmd-string
                      (with-output-to-string (s nil :element-type 'base-char)
                        (format s (sbs "~a merge ~a ~a") (first (command-line-arguments)) input-path output))))
                 (format t "Executing command:~%  ~a~%" cmd-string))
               (setq *number-of-threads* nr-of-threads)
-              (merge-sorted-files-split-per-chromosome input-path output input-prefix input-extension header))))))
+              (let ((working-directory (get-working-directory)))
+                (merge-sorted-files-split-per-chromosome (merge-pathnames input-path working-directory) (merge-pathnames output working-directory) input-prefix input-extension header)))))))
 
 (defun elprep-script ()
   "Command line script for elPrep."
