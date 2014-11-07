@@ -192,7 +192,8 @@ Refer to the documentation of run-pipeline as a starting point.")
    #:buffer-partition
    #:buffer-string
    #:buffer=
-   #:read-line-into-buffer
    #:write-buffer
+   #:buffer-copy
+   #:read-line-into-buffer
    #:buffer-parse-integer
 ))
