@@ -202,7 +202,7 @@
                       (write-buffer chromosome-read out)
                       (reinitialize-buffer chromosome-read))
                 ; copy remaining reads in the spread file, if any, that are one the same chromosome as the file was
-                (when (and (not (buffer-emptyp chromosome-read)) (buffer= spread-read-refid common-read-refid))
+                (when (and (not (buffer-emptyp spread-read)) (buffer= spread-read-refid common-read-refid))
                   (loop until (not (buffer= spread-read-refid common-read-refid))
                         do 
                         (write-buffer spread-read out)
