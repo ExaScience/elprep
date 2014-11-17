@@ -200,7 +200,8 @@
                       do 
                       (read-line-into-buffer file chromosome-read)
                       (write-buffer chromosome-read out)
-                      (reinitialize-buffer chromosome-read))
+                      (reinitialize-buffer chromosome-read)
+                      finally (reinitialize-buffer chromosome-read) (reinitialize-buffer chromosome-read-pos) (reinitialize-buffer chromosome-read-refid))
                 ; copy remaining reads in the spread file, if any, that are one the same chromosome as the file was
                 (when (and (not (buffer-emptyp spread-read)) (buffer= spread-read-refid common-read-refid))
                   (loop until (not (buffer= spread-read-refid common-read-refid))
@@ -208,8 +209,7 @@
                         (write-buffer spread-read out)
                         (reset-spread-read)
                         (read-line-into-buffer spread-reads-file spread-read)
-                        (buffer-partition spread-read #\Tab 2 spread-read-refid 3 spread-read-pos)))
-                finally (reinitialize-buffer chromosome-read) (reinitialize-buffer chromosome-read-pos) (reinitialize-buffer chromosome-read-refid)))
+                        (buffer-partition spread-read #\Tab 2 spread-read-refid 3 spread-read-pos)))))
         ; merge the remaining reads in the spread-reads file
         (when (not (buffer-emptyp spread-read)) (write-buffer spread-read out) (reinitialize-buffer spread-read))
         (loop until (end-of-file-p (peekc spread-reads-file))
