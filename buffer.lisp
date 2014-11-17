@@ -2,9 +2,9 @@
 
 (defconstant +buffer-chunk-size+ 1024)
 
-(declaim (inline make-buffer buffer-p))
+(declaim (inline %make-buffer buffer-p))
 
-(defstruct (buffer (:constructor make-buffer ()))
+(defstruct (buffer (:constructor %make-buffer ()))
   (pos 0 :type fixnum)
   (str #() :type simple-vector)
   (hash-value -1 :type fixnum))
@@ -67,8 +67,6 @@
         (setf (schar chunk lo) char)
         (setf (buffer-pos buf) (the fixnum (1+ pos)))))))
 
-(declaim (notinline buffer-push))
-
 (declaim (notinline slow-buffer-extend))
 
 (defun slow-buffer-extend (buf pos hi lo chunk string start end length)
@@ -84,8 +82,6 @@
                 (return-from slow-buffer-extend)))
         (incf hi) (setq lo 0)
         (setq chunk (ensure-chunk buf hi))))
-
-(declaim (inline buffer-extend))
 
 (defun buffer-extend (buf string &optional (start 0) end)
   "add a string to a buffer"
@@ -108,7 +104,13 @@
                 (return (values)))
           (slow-buffer-extend buf pos hi lo chunk string start end length))))))
 
-(declaim (notinline buffer-extend))
+(declaim (inline make-buffer))
+
+(defun make-buffer (&optional initial-string)
+  "create a buffer with an optional initial string"
+  (let ((buf (%make-buffer)))
+    (buffer-extend buf initial-string)
+    buf))
 
 (defun write-buffer (buf stream)
   "write a buffer to a stream"
@@ -143,6 +145,7 @@
 (defun read-line-into-buffer (stream buf)
   "read a line into a buffer"
   (declare (buffered-stream stream) (buffer buf) #.*fixnum-optimization*)
+  (reinitialize-buffer buf)
   (loop (stream:with-stream-input-buffer (buffer index limit) stream
           (declare (simple-base-string buffer) (fixnum index limit))
           (loop for i of-type fixnum from index below limit do
@@ -162,6 +165,7 @@
 (defun read-line-into-buffer (stream buf)
   "read a line into a buffer"
   (declare (ascii-stream stream) (buffer buf) #.*optimization*)
+  (reinitialize-buffer buf)
   (let ((buffer (ascii-stream-buffer stream)))
     (declare (ascii-stream-buffer buffer))
     (with-buffer-dispatch buffer
@@ -194,7 +198,7 @@
              (if targets
                (when (= current-target (the fixnum (car targets)))
                  (pop targets)
-                 (pop targets))
+                 (reinitialize-buffer (pop targets)))
                (return-from buffer-partition (values)))))
       (declare (inline get-target-buf))
       (let ((target-buf (get-target-buf)))
