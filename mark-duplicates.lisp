@@ -159,7 +159,8 @@
 (defun mark-as-duplicate (aln)
   "Set the PCR/optical duplicate FLAG in the sam-alignment."
   (declare (sam-alignment aln) #.*optimization*)
-  (setf (sam-alignment-flag aln) (logior (sam-alignment-flag aln) +duplicate+)))
+  (setf (sam-alignment-flag aln) (logior (sam-alignment-flag aln) +duplicate+))
+  t)
 
 (declaim (inline make-handle))
 
@@ -214,7 +215,7 @@
   (declare (sam-alignment aln) #.*optimization*)
   (= (logand (sam-alignment-flag aln) #.(logior +multiple+ +next-unmapped+)) +multiple+))
 
-(defun classify-fragment (aln fragments) ; fragments is the hash table to store intermediate "best" alns, passed as a parameter
+(defun classify-fragment (aln fragments deterministic) ; fragments is the hash table to store intermediate "best" alns, passed as a parameter
   "For each list of sam-alignment instances with the same unclipped position and direction, all except the one with the highest score are marked as duplicates.
    If there are fragments in such a list that are actually part of pairs, all the true fragments are marked as duplicates and the pairs are left untouched."
   (let* ((hash (fragment-hash aln))
@@ -231,16 +232,25 @@
     (cond ((true-fragment-p aln)
            (loop with aln-score = (sam-alignment-adapted-score aln)
                  for best-aln = (handle-object best)
-                 until (cond ((or (true-pair-p best-aln)
-                                  (>= (sam-alignment-adapted-score best-aln) aln-score))
-                              (mark-as-duplicate aln) t)
-                             ((compare-and-swap (handle-object best) best-aln aln)
-                              (mark-as-duplicate best-aln) t))))
+                 until (if (true-pair-p best-aln)
+                         (mark-as-duplicate aln)
+                         (let ((best-aln-score (sam-alignment-adapted-score best-aln)))
+                           (cond ((> best-aln-score aln-score)
+                                  (mark-as-duplicate aln))
+                                 ((= best-aln-score aln-score)
+                                  (if deterministic
+                                    (if (string> (sam-alignment-qname aln) (sam-alignment-qname best-aln))
+                                      (mark-as-duplicate aln)
+                                      (when (compare-and-swap (handle-object best) best-aln aln)
+                                        (mark-as-duplicate best-aln)))
+                                    (mark-as-duplicate aln)))
+                                 ((compare-and-swap (handle-object best) best-aln aln)
+                                  (mark-as-duplicate best-aln)))))))
           (t ; the aln is a true pair object, there may be a true fragment stored in the hash table which we then need to mark and swap out
            (loop for best-aln = (handle-object best)
                  until (cond ((true-pair-p best-aln) t) ; stop, the best in the hash tab is a pair, this is marked via mark-duplicates
                              ((compare-and-swap (handle-object best) best-aln aln)
-                              (mark-as-duplicate best-aln) t)))))))
+                              (mark-as-duplicate best-aln))))))))
 
 (defun sam-alignment-pair= (aln1 aln2)
   "Are the two sam-alignment fragments part of the same pair?"
@@ -344,7 +354,7 @@
           (sxhash (the boolean (pair-reversed1-p p)))
           (sxhash (the boolean (pair-reversed2-p p)))))
 
-(defun classify-pair (aln fragments pairs)
+(defun classify-pair (aln fragments pairs deterministic)
   "For each list of pairs with the same unclipped positions and directions, all except the one with the highest score are marked as duplicates."
   (when (true-pair-p aln)
     (let ((aln1 aln)
@@ -375,34 +385,41 @@
                                           (return-from classify-pair)))))))))))
         (declare (dynamic-extent keypair pairkey))
         (loop for best-pair = (handle-object best)
-              until (cond #|((= (pair-score best-pair) score) ; code for correctness checks
-                           (cond ((string> (sam-alignment-qname aln1) (sam-alignment-qname (pair-aln1 best-pair)))
-                                  (mark-as-duplicate aln1) (mark-as-duplicate aln2) t)
-                                 ((compare-and-swap (handle-object best) best-pair
-                                                        (or entry (setq entry (make-pair score aln1 aln2))))
-                                  (mark-as-duplicate (pair-aln1 best-pair)) (mark-as-duplicate (pair-aln2 best-pair)) t)))|#
-                          ((>= (pair-score best-pair) score)
+              for best-pair-score = (pair-score best-pair)
+              until (cond ((> best-pair-score score)
                            (mark-as-duplicate aln1)
-                           (mark-as-duplicate aln2) t)
+                           (mark-as-duplicate aln2))
+                          ((= best-pair-score score)
+                           (cond (deterministic ; code for correctness checks
+                                  (cond ((string> (sam-alignment-qname aln1) (sam-alignment-qname (pair-aln1 best-pair)))
+                                         (mark-as-duplicate aln1)
+                                         (mark-as-duplicate aln2))
+                                        ((compare-and-swap (handle-object best) best-pair
+                                                           (or entry (setq entry (make-pair score aln1 aln2))))
+                                         (mark-as-duplicate (pair-aln1 best-pair))
+                                         (mark-as-duplicate (pair-aln2 best-pair)))))
+                                 (t (mark-as-duplicate aln1)
+                                    (mark-as-duplicate aln2))))
                           ((compare-and-swap (handle-object best) best-pair
                                              (or entry (setq entry (make-pair score aln1 aln2))))
                            (mark-as-duplicate (pair-aln1 best-pair))
-                           (mark-as-duplicate (pair-aln2 best-pair)) t)))))))
+                           (mark-as-duplicate (pair-aln2 best-pair)))))))))
 
-(defun mark-duplicates (header)
+(defun mark-duplicates (deterministic)
   "A filter for marking duplicate sam-alignment instances. Depends on the add-refid filter being called before to fill in the refid."
-  (declare (ignore header))
-  (let ((splits (* 16 *number-of-threads*)))
-    ; set up tables once header is parsed, tables will serve for all alignments
-    (let ((fragments (make-split-hash-table splits :test #'handle-fragment= :hash-function #'handle-hash))
-          (pairs-fragments (make-split-hash-table splits :test #'sam-alignment-pair= :hash-function #'sam-alignment-pair-hash))
-          (pairs (make-split-hash-table splits :test #'handle-pair= :hash-function #'handle-hash))
-          (rg-table (make-synchronized-hash-table :test #'string= :hash-function #'sxhash)))
-      (lambda ()
-        (lambda (alignment)
-          (when (sam-alignment-flag-notany alignment #.(+ +unmapped+ +secondary+ +duplicate+ +supplementary+))
-            ; mark duplicate checks
-            (adapt-alignment rg-table alignment)
-            (classify-fragment alignment fragments)
-            (classify-pair alignment pairs-fragments pairs))
-          t)))))
+  (lambda (header)
+    (declare (ignore header))
+    (let ((splits (* 16 *number-of-threads*)))
+      ; set up tables once header is parsed, tables will serve for all alignments
+      (let ((fragments (make-split-hash-table splits :test #'handle-fragment= :hash-function #'handle-hash))
+            (pairs-fragments (make-split-hash-table splits :test #'sam-alignment-pair= :hash-function #'sam-alignment-pair-hash))
+            (pairs (make-split-hash-table splits :test #'handle-pair= :hash-function #'handle-hash))
+            (rg-table (make-synchronized-hash-table :test #'string= :hash-function #'sxhash)))
+        (lambda ()
+          (lambda (alignment)
+            (when (sam-alignment-flag-notany alignment #.(+ +unmapped+ +secondary+ +duplicate+ +supplementary+))
+              ; mark duplicate checks
+              (adapt-alignment rg-table alignment)
+              (classify-fragment alignment fragments deterministic)
+              (classify-pair alignment pairs-fragments pairs deterministic))
+            t))))))

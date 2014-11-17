@@ -66,7 +66,7 @@
 (defvar *program-url* (sbs "http://github.com/exascience/elprep")
   "URL for more information about elprep.")
 
-(defvar *program-help* "sam-file sam-output-file ~% [--replace-reference-sequences sam-file] ~% [--filter-unmapped-reads [strict]] ~% [--replace-read-group read-group-string]~% [--mark-duplicates [remove]] ~% [--sorting-order [keep | unknown | unsorted | queryname | coordinate]] ~% [--clean-sam] ~% [--nr-of-threads nr] ~% [--gc-on [0 | 1 | 2]] ~% [--timed] ~% [--reference-t fai-file] ~% [--reference-T fasta-file] ~%"
+(defvar *program-help* "sam-file sam-output-file ~% [--replace-reference-sequences sam-file] ~% [--filter-unmapped-reads [strict]] ~% [--replace-read-group read-group-string]~% [--mark-duplicates [remove] [deterministic]] ~% [--sorting-order [keep | unknown | unsorted | queryname | coordinate]] ~% [--clean-sam] ~% [--nr-of-threads nr] ~% [--gc-on [0 | 1 | 2]] ~% [--timed] ~% [--reference-t fai-file] ~% [--reference-T fasta-file] ~%"
   "Help string for the elprep-script binary.")
 
 ;;; error handling
@@ -121,6 +121,7 @@
         (read-group-string nil)
         (mark-duplicates-filter nil)
         (remove-duplicates-filter nil)
+        (mark-duplicates-deterministic nil)
         (clean-sam-filter nil)
         (rename-chromosomes-filter nil)
         (reference-fai nil)
@@ -140,10 +141,13 @@
           else if (string= entry "--mark-duplicates")
           do (setf mark-duplicates-filter (progn
                                             (setf mark-duplicates-p t)
-                                            (when (string= "remove" (first cmd-line)) ; also add a filter to remove the duplicates
-                                              (pop cmd-line)
-                                              (setf remove-duplicates-filter (list #'filter-duplicate-reads)))
-                                            (list #'mark-duplicates)))
+                                            (loop (cond ((string= "remove" (first cmd-line))
+                                                         (pop cmd-line)
+                                                         (setf remove-duplicates-filter (list #'filter-duplicate-reads)))
+                                                        ((string= "deterministic" (first cmd-line))
+                                                         (pop cmd-line)
+                                                         (setf mark-duplicates-deterministic t))
+                                                        (t (return (mark-duplicates mark-duplicates-deterministic)))))))
           else if (string= entry "--sorting-order")
           do (let ((so (first cmd-line))) ; peek it
                (if (or (not so) (search "--" so)) ; if no sorting order or next option, use default sorting order = keep
@@ -214,9 +218,11 @@
                     (when replace-ref-seq-dct-filter (format s (sbs " --replace-reference-sequences ~a") ref-seq-dct))
                     (when replace-read-group-filter (format s (sbs " --replace-read-group ~s") read-group-string))
                     (when mark-duplicates-filter
-                      (if remove-duplicates-filter
-                        (format s (sbs " --mark-duplicates remove"))
-                        (format s (sbs " --mark-duplicates"))))
+                      (format s (sbs " --mark-duplicates"))
+                      (when remove-duplicates-filter
+                        (format s (sbs " remove")))
+                      (when mark-duplicates-deterministic
+                        (format s (sbs " deterministic"))))
                     (format s (sbs " --sorting-order ~(~a~) --gc-on ~a --nr-of-threads ~a") sorting-order gc-on nr-of-threads)
                     (when timed (format s (sbs " --timed")))
                     (when reference-fai (format s (sbs " --reference-t ~a") reference-fai))
