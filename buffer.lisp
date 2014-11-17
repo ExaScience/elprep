@@ -126,6 +126,19 @@
         #+sbcl (write-string (svref str hi) stream :end lo))))
   (values))
 
+(defun buffer-copy (source target)
+  "copy the contents of one buffer to another"
+  (declare (buffer source target) #.*fixnum-optimization*)
+  (let ((pos (buffer-pos source))
+        (str (buffer-str source)))
+    (declare (fixnum pos) (simple-vector str))
+    (multiple-value-bind (hi lo) (floor pos +buffer-chunk-size+)
+      (declare (fixnum hi lo))
+      (loop for i of-type fixnum below hi
+            do (buffer-extend target (svref str i) 0 +buffer-chunk-size+))
+      (when (> lo 0) (buffer-extend target (svref str hi) 0 lo))))
+  (values))
+
 #+lispworks
 (defun read-line-into-buffer (stream buf)
   "read a line into a buffer"

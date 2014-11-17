@@ -57,8 +57,52 @@
            (time (all-phases)))
           (t (time (all-phases))))))
 
+(defvar *program-name* (sbs "elPrep")
+  "Name of the elprep binary.")
+
+(defvar *program-version* (sbs "2.0")
+  "Version of the elprep binary.")
+
+(defvar *program-url* (sbs "http://github.com/exascience/elprep")
+  "URL for more information about elprep.")
+
 (defvar *program-help* "sam-file sam-output-file ~% [--replace-reference-sequences sam-file] ~% [--filter-unmapped-reads [strict]] ~% [--replace-read-group read-group-string]~% [--mark-duplicates [remove]] ~% [--sorting-order [keep | unknown | unsorted | queryname | coordinate]] ~% [--clean-sam] ~% [--nr-of-threads nr] ~% [--gc-on [0 | 1 | 2]] ~% [--timed] ~% [--reference-t fai-file] ~% [--reference-T fasta-file] ~%"
   "Help string for the elprep-script binary.")
+
+;;; error handling
+
+(defun create-log-filename ()
+  (multiple-value-bind
+      (second minute hour date month year day daylight-p timezone)
+      (get-decoded-time)
+    (declare (ignore day daylight-p))
+    (format nil "logs/elprep/elprep-~D-~2,'0D-~2,'0D-~2,'0D-~2,'0D-~2,'0D-GMT~D.log"
+            year month date hour minute second timezone)))
+
+#+lispworks
+(defun elprep-debugger-hook (condition hook)
+  (declare (ignore hook))
+  (dbg:log-bug-form (format nil "An error occurred in ~A ~A: ~A" *program-name* *program-version* condition)
+                    :log-file (merge-pathnames (create-log-filename) (user-homedir-pathname))
+                    :message-stream t)
+  (lw:quit :status -1 :confirm nil :ignore-errors-p t))
+
+#+sbcl
+(defun elprep-debugger-hook (condition hook)
+  (declare (ignore hook))
+  (let ((log-path (merge-pathnames (create-log-filename) (user-homedir-pathname))))
+    (ensure-directories-exist log-path)
+    (with-open-file (out log-path :direction :output :if-exists :rename)
+      (format out "An error occurred in ~A ~A: ~A~%~%" *program-name* *program-version* condition)
+      (format out "Lisp implementation: ~A ~A~%" (lisp-implementation-type) (lisp-implementation-version))
+      (format out "Site: ~A~%" (long-site-name))
+      (format out "Machine: ~A ~A ~A~%" (machine-instance) (machine-type) (machine-version))
+      (format out "Software: ~A ~A~%~%" (software-type) (software-version))
+      (let ((*standard-output* out)) (room t))
+      (terpri out)
+      (sb-debug:print-backtrace :stream out :print-thread t :print-frame-source t :method-frame-style :normal))
+    (format t "Wrote error log to ~A~%" log-path)
+    (sb-ext:exit :code -1 :abort t)))
 
 (defun elprep-filter-script ()
   "Command line script for elprep filter script."

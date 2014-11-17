@@ -179,7 +179,8 @@
               (spread-read-pos (make-buffer))
               (chromosome-read (make-buffer)) ; for storing reads from the chromsome file we are currently merging
               (chromosome-read-refid (make-buffer))
-              (chromosome-read-pos (make-buffer)))
+              (chromosome-read-pos (make-buffer))
+              (common-read-refid (make-buffer)))
           (flet ((reset-spread-read () (reinitialize-buffer spread-read) (reinitialize-buffer spread-read-pos) (reinitialize-buffer spread-read-refid))
                  (reset-chromosome-read () (reinitialize-buffer chromosome-read) (reinitialize-buffer chromosome-read-pos)))
             ; first merge the unmapped reads
@@ -197,11 +198,13 @@
                     (skip-sam-header file)
                     (when (buffer-emptyp spread-read) ; if the buffer is not empty, the current entry is potentially an entry for this file and it should not be overwritten
                       (read-line-into-buffer spread-reads-file spread-read)
-                      (buffer-partition spread-read #\Tab 2 spread-read-refid 4 spread-read-pos))
+                      (buffer-partition spread-read #\Tab 2 spread-read-refid 3 spread-read-pos))
                     (read-line-into-buffer file chromosome-read)
-                    (buffer-partition chromosome-read #\Tab 2 chromosome-read-refid 4 chromosome-read-pos)
+                    (buffer-partition chromosome-read #\Tab 2 chromosome-read-refid 3 chromosome-read-pos)
                     (unless (buffer-emptyp spread-read)
                       (when (buffer= spread-read-refid chromosome-read-refid)
+                        (reinitialize-buffer common-read-refid)
+                        (buffer-copy spread-read-refid common-read-refid)
                         (loop do 
                               (let ((pos1 (buffer-parse-integer spread-read-pos))
                                     (pos2 (buffer-parse-integer chromosome-read-pos)))
@@ -209,28 +212,36 @@
                                        (write-buffer spread-read out) 
                                        (reset-spread-read)
                                        (read-line-into-buffer spread-reads-file spread-read)
-                                       (buffer-partition spread-read #\Tab 2 spread-read-refid 4 spread-read-pos))
+                                       (buffer-partition spread-read #\Tab 2 spread-read-refid 3 spread-read-pos))
                                       (t
                                        (write-buffer chromosome-read out)
                                        (reset-chromosome-read)
                                        (read-line-into-buffer file chromosome-read)
-                                       (buffer-partition chromosome-read #\Tab 4 chromosome-read-pos))))
+                                       (buffer-partition chromosome-read #\Tab 3 chromosome-read-pos))))
                               until (or (not (buffer= chromosome-read-refid spread-read-refid))
                                         (ascii-stream-end-of-file-p file)))))
-                    ; copy remaining reads in the file
+                    ; copy remaining reads in the file, if any
                     (when (not (buffer-emptyp chromosome-read)) (write-buffer chromosome-read out) (reinitialize-buffer chromosome-read))
                     (loop until (ascii-stream-end-of-file-p file)
                           do 
                           (read-line-into-buffer file chromosome-read)
                           (write-buffer chromosome-read out)
-                          (reinitialize-buffer chromosome-read))))
-            ; merge the remaining reads in the spread-reads file
-            (when (not (buffer-emptyp spread-read)) (write-buffer spread-read out) (reinitialize-buffer spread-read))
-            (loop until (ascii-stream-end-of-file-p spread-reads-file)
-                  do 
-                  (read-line-into-buffer spread-reads-file spread-read)
-                  (write-buffer spread-read out)
-                  (reinitialize-buffer spread-read))))))))
+                          (reinitialize-buffer chromosome-read)))
+                  ; copy remaining reads in the spread file, if any, that are one the same chromosome as the file was
+                  (when (and (not (buffer-emptyp spread-read)) (buffer= spread-read-refid common-read-refid))
+                    (loop until (not (buffer= spread-read-refid common-read-refid))
+                          do 
+                          (write-buffer spread-read out)
+                          (reset-spread-read)
+                          (read-line-into-buffer spread-reads-file spread-read)
+                          (buffer-partition spread-read #\Tab 2 spread-read-refid 3 spread-read-pos)))))
+          ; merge the remaining reads in the spread-reads file
+          (when (not (buffer-emptyp spread-read)) (write-buffer spread-read out) (reinitialize-buffer spread-read))
+          (loop until (ascii-stream-end-of-file-p spread-reads-file)
+                do 
+                (read-line-into-buffer spread-reads-file spread-read)
+                (write-buffer spread-read out)
+                (reinitialize-buffer spread-read)))))))
 
 (declaim (inline parse-sam-alignment-from-stream))
 
