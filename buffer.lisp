@@ -150,7 +150,7 @@
 (defun make-buffer (&optional initial-string)
   "create a buffer with an optional initial string"
   (let ((buf (%make-buffer)))
-    (buffer-extend buf initial-string)
+    (when initial-string (buffer-extend buf initial-string))
     buf))
 
 (defun write-buffer (buf stream)
