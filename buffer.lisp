@@ -104,6 +104,47 @@
                 (return (values)))
           (slow-buffer-extend buf pos hi lo chunk string start end length))))))
 
+#+sbcl
+(progn
+  (declaim (notinline slow-io-buffer-extend))
+
+  (defun slow-io-buffer-extend (buf pos hi lo chunk string start end length)
+    "internal"
+    (declare (buffer buf) (fixnum pos hi lo) (simple-base-string chunk)
+             (fixnum start end length) #.*optimization*)
+    (with-buffer-dispatch string
+      (loop with source of-type fixnum = start do
+            (loop for target of-type fixnum from lo below +buffer-chunk-size+ do
+                  (setf (schar chunk target)
+                        (bchar string source))
+                  (when (= (incf source) end)
+                    (setf (buffer-pos buf) (the fixnum (+ pos length)))
+                    (return-from slow-io-buffer-extend)))
+            (incf hi) (setq lo 0)
+            (setq chunk (ensure-chunk buf hi)))))
+
+  (defun io-buffer-extend (buf string &optional (start 0) end)
+    "add a string to a buffer"
+    (declare (buffer buf) (fixnum start) #.*optimization*)
+    (with-buffer-dispatch string
+      (let* ((end (or end (length string)))
+             (length (the fixnum (- end start)))
+             (pos (buffer-pos buf)))
+        (declare (fixnum end length pos))
+        (multiple-value-bind (hi lo) (floor pos +buffer-chunk-size+)
+          (declare (fixnum hi lo))
+          (let ((chunk (ensure-chunk buf hi)))
+            (declare (simple-base-string chunk))
+            (if (<= (the fixnum (+ lo length)) +buffer-chunk-size+)
+              (loop for i of-type fixnum from start below end
+                    for j of-type fixnum from lo do
+                    (setf (schar chunk j)
+                          (bchar string i))
+                    finally
+                    (setf (buffer-pos buf) (the fixnum (+ pos length)))
+                    (return (values)))
+              (slow-io-buffer-extend buf pos hi lo chunk string start end length))))))))
+
 (declaim (inline make-buffer))
 
 (defun make-buffer (&optional initial-string)
@@ -176,11 +217,11 @@
                     (when (char= (bchar buffer i) #\Newline)
                       (let ((new-index (the fixnum (1+ i)))) ;make sure to include the newline
                         (declare (fixnum new-index))
-                        (buffer-extend buf buffer index new-index)
+                        (io-buffer-extend buf buffer index new-index)
                         (setf (ascii-stream-index stream) new-index)
                         (return-from read-line-into-buffer buf)))
                     finally
-                    (buffer-extend buf buffer index limit)
+                    (io-buffer-extend buf buffer index limit)
                     (setf (ascii-stream-index stream) limit)))
             (unless (ascii-stream-fill-buffer stream)
               (return-from read-line-into-buffer buf))))))
