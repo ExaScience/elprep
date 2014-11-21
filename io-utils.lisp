@@ -308,7 +308,8 @@
   (loop do (with-stream-input-buffer (buffer index limit) input
              (declare (simple-base-string buffer) (fixnum index limit))
              (when (< index limit)
-               (stream-write-sequence output buffer index limit)))
+               (stream-write-sequence output buffer index limit)
+               (setq index limit)))
         while (stream-fill-buffer input))
   (values))
 
@@ -322,7 +323,8 @@
                    (limit (ascii-stream-limit input)))
                (declare (fixnum index limit))
                (when (< index limit)
-                 (write-sequence buffer output :start index :end limit)))
+                 (write-sequence buffer output :start index :end limit)
+                 (setf (ascii-stream-index input) limit)))
           while (ascii-stream-fill-buffer input))
     (values)))
 

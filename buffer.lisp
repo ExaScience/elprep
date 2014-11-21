@@ -233,13 +233,14 @@
    the targets need to be sorted by key;
    for example (buffer-partition buf #\Tab 3 buf1 6 buf2)"
   (declare (buffer buf) (base-char separator) (dynamic-extent targets) #.*optimization*)
+  (loop for (nil buffer) on targets by #'cddr do (reinitialize-buffer buffer))
   (let ((current-target 0))
     (declare (fixnum current-target))
     (flet ((get-target-buf ()
              (if targets
                (when (= current-target (the fixnum (car targets)))
                  (pop targets)
-                 (reinitialize-buffer (pop targets)))
+                 (pop targets))
                (return-from buffer-partition (values)))))
       (declare (inline get-target-buf))
       (let ((target-buf (get-target-buf)))
