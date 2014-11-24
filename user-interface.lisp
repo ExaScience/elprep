@@ -147,7 +147,7 @@
                                                         ((string= "deterministic" (first cmd-line))
                                                          (pop cmd-line)
                                                          (setf mark-duplicates-deterministic t))
-                                                        (t (return (mark-duplicates mark-duplicates-deterministic)))))))
+                                                        (t (return (list (mark-duplicates mark-duplicates-deterministic))))))))
           else if (string= entry "--sorting-order")
           do (let ((so (first cmd-line))) ; peek it
                (if (or (not so) (search "--" so)) ; if no sorting order or next option, use default sorting order = keep
