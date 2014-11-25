@@ -348,11 +348,12 @@
                    (return-from elprep-merge-script)))
             ; extract the input prefix
             (let* ((header (with-open-sam (in (first files-to-merge) :direction :input) (parse-sam-header in)))
-                   (first-file-name (file-namestring (first files-to-merge)))
-                   (input-prefix (loop for sn-form in (sam-header-sq header)
-                                       do (let* ((chrom (getf sn-form :SN))
-                                                 (idx (search chrom first-file-name :from-end t)))
-                                            (when idx (return (subseq first-file-name 0 (- idx 1)))))))
+                   (input-prefix
+                    (loop for file in files-to-merge
+                          do (let* ((ffile (file-namestring file))
+                                    (idx (search "-unmapped" ffile :from-end t))) ; there is at least a file with unmapped tag
+                               (when idx (return (subseq ffile 0 idx))))))
+                   (first-file-name (file-namestring (first files-to-merge)))                   
                    (input-extension (ecase (sam-file-kind first-file-name) (:bam "bam") (:sam "sam") (:cram "cram"))))
               ; print feedback
               (let ((cmd-string
