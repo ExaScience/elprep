@@ -1,4 +1,5 @@
 (in-package :elprep)
+(in-simple-base-string-syntax)
 
 ;; filters
 
@@ -8,7 +9,7 @@
     ;; changing the reference-sequence-dictionary may destroy the sorting order
     (let ((sorting-order (getf (sam-header-hd header) :so)))
       (when sorting-order
-        (when (string= sorting-order (sbs "coordinate"))
+        (when (string= sorting-order "coordinate")
           (unless (loop with previous-pos = -1
                         with old-dictionary = (sam-header-sq header)
                         for entry in reference-sequence-dictionary
@@ -20,7 +21,7 @@
                                  (t (return nil)))
                         finally (return t))
             ; "unknown", not "unsorted", because the offending snames may not occur in the reads
-            (sam-header-ensure-hd header :so (sbs "unknown"))))))
+            (sam-header-ensure-hd header :so "unknown")))))
     (let ((reference-sequence-table
            (make-single-thread-hash-table :test #'equal)))
       (declare (hash-table reference-sequence-table))
@@ -55,7 +56,7 @@
       (declare (sam-alignment alignment) #.*optimization*)
       (or (= 0 (logand (sam-alignment-flag alignment) +unmapped+))
           (= (sam-alignment-pos alignment) 0)
-          (string= (sam-alignment-rname alignment) (sbs "*"))))))
+          (string= (sam-alignment-rname alignment) "*")))))
 
 (defun filter-duplicate-reads (header)
   "A filter for removing duplicate sam-alignment instances, based on FLAG."
@@ -124,18 +125,18 @@
               (setf record (nconc record (string-case (tag :default (if (sam-header-user-tag-p tag)
                                                                       (list (unique (intern-key/copy tag) record) val)
                                                                       (error "Unknown tag ~A in read group string ~S." tag string)))
-                                           (#.(sbs "ID") (list (unique :ID record) val))
-                                           (#.(sbs "CN") (list (unique :CN record) val))
-                                           (#.(sbs "DS") (list (unique :DS record) val))
-                                           (#.(sbs "DT") (list (unique :DT record) (parse-date-time val)))
-                                           (#.(sbs "FO") (list (unique :FO record) val))
-                                           (#.(sbs "KS") (list (unique :KS record) val))
-                                           (#.(sbs "LB") (list (unique :LB record) val))
-                                           (#.(sbs "PG") (list (unique :PG record) val))
-                                           (#.(sbs "PI") (list (unique :PI record) (parse-integer val)))
-                                           (#.(sbs "PL") (list (unique :PL record) val))
-                                           (#.(sbs "PU") (list (unique :PU record) val))
-                                           (#.(sbs "SM") (list (unique :SM record) val))))))))))
+                                           ("ID" (list (unique :ID record) val))
+                                           ("CN" (list (unique :CN record) val))
+                                           ("DS" (list (unique :DS record) val))
+                                           ("DT" (list (unique :DT record) (parse-date-time val)))
+                                           ("FO" (list (unique :FO record) val))
+                                           ("KS" (list (unique :KS record) val))
+                                           ("LB" (list (unique :LB record) val))
+                                           ("PG" (list (unique :PG record) val))
+                                           ("PI" (list (unique :PI record) (parse-integer val)))
+                                           ("PL" (list (unique :PL record) val))
+                                           ("PU" (list (unique :PU record) val))
+                                           ("SM" (list (unique :SM record) val))))))))))
 
 (defun add-pg-line (id &rest args &key pn cl ds vn)
   "A filter for adding a @PG tag to a sam-header, and ensuring that it is the first one in the chain."
@@ -146,7 +147,7 @@
             (new-line line))
       ; ensure id is unique
         (loop while (find id pgs :key (lambda (pg) (getf pg :id)) :test #'equal)
-              do (setq id (format nil (sbs "~A ~4,'0X") id (random #x10000))))
+              do (setq id (format nil "~A ~4,'0X" id (random #x10000))))
       ; determine PP tag
         (let ((next-id (loop for pg in pgs
                              for id = (getf pg :id)
@@ -168,18 +169,18 @@
     (declare (inline string-append))
     (loop for plist in (sam-header-sq header)
           for sn = (getf plist :SN)
-          when sn do (setf (getf plist :SN) (string-append (sbs "chr") sn)))
+          when sn do (setf (getf plist :SN) (string-append "chr" sn)))
     (lambda ()
       (lambda (alignment)
         (declare (sam-alignment alignment) #.*optimization*)
         (let ((rname (sam-alignment-rname alignment)))
-          (cond ((string= rname (sbs "=")))
-                ((string= rname (sbs "*")))
-                (t (setf (sam-alignment-rname alignment) (string-append (sbs "chr") rname)))))
+          (cond ((string= rname "="))
+                ((string= rname "*"))
+                (t (setf (sam-alignment-rname alignment) (string-append "chr" rname)))))
         (let ((rnext (sam-alignment-rnext alignment)))
-          (cond ((string= rnext (sbs "=")))
-                ((string= rnext (sbs "*")))
-                (t (setf (sam-alignment-rnext alignment) (string-append (sbs "chr") rnext)))))
+          (cond ((string= rnext "="))
+                ((string= rnext "*"))
+                (t (setf (sam-alignment-rnext alignment) (string-append "chr" rnext)))))
         t))))
 
 (defun add-refid (header)

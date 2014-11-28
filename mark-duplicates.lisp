@@ -1,4 +1,5 @@
 (in-package :elprep)
+(in-simple-base-string-syntax)
 
 (declaim (inline sam-alignment-rg (setf sam-alignment-rg)))
 
@@ -41,7 +42,7 @@
     (assert (= error 0))
     score))
 
-(define-symbol-macro upcase-cigar-operations (sbs "MIDNSHPX="))
+(define-symbol-macro upcase-cigar-operations "MIDNSHPX=")
 
 (defconstant +min-upcase-cigar-operation+ (reduce #'min upcase-cigar-operations :key #'char-code)
   "The smallest CIGAR operation, upper case only.

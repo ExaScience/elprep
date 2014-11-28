@@ -1,4 +1,5 @@
 (in-package :elprep)
+(in-simple-base-string-syntax)
 
 (declaim (inline make-simple-tree))
 

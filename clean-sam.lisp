@@ -1,4 +1,5 @@
 (in-package :elprep)
+(in-simple-base-string-syntax)
 
 (eval-when (#+sbcl :compile-toplevel :load-toplevel :execute)
   (defun make-cigar-operations-table-consumes-reference-bases ()
@@ -8,7 +9,7 @@
                              :initial-element nil
                              #+lispworks :allocation #+lispworks :long-lived
                              #+lispworks :single-thread #+lispworks t)))
-      (loop for char across (sbs "mdn=x") do (setf (svref table (- (char-code char) +min-cigar-operation+)) t))
+      (loop for char across "mdn=x" do (setf (svref table (- (char-code char) +min-cigar-operation+)) t))
       table)))
 
 (defglobal *cigar-consumes-reference-bases-table*
@@ -62,11 +63,11 @@
   (if (operator-consumes-read-bases-p operator)
     (if (operator-consumes-reference-bases-p operator)
       (when (> relative-clipping-position 0)
-        (format new-cigar (sbs "~C~D") operator relative-clipping-position))
+        (format new-cigar "~C~D" operator relative-clipping-position))
       (setf clipped-bases (+ clipped-bases relative-clipping-position)))
     (when (/= relative-clipping-position 0)
       (error "Unexpected non-0 relative clipping position: ~s" relative-clipping-position)))
-  (format new-cigar (sbs "S~D") clipped-bases))
+  (format new-cigar "S~D" clipped-bases))
   
 (defun soft-clip-end-of-read (clip-from cigar-list)
   (declare (int32 clip-from) (list cigar-list) #.*optimization*)
@@ -78,7 +79,7 @@
             do (let ((end-pos (+ pos (if (operator-consumes-read-bases-p operator) val 0))))
                  (declare (int32 end-pos))
                  (if (< end-pos clip-from)
-                   (format new-cigar (sbs "~C~D") operator val)
+                   (format new-cigar "~C~D" operator val)
                    (let ((clipped-bases (+ (get-read-length-from-cigar cigar-list) clip-from)))
                      (declare (int32 clipped-bases))
                      (element-stradless-clipped-read new-cigar operator (- clip-from pos) clipped-bases)

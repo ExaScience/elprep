@@ -1,6 +1,7 @@
 (in-package :elprep)
+(in-simple-base-string-syntax)
 
-(defvar *sam-file-format-version* (sbs "1.4")
+(defvar *sam-file-format-version* "1.4"
   "The SAM file format version string supported by this library.
    This is entered by default in a @HD line in the header section of a SAM file, unless user code explicitly asks for a different version number.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3.
@@ -91,20 +92,20 @@
    Accessor sam-alignment-tags of type property list refers to the optional fields in a read alignment.
    Accessor sam-alignment-xtags of type property list refers to additional optional fields not stored in SAM files, but reserved for other storage formats.
    Accessor sam-alignment-temps of type property list refers to additional optional fields not stored in any storage format, but reserved for temporary values in filters."
-  (qname   empty-sbs :type simple-base-string)
-  (flag    0         :type uint16)
-  (rname   empty-sbs :type simple-base-string)
-  (pos     0         :type int32)
-  (mapq    0         :type octet)
-  (cigar   empty-sbs :type simple-base-string)
-  (rnext   empty-sbs :type simple-base-string)
-  (pnext   0         :type int32)
-  (tlen    0         :type int32)
-  (seq     empty-sbs :type simple-base-string)
-  (qual    empty-sbs :type simple-base-string)
-  (tags   '()        :type list)
-  (xtags  '()        :type list)
-  (temps  '()        :type list))
+  (qname   "" :type simple-base-string)
+  (flag    0  :type uint16)
+  (rname   "" :type simple-base-string)
+  (pos     0  :type int32)
+  (mapq    0  :type octet)
+  (cigar   "" :type simple-base-string)
+  (rnext   "" :type simple-base-string)
+  (pnext   0  :type int32)
+  (tlen    0  :type int32)
+  (seq     "" :type simple-base-string)
+  (qual    "" :type simple-base-string)
+  (tags   '() :type list)
+  (xtags  '() :type list)
+  (temps  '() :type list))
 
 (setf (documentation 'make-sam-alignment 'function)
       "Default constructor for struct sam-alignment."
@@ -380,7 +381,7 @@
 
 ;;; mapping cigar strings to alists or avectors
 
-(define-symbol-macro cigar-operations (sbs "MmIiDdNnSsHhPpXx="))
+(define-symbol-macro cigar-operations "MmIiDdNnSsHhPpXx=")
 
 (defconstant +min-cigar-operation+ (reduce #'min cigar-operations :key #'char-code)
   "The smallest CIGAR operation.
@@ -427,7 +428,7 @@
 
 (defglobal *cigar-list-cache*
   (let ((table (make-synchronized-hash-table :test #'equal)))
-    (setf (gethash (sbs "*") table) '())
+    (setf (gethash "*" table) '())
     table)
   "Cache CIGAR Strings to association lists.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.6.")
@@ -460,7 +461,7 @@
 
 (defglobal *cigar-vector-cache*
   (let ((table (make-synchronized-hash-table :test #'equal)))
-    (setf (gethash (sbs "*") table) #())
+    (setf (gethash "*" table) #())
     table)
   "Cache CIGAR strings to assocation vectors.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.6.")

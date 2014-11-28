@@ -1,4 +1,5 @@
 (in-package :elprep)
+(in-simple-base-string-syntax)
 
 (defconstant +buffer-chunk-size+ 1024)
 
@@ -183,48 +184,48 @@
   (values))
 
 #+lispworks
-(defun read-line-into-buffer (stream buf)
-  "read a line into a buffer"
-  (declare (buffered-stream stream) (buffer buf) #.*fixnum-optimization*)
-  (reinitialize-buffer buf)
-  (loop (stream:with-stream-input-buffer (buffer index limit) stream
-          (declare (simple-base-string buffer) (fixnum index limit))
-          (loop for i of-type fixnum from index below limit do
-                (when (char= (schar buffer i) #\Newline)
-                  (let ((new-index (1+ i))) ;make sure to include the newline
-                    (declare (fixnum new-index))
-                    (buffer-extend buf buffer index new-index)
-                    (setq index new-index)
-                    (return-from read-line-into-buffer buf)))
-                finally
-                (buffer-extend buf buffer index limit)
-                (setq index limit)))
-        (unless (stream:stream-fill-buffer stream)
-          (return-from read-line-into-buffer buf))))
+(defgeneric read-line-into-buffer (stream buffer)
+  (:method ((stream buffered-stream) (buf buffer))
+   "read a line into a buffer"
+   (declare #.*fixnum-optimization*)
+   (reinitialize-buffer buf)
+   (loop (stream:with-stream-input-buffer (buffer index limit) stream
+           (declare (simple-base-string buffer) (fixnum index limit))
+           (loop for i of-type fixnum from index below limit do
+                 (when (char= (schar buffer i) #\Newline)
+                   (let ((new-index (1+ i))) ;make sure to include the newline
+                     (declare (fixnum new-index))
+                     (buffer-extend buf buffer index new-index)
+                     (setq index new-index)
+                     (return-from read-line-into-buffer buf)))
+                 finally
+                 (buffer-extend buf buffer index limit)
+                 (setq index limit)))
+         (unless (stream:stream-fill-buffer stream)
+           (return-from read-line-into-buffer buf)))))
 
 #+sbcl
-(defun read-line-into-buffer (stream buf)
-  "read a line into a buffer"
-  (declare (ascii-stream stream) (buffer buf) #.*optimization*)
-  (reinitialize-buffer buf)
-  (let ((buffer (ascii-stream-buffer stream)))
-    (declare (ascii-stream-buffer buffer))
-    (with-buffer-dispatch buffer
-      (loop (let ((index (ascii-stream-index stream))
-                  (limit (ascii-stream-limit stream)))
-              (declare (fixnum index limit))
-              (loop for i of-type fixnum from index below limit do
-                    (when (char= (bchar buffer i) #\Newline)
-                      (let ((new-index (the fixnum (1+ i)))) ;make sure to include the newline
-                        (declare (fixnum new-index))
-                        (io-buffer-extend buf buffer index new-index)
-                        (setf (ascii-stream-index stream) new-index)
-                        (return-from read-line-into-buffer buf)))
-                    finally
-                    (io-buffer-extend buf buffer index limit)
-                    (setf (ascii-stream-index stream) limit)))
-            (unless (ascii-stream-fill-buffer stream)
-              (return-from read-line-into-buffer buf))))))
+(defgeneric read-line-into-buffer (stream buffer)
+  (:method ((stream buffered-ascii-input-stream) (buf buffer))
+   "read a line into a buffer"
+   (declare #.*optimization*)
+   (reinitialize-buffer buf)
+   (with-ascii-stream-input-buffer buffer stream
+     (loop (let ((index (slot-value stream 'index))
+                 (limit (slot-value stream 'limit)))
+             (declare (fixnum index limit))
+             (loop for i of-type fixnum from index below limit do
+                   (when (char= (bchar buffer i) #\Newline)
+                     (let ((new-index (the fixnum (1+ i)))) ;make sure to include the newline
+                       (declare (fixnum new-index))
+                       (io-buffer-extend buf buffer index new-index)
+                       (setf (slot-value stream 'index) new-index)
+                       (return-from read-line-into-buffer buf)))
+                   finally
+                   (io-buffer-extend buf buffer index limit)
+                   (setf (slot-value stream 'index) limit)))
+           (unless (stream-fill-buffer stream)
+             (return-from read-line-into-buffer buf))))))
 
 (defun buffer-partition (buf separator &rest targets)
   "get substrings from a buffer and feed them to target buffers;

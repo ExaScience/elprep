@@ -1,14 +1,15 @@
 (in-package :elprep)
+(in-simple-base-string-syntax)
 
 ;;; input
 
 (declaim (inline make-scanner))
 
-(defstruct (scanner (:constructor make-scanner (&optional (string empty-sbs)))
+(defstruct (scanner (:constructor make-scanner (&optional (string "")))
                     (:copier nil)
                     (:predicate nil))
   (index 0 :type fixnum)
-  (string empty-sbs :type simple-base-string))
+  (string "" :type simple-base-string))
 
 (setf (documentation 'make-scanner 'function)
       "Create a scanner to scan/parse strings of type simple-base-string."
@@ -202,8 +203,8 @@
                   (string-case (tag :default (if (sam-header-user-tag-p tag)
                                                (list (unique (intern-key/copy tag) record) (scan-string scanner))
                                                (error "Unknown tag ~A in SAM header line ~S." tag scanner)))
-                    (#.(sbs "VN") (list (unique :VN record) (scan-string scanner)))
-                    (#.(sbs "SO") (list (unique :SO record) (scan-string scanner)))))
+                    ("VN" (list (unique :VN record) (scan-string scanner)))
+                    ("SO" (list (unique :SO record) (scan-string scanner)))))
           into record finally
           (advance scanner)
           (unless (presentp :VN record)
@@ -224,12 +225,12 @@
                   (string-case (tag :default (if (sam-header-user-tag-p tag)
                                                (list (unique (intern-key/copy tag) record) (scan-string scanner))
                                                (error "Unknown tag ~A in SAM reference sequence dictionary line ~S." tag scanner)))
-                    (#.(sbs "SN") (list (unique :SN record) (scan-string scanner)))
-                    (#.(sbs "LN") (list (unique :LN record) (scan-integer scanner)))
-                    (#.(sbs "AS") (list (unique :AS record) (scan-string scanner)))
-                    (#.(sbs "M5") (list (unique :M5 record) (parse-sam-byte-array scanner)))
-                    (#.(sbs "SP") (list (unique :SP record) (scan-string scanner)))
-                    (#.(sbs "UR") (list (unique :UR record) (scan-string scanner)))))
+                    ("SN" (list (unique :SN record) (scan-string scanner)))
+                    ("LN" (list (unique :LN record) (scan-integer scanner)))
+                    ("AS" (list (unique :AS record) (scan-string scanner)))
+                    ("M5" (list (unique :M5 record) (parse-sam-byte-array scanner)))
+                    ("SP" (list (unique :SP record) (scan-string scanner)))
+                    ("UR" (list (unique :UR record) (scan-string scanner)))))
           into record finally
           (advance scanner)
           (unless (presentp :SN record)
@@ -253,18 +254,18 @@
                   (string-case (tag :default (if (sam-header-user-tag-p tag)
                                                (list (unique (intern-key/copy tag) record) (scan-string scanner))
                                                (error "Unknown tag ~A in SAM read group line ~S." tag scanner)))
-                    (#.(sbs "ID") (list (unique :ID record) (scan-string scanner)))
-                    (#.(sbs "CN") (list (unique :CN record) (scan-string scanner)))
-                    (#.(sbs "DS") (list (unique :DS record) (scan-string scanner)))
-                    (#.(sbs "DT") (list (unique :DT record) (parse-date-time (scan-string scanner))))
-                    (#.(sbs "FO") (list (unique :FO record) (scan-string scanner)))
-                    (#.(sbs "KS") (list (unique :KS record) (scan-string scanner)))
-                    (#.(sbs "LB") (list (unique :LB record) (scan-string scanner)))
-                    (#.(sbs "PG") (list (unique :PG record) (scan-string scanner)))
-                    (#.(sbs "PI") (list (unique :PI record) (scan-integer scanner)))
-                    (#.(sbs "PL") (list (unique :PL record) (scan-string scanner)))
-                    (#.(sbs "PU") (list (unique :PU record) (scan-string scanner)))
-                    (#.(sbs "SM") (list (unique :SM record) (scan-string scanner)))))
+                    ("ID" (list (unique :ID record) (scan-string scanner)))
+                    ("CN" (list (unique :CN record) (scan-string scanner)))
+                    ("DS" (list (unique :DS record) (scan-string scanner)))
+                    ("DT" (list (unique :DT record) (parse-date-time (scan-string scanner))))
+                    ("FO" (list (unique :FO record) (scan-string scanner)))
+                    ("KS" (list (unique :KS record) (scan-string scanner)))
+                    ("LB" (list (unique :LB record) (scan-string scanner)))
+                    ("PG" (list (unique :PG record) (scan-string scanner)))
+                    ("PI" (list (unique :PI record) (scan-integer scanner)))
+                    ("PL" (list (unique :PL record) (scan-string scanner)))
+                    ("PU" (list (unique :PU record) (scan-string scanner)))
+                    ("SM" (list (unique :SM record) (scan-string scanner)))))
           into record finally
           (advance scanner)
           (unless (presentp :ID record)
@@ -285,12 +286,12 @@
                   (string-case (tag :default (if (sam-header-user-tag-p tag)
                                                (list (unique (intern-key/copy tag) record) (scan-string scanner))
                                                (error "Unknown tag ~A in SAM program line ~S." tag scanner)))
-                    (#.(sbs "ID") (list (unique :ID record) (scan-string scanner)))
-                    (#.(sbs "PN") (list (unique :PN record) (scan-string scanner)))
-                    (#.(sbs "CL") (list (unique :CL record) (scan-string scanner)))
-                    (#.(sbs "PP") (list (unique :PP record) (scan-string scanner)))
-                    (#.(sbs "DS") (list (unique :DS record) (scan-string scanner)))
-                    (#.(sbs "VN") (list (unique :VN record) (scan-string scanner)))))
+                    ("ID" (list (unique :ID record) (scan-string scanner)))
+                    ("PN" (list (unique :PN record) (scan-string scanner)))
+                    ("CL" (list (unique :CL record) (scan-string scanner)))
+                    ("PP" (list (unique :PP record) (scan-string scanner)))
+                    ("DS" (list (unique :DS record) (scan-string scanner)))
+                    ("VN" (list (unique :VN record) (scan-string scanner)))))
           into record finally
           (advance scanner)
           (unless (presentp :ID record)
@@ -336,19 +337,19 @@
         (code (make-array 3 :element-type 'base-char))
         hd sq rg pg co user-tags)
     (declare (scanner scanner) (simple-base-string code) (dynamic-extent scanner code))
-    (loop until (char/= (the base-char (ascii-stream-peek-char stream #\EOT)) #\@) do
-          (reinitialize-scanner scanner (ascii-stream-read-line stream))
+    (loop while (char= (the base-char (peek-char nil stream nil #\EOT)) #\@) do
+          (reinitialize-scanner scanner (read-line stream))
           (parse-sam-header-code scanner code)
           (string-case (code :default (if (sam-header-user-tag-p code)
                                         (push (parse-sam-comment scanner) (getf user-tags (intern-key/copy code)))
                                         (error "Unknown SAM record type code ~A in header line ~S." code scanner)))
-            (#.(sbs "@HD") (progn
-                             (assert (null hd))
-                             (setq hd (parse-sam-header-line scanner))))
-            (#.(sbs "@SQ") (push (parse-sam-reference-sequence-dictionary-entry scanner) sq))
-            (#.(sbs "@RG") (push (parse-sam-read-group scanner) rg))
-            (#.(sbs "@PG") (push (parse-sam-program scanner) pg))
-            (#.(sbs "@CO") (push (parse-sam-comment scanner) co)))
+            ("@HD" (progn
+                     (assert (null hd))
+                     (setq hd (parse-sam-header-line scanner))))
+            ("@SQ" (push (parse-sam-reference-sequence-dictionary-entry scanner) sq))
+            ("@RG" (push (parse-sam-read-group scanner) rg))
+            ("@PG" (push (parse-sam-program scanner) pg))
+            ("@CO" (push (parse-sam-comment scanner) co)))
           finally (return (make-sam-header
                            :hd hd
                            :sq (nreverse sq)
@@ -359,48 +360,15 @@
                                             do (setf (cdr cons) (nreverse (cdr cons)))
                                             finally (return user-tags)))))))
 
-(declaim (inline %skip-line))
-
-#+lispworks
-(defun %skip-line (stream)
-  "Skip characters from stream until a newline is reached."
-  (declare (buffered-stream stream) #.*fixnum-optimization*)
-  (loop (with-stream-input-buffer (source index limit) stream
-          (declare (simple-base-string source) (fixnum index limit))
-          (loop for pos of-type fixnum from index below limit do
-                (when (char= (lw:sbchar source pos) #\Newline)
-                  (setq index (1+ pos))
-                  (return-from %skip-line))
-                finally (setq index pos)))
-        (unless (stream-fill-buffer stream)
-          (return-from %skip-line))))
-
-#+sbcl
-(defun %skip-line (stream)
-  "Skip characters from stream until a newline is reached."
-  (declare (ascii-stream stream) #.*optimization*)
-  (let ((buffer (ascii-stream-buffer stream)))
-    (declare (ascii-stream-buffer buffer))
-    (with-buffer-dispatch buffer
-      (loop (let ((index (ascii-stream-index stream))
-                  (limit (ascii-stream-limit stream)))
-              (declare (fixnum index limit))
-              (loop for pos of-type fixnum from index below limit do
-                    (when (char= (bchar buffer pos) #\Newline)
-                      (setf (ascii-stream-index stream) (the fixnum (1+ pos)))
-                      (return-from %skip-line))
-                    finally (setf (ascii-stream-index stream) pos)))
-            (unless (ascii-stream-fill-buffer stream)
-              (return-from %skip-line))))))
+(declaim (inline skip-sam-header))
 
 (defun skip-sam-header (stream)
   "Skip the SAM file header section."
   (declare #.*optimization*)
-  (loop until (char/= (the base-char (ascii-stream-peek-char stream #\EOT)) #\@)
-        do (%skip-line stream))
+  (loop while (char= (the base-char (peek-char nil stream nil #\EOT)) #\@) do (skip-line stream))
   (values))
 
-(define-symbol-macro optional-field-type-tags (sbs "AifZHB"))
+(define-symbol-macro optional-field-type-tags "AifZHB")
 
 (defconstant +min-optional-field-type-tag+ (reduce #'min optional-field-type-tags :key #'char-code)
   "The smallest optional field type tag.
@@ -478,30 +446,10 @@
   "Parse a complete SAM file.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1."
   (make-sam :header     (parse-sam-header stream)
-            :alignments (loop while (ascii-stream-listen stream)
-                              collect (parse-sam-alignment (ascii-stream-read-line stream)))))
+            :alignments (loop while (listen stream) collect (parse-sam-alignment (read-line stream)))))
 
 
 ;;; output
-
-(declaim (inline writec write-newline write-tab))
-
-(defun writec (out c)
-  "Write a character to output stream."
-  (ascii-stream-write-char out c))
-
-(defun write-newline (out)
-  "Write a newline to output stream."
-  (writec out #\Newline))
-
-(defun write-tab (out)
-  "Write a tabulator to output stream."
-  (writec out #\Tab))
-
-(declaim (inline writestr))
-
-(defun writestr (out string)
-  (ascii-stream-write-string out string))
 
 (defun format-sam-string (out tag string)
   "Write a SAM file TAG of type string."
@@ -516,7 +464,7 @@
   (declare (stream out) (simple-base-string tag) (integer value) #.*optimization*)
   (write-tab out)
   (writestr out tag)
-  (format out (sbs ":~D") value))
+  (format out ":~D" value))
 
 (defun format-sam-byte-array (out tag byte-array)
   "Write a SAM file TAG of type byte array.
@@ -527,9 +475,9 @@
   (writec out #\:)
   (etypecase byte-array
     (list   (loop for byte in (the list byte-array)
-                  do (format out (sbs "~2,'0X") byte)))
+                  do (format out "~2,'0X" byte)))
     (vector (loop for byte across (the vector byte-array)
-                  do (format out (sbs "~2,'0X") byte)))))
+                  do (format out "~2,'0X" byte)))))
 
 (defun format-sam-datetime (out tag datetime)
   "Write a SAM file TAG of type date/time.
@@ -540,7 +488,7 @@
   (multiple-value-bind
       (sec min hour day month year)
       (decode-universal-time datetime)
-    (format out (sbs ":~4,'0D-~2,'0D-~2,'0DT~2,'0D:~2,'0D:~2,'0DZ")
+    (format out ":~4,'0D-~2,'0D-~2,'0DT~2,'0D:~2,'0D:~2,'0DZ"
             year month day hour min sec)))
 
 (defun format-sam-header-user-tag (out tag value)
@@ -559,11 +507,11 @@
     (unless (presentp :VN list)
       (cerror "Ignore absence of VN tag and continue."
               "VN tag missing in @HD line when writing ~A." out))
-    (writestr out (sbs "@HD"))
+    (writestr out "@HD")
     (loop for (tag value) of-type (symbol t) on list by #'cddr do
           (case tag 
-            (:VN (format-sam-string out (sbs "VN") value))
-            (:SO (format-sam-string out (sbs "SO") value))
+            (:VN (format-sam-string out "VN" value))
+            (:SO (format-sam-string out "SO" value))
             (t   (format-sam-header-user-tag out tag value))))
     (write-newline out)))
 
@@ -578,15 +526,15 @@
         (unless (presentp :LN plist)
           (cerror "Ignore absence of LN tag and continue."
                   "LN tag missing in @SQ line when writing ~A." out))
-        (writestr out (sbs "@SQ"))
+        (writestr out "@SQ")
         (loop for (tag value) on plist by #'cddr do
               (case tag
-                (:SN (format-sam-string out (sbs "SN") value))
-                (:LN (format-sam-integer out (sbs "LN") value))
-                (:AS (format-sam-string out (sbs "AS") value))
-                (:M5 (format-sam-byte-array out (sbs "M5") value))
-                (:SP (format-sam-string out (sbs "SP") value))
-                (:UR (format-sam-string out (sbs "UR") value))
+                (:SN (format-sam-string out "SN" value))
+                (:LN (format-sam-integer out "LN" value))
+                (:AS (format-sam-string out "AS" value))
+                (:M5 (format-sam-byte-array out "M5" value))
+                (:SP (format-sam-string out "SP" value))
+                (:UR (format-sam-string out "UR" value))
                 (t   (format-sam-header-user-tag out tag value))))
         (write-newline out)))
 
@@ -598,21 +546,21 @@
         (unless (presentp :ID plist)
           (cerror "Ignore absence of ID tag and continue."
                   "ID tag missing in @RG line when writing ~A." out))
-        (writestr out (sbs "@RG"))
+        (writestr out "@RG")
         (loop for (tag value) on plist by #'cddr do
               (case tag
-                (:ID (format-sam-string out (sbs "ID") value))
-                (:CN (format-sam-string out (sbs "CN") value))
-                (:DS (format-sam-string out (sbs "DS") value))
-                (:DT (format-sam-datetime out (sbs "DT") value))
-                (:FO (format-sam-string out (sbs "FO") value))
-                (:KS (format-sam-string out (sbs "KS") value))
-                (:LB (format-sam-string out (sbs "LB") value))
-                (:PG (format-sam-string out (sbs "PG") value))
-                (:PI (format-sam-integer out (sbs "PI") value))
-                (:PL (format-sam-string out (sbs "PL") value))
-                (:PU (format-sam-string out (sbs "PU") value))
-                (:SM (format-sam-string out (sbs "SM") value))
+                (:ID (format-sam-string out "ID" value))
+                (:CN (format-sam-string out "CN" value))
+                (:DS (format-sam-string out "DS" value))
+                (:DT (format-sam-datetime out "DT" value))
+                (:FO (format-sam-string out "FO" value))
+                (:KS (format-sam-string out "KS" value))
+                (:LB (format-sam-string out "LB" value))
+                (:PG (format-sam-string out "PG" value))
+                (:PI (format-sam-integer out "PI" value))
+                (:PL (format-sam-string out "PL" value))
+                (:PU (format-sam-string out "PU" value))
+                (:SM (format-sam-string out "SM" value))
                 (t   (format-sam-header-user-tag out tag value))))
         (write-newline out)))
 
@@ -624,15 +572,15 @@
         (unless (presentp :ID plist)
           (cerror "Ignore absence of ID tag and continue."
                   "ID tag missing in @PG line when writing ~A." out))
-        (writestr out (sbs "@PG"))
+        (writestr out "@PG")
         (loop for (tag value) on plist by #'cddr do
               (case tag
-                (:ID (format-sam-string out (sbs "ID") value))
-                (:PN (format-sam-string out (sbs "PN") value))
-                (:CL (format-sam-string out (sbs "CL") value))
-                (:PP (format-sam-string out (sbs "PP") value))
-                (:DS (format-sam-string out (sbs "DS") value))
-                (:VN (format-sam-string out (sbs "VN") value))
+                (:ID (format-sam-string out "ID" value))
+                (:PN (format-sam-string out "PN" value))
+                (:CL (format-sam-string out "CL" value))
+                (:PP (format-sam-string out "PP" value))
+                (:DS (format-sam-string out "DS" value))
+                (:VN (format-sam-string out "VN" value))
                 (t   (format-sam-header-user-tag out tag value))))
         (write-newline out)))
 
@@ -641,7 +589,7 @@
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3."
   (declare (stream out) (list list) #.*optimization*)
   (loop for string in list do
-        (writestr out (sbs "@CO"))
+        (writestr out "@CO")
         (write-tab out)
         (writestr out string)
         (write-newline out)))
@@ -746,40 +694,40 @@
   (write-tab out)
   (writestr out (symbol-name tag))
   (etypecase value
-    (character    (writestr out (sbs ":A:")) (writec out value))           ; printable character
-    (int32        (format out (sbs ":i:~D") value))                        ; signed 32-bit integer
-    (integer      (format out (sbs ":f:~D") value))                        ; single-precision floating point number
-    (single-float (format out (sbs ":f:~E") value))                        ; single-precision floating point number
-    (double-float (format out (sbs ":f:~E") (coerce value 'single-float))) ; single-precision floating point number
-    (string       (writestr out (sbs ":Z:"))                               ; printable string
+    (character    (writestr out ":A:") (writec out value))           ; printable character
+    (int32        (format out ":i:~D" value))                        ; signed 32-bit integer
+    (integer      (format out ":f:~D" value))                        ; single-precision floating point number
+    (single-float (format out ":f:~E" value))                        ; single-precision floating point number
+    (double-float (format out ":f:~E" (coerce value 'single-float))) ; single-precision floating point number
+    (string       (writestr out ":Z:")                               ; printable string
                   (writestr out value))
-    (vector       (writestr out (sbs ":H:"))                               ; byte array in hex format
+    (vector       (writestr out ":H:")                               ; byte array in hex format
                   (loop for byte across (the vector value)
-                        do (format out (sbs "~2,'0X") byte)))
-    (list         (writestr out (sbs ":B:"))                               ; integer or numeric array
+                        do (format out "~2,'0X" byte)))
+    (list         (writestr out ":B:")                               ; integer or numeric array
                   (let ((type (common-number-type value)))
                     (writec out type)
                     (if (char= type num)
                       (loop for number in value do
-                            (if (integerp number) (format out (sbs ",~D") number)
-                              (format out (sbs ",~E") (coerce number 'single-float))))
-                      (loop for number in value do (format out (sbs ",~D") number)))))))
+                            (if (integerp number) (format out ",~D" number)
+                              (format out ",~E" (coerce number 'single-float))))
+                      (loop for number in value do (format out ",~D" number)))))))
 
 (defun format-sam-alignment (out aln)
   "Write a SAM file read alignment line.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Sections 1.4 and 1.5."
   (declare (stream out) (sam-alignment aln) #.*optimization*)
   (writestr out (sam-alignment-qname aln)) (write-tab out)
-  (format out (sbs "~D") (sam-alignment-flag aln))  (write-tab out)
-  (writestr out          (sam-alignment-rname aln)) (write-tab out)
-  (format out (sbs "~D") (sam-alignment-pos aln))   (write-tab out)
-  (format out (sbs "~D") (sam-alignment-mapq aln))  (write-tab out)
-  (writestr out          (sam-alignment-cigar aln)) (write-tab out)
-  (writestr out          (sam-alignment-rnext aln)) (write-tab out)
-  (format out (sbs "~D") (sam-alignment-pnext aln)) (write-tab out)
-  (format out (sbs "~D") (sam-alignment-tlen aln))  (write-tab out)
-  (writestr out          (sam-alignment-seq aln))   (write-tab out)
-  (writestr out          (sam-alignment-qual aln))
+  (format out "~D" (sam-alignment-flag aln))  (write-tab out)
+  (writestr out    (sam-alignment-rname aln)) (write-tab out)
+  (format out "~D" (sam-alignment-pos aln))   (write-tab out)
+  (format out "~D" (sam-alignment-mapq aln))  (write-tab out)
+  (writestr out    (sam-alignment-cigar aln)) (write-tab out)
+  (writestr out    (sam-alignment-rnext aln)) (write-tab out)
+  (format out "~D" (sam-alignment-pnext aln)) (write-tab out)
+  (format out "~D" (sam-alignment-tlen aln))  (write-tab out)
+  (writestr out    (sam-alignment-seq aln))   (write-tab out)
+  (writestr out    (sam-alignment-qual aln))
   (loop for (key value) on (sam-alignment-tags aln) by #'cddr
         do (format-sam-tag out key value))
   (write-newline out))
@@ -804,12 +752,14 @@
 
 (defun get-samtools ()
   "Determine location of the samtools binary."
-  (or *samtools* 
-      (with-open-program (program "command -v samtools" :buffered nil)
-        (let ((line (read-line (program-stream program) nil)))
-          (if line
-            (setq *samtools* line)
-            (error "samtools not found. Please download it from http://samtools.sourceforge.net and make sure that its binary is present in your PATH."))))))
+  (or *samtools*
+      (let ((command (run-program "/bin/sh" '("-c" "command -v samtools") :output :stream)))
+        (unwind-protect
+            (let ((line (read-line (process-output command))))
+              (if line
+                (setq *samtools* line)
+                (error "samtools not found. Please download it from http://samtools.sourceforge.net and make sure that its binary is present in your PATH.")))
+          (process-close command)))))
 
 (defun check-stdout (pathname)
   (ignore-errors
@@ -841,10 +791,18 @@
                    (if (check-stdin pathname) *terminal-io*
                      (open pathname :direction :input :element-type 'base-char :if-does-not-exist :error))
                    #+sbcl
-                   (make-ascii-stream (open pathname :direction :input :element-type 'octet :if-does-not-exist :error)))
+                   (make-instance 'buffered-ascii-input-stream :stream (open pathname :direction :input :element-type 'octet :if-does-not-exist :error)))
                   (t (open pathname :direction :probe :if-does-not-exist :error)
-                     (open-program (list (get-samtools) "view" (if header-only "-H" "-h") "-@" (write-to-string *number-of-threads*)
-                                         (namestring (translate-logical-pathname pathname))) :direction :input))))
+                     (let ((program (run-program (get-samtools)
+                                                 `("view" ,(if header-only "-H" "-h") "-@" ,(write-to-string *number-of-threads*)
+                                                          ,(namestring (translate-logical-pathname pathname)))
+                                                 :output :stream :wait nil :external-format :latin-1)))
+                       (values
+                        #+lispworks (process-output program)
+                        #+sbcl      (make-instance 'buffered-ascii-input-stream
+                                                   :element-type 'character
+                                                   :stream (process-output program))
+                        program)))))
     (:output (cond ((eq kind :sam)
                     #+lispworks
                     (if (check-stdout pathname) *terminal-io*
@@ -858,16 +816,20 @@
                              (error "When creating CRAM output, either a reference-fasta or a reference-fai must be provided."))
                             ((and reference-fasta reference-fai)
                              (error "When creating CRAM output, only either a reference-fasta or a reference-fai must be provided, but not both.")))
-                      (open-program `(,(get-samtools) "view" "-C"
-                                      "-@" ,(write-to-string *number-of-threads*)
-                                      ,@(cond (reference-fasta
-                                               `("-T" ,reference-fasta))
-                                              (reference-fai
-                                               `("-t" ,reference-fai)))
-                                      "-o" ,(namestring (translate-logical-pathname pathname)) "-")
-                                    :direction :output)))
-                   (t (open-program (list (get-samtools) "view" "-Sb" "-@" (write-to-string *number-of-threads*)
-                                          "-o" (namestring (translate-logical-pathname pathname)) "-") :direction :output))))))
+                      (let ((program (run-program (get-samtools)
+                                                  `("view" "-C" "-@" ,(write-to-string *number-of-threads*)
+                                                           ,@(cond (reference-fasta
+                                                                    `("-T" ,reference-fasta))
+                                                                   (reference-fai
+                                                                    `("-t" ,reference-fai)))
+                                                           "-o" ,(namestring (translate-logical-pathname pathname)) "-")
+                                                  :input :stream :wait nil :external-format :utf-8)))
+                        (values (process-input program) program))))
+                   (t (let ((program (run-program (get-samtools)
+                                                  `("view" "-Sb" "-@" ,(write-to-string *number-of-threads*)
+                                                           "-o" ,(namestring (translate-logical-pathname pathname)) "-")
+                                                  :input :stream :wait nil :external-format :utf-8)))
+                        (values (process-input program) program)))))))
 
 (defun sam-file-kind (filename)
   "Determine whether the file is :bam for .bam, :cram for .cram, or :sam in all other cases."
@@ -892,10 +854,13 @@
         (kind (sam-file-kind sibling)))
     (cond ((eq kind :sam)
            (let ((stream (hcl:open-temp-file :directory location)))
-             (values stream (pathname stream))))
+             (values stream nil (pathname stream))))
           (t (let ((pathname (hcl:create-temp-file :directory location)))
                (assert (delete-file pathname))
-               (values (%open-sam pathname :output nil kind) pathname)))))
+               (multiple-value-bind
+                   (file program)
+                   (%open-sam pathname :output nil kind)
+                 (values file program pathname))))))
   #+sbcl
   (let* ((stream (cl-fad:open-temporary
                   :template (merge-pathnames "%" (merge-pathnames sibling (get-working-directory)))
@@ -903,49 +868,30 @@
          (pathname (pathname stream))
          (kind (sam-file-kind sibling)))
     (cond ((eq kind :sam)
-           (values stream pathname))
+           (values stream nil pathname))
           (t (close stream)
              (assert (delete-file pathname))
-             (values (%open-sam pathname :output nil kind) pathname)))))
+             (multiple-value-bind
+                 (file program)
+                 (%open-sam pathname :output nil kind)
+               (values file program pathname))))))
 
-#+lispworks
-(progn
-  (declaim (inline close-sam sam-input sam-output))
+(defun close-sam (file program &key (wait t))
+  (close file)
+  (when program
+    (when wait (process-wait program))
+    (process-close program)))
 
-  (defun close-sam (sam)
-    "Close a SAM file, no matter whether it is an actual file or a pipe."
-    (when (output-stream-p sam) (stream-flush-buffer sam))
-    (unless (eq sam *terminal-io*) (close sam)))
-
-  (defun sam-stream (sam)
-    "Get the stream for a SAM file."
-    sam))
-
-#+sbcl
-(progn
-  (defun close-sam (sam)
-    "Close a SAM file, no matter whether it is an actual file or a pipe."
-    (cond ((streamp sam) (close sam))
-          ((ascii-stream-p sam) (close-ascii-stream sam))
-          ((program-p sam) (close-program sam))
-          (t (error "Not a proper sam file connection: ~S." sam))))
-
-  (defun sam-stream (sam)
-    "Get the stream for a SAM file."
-    (cond ((streamp sam) sam)
-          ((ascii-stream-p sam) sam)
-          ((program-p sam) (program-stream sam))
-          (t (error "Not a proper sam file connection: ~S." sam)))))
-
-(defun invoke-with-open-sam (function filename &rest args &key (direction :input) header-only)
+(defun invoke-with-open-sam (function filename &rest args &key (direction :input) header-only (wait t))
   "Call a function and pass it a stream for reading or writing a SAM file."
-  (declare (dynamic-extent args) (ignorable direction header-only))
-  (let ((sam (apply #'open-sam filename args)))
-    (unwind-protect
-        (funcall function (sam-stream sam))
-      (close-sam sam))))
+  (declare (dynamic-extent args) (ignorable direction header-only wait))
+  (multiple-value-bind
+      (stream program)
+      (apply #'open-sam filename args)
+    (unwind-protect (funcall function stream)
+      (close-sam stream program))))
 
-(defmacro with-open-sam ((stream filename &rest args &key (direction :input) header-only) &body body)
+(defmacro with-open-sam ((stream filename &rest args &key (direction :input) header-only (wait t)) &body body)
   "Macro version of invoke-with-open-sam."
-  (declare (ignore direction header-only))
+  (declare (ignore direction header-only wait))
   `(invoke-with-open-sam (lambda (,stream) ,@body) ,filename ,@args))

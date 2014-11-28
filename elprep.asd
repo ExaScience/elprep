@@ -32,5 +32,6 @@ met:
   :depends-on ("cl-date-time-parser"
                "cl-fad"
                "claws"
+               #+sbcl "named-readtables"
                "string-case"
                #+sbcl (:require :sb-concurrency)))

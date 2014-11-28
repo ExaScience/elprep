@@ -1,5 +1,27 @@
 (in-package :elprep)
 
+#+sbcl
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun read-simple-base-string (stream c)
+    (declare (ignore c))
+    (coerce (loop for char = (read-char stream t nil t)
+                  if (char= char #\\) collect (read-char stream t nil t)
+                  else if (char= char #\") do (loop-finish)
+                  else collect char)
+            'simple-base-string))
+
+  (defreadtable simple-base-string-syntax
+    (:merge :standard)
+    (:macro-char #\" #'read-simple-base-string nil))
+
+  (defmacro in-simple-base-string-syntax ()
+    '(in-readtable simple-base-string-syntax)))
+
+#+lispworks
+(defmacro in-simple-base-string-syntax () ())
+
+(in-simple-base-string-syntax)
+
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *optimization*
     '(optimize (speed 3) (space 0) (debug 1) (safety 0)
@@ -18,14 +40,6 @@
 (deftype  int32 () '(signed-byte 32))
 
 ;;; portability
-
-(defmacro sbs (string)
-  "Coerce (literal) string to 'simple-base-string at macro-expansion time."
-  #+lispworks string
-  #+sbcl (coerce string 'simple-base-string))
-
-#+lispworks (define-symbol-macro empty-sbs "")
-#+sbcl (sb-ext:defglobal empty-sbs (sbs "") "An empty simple-base-string.")
 
 (defmacro defglobal (var value &optional (doc nil docp))
   "Define a global variable."
@@ -92,7 +106,7 @@
   "The number of threads used by run-pipeline and run-pipeline-in-situ to parallelize the filtering process.
    Default is 1, which results in sequential execution. Usually, parallelization only occurs when this value is greater than 3.")
 
-(defun process-run (name function &rest arguments)
+(defun thread-run (name function &rest arguments)
   "Wrapper around mp:process-run-function / sb-thread:make-thread."
   (declare (dynamic-extent arguments))
   #+lispworks (apply #'mp:process-run-function name '() function arguments)
@@ -100,7 +114,7 @@
 
 #+sbcl
 (progn
-  (declaim (inline make-mailbox mailbox-send mailbox-read process-join))
+  (declaim (inline make-mailbox mailbox-send mailbox-read thread-join))
 
   (defun make-mailbox ()
     "Similar to LispWorks's mp:make-mailbox."
@@ -114,9 +128,17 @@
     "Similar to LispWorks's mp:mailbox-read."
     (sb-concurrency:receive-message mailbox))
 
-  (defun process-join (process)
+  (defun thread-join (thread)
     "Similar to LispWorks's mp:process-join."
-    (sb-thread:join-thread process)))
+    (sb-thread:join-thread thread)))
+
+#+lispworks
+(progn
+  (declaim (inline thread-join))
+
+  (defun thread-join (thread)
+    "Similar to LispWorks's mp:process-join."
+    (mp:process-join thread)))
 
 (declaim (inline make-single-thread-hash-table make-synchronized-hash-table))
 

@@ -1,4 +1,5 @@
 (in-package :elprep)
+(in-simple-base-string-syntax)
 
 (defun run-best-practices-pipeline-intermediate-list (file-in file-out &key (sorting-order :keep) (filters '()) (filters2 '()) (gc-on 0) (timed nil))
   "Run the best practices pipeline. Version that uses an intermediate list so that sorting and mark-duplicates are supported."
@@ -57,13 +58,13 @@
            (time (all-phases)))
           (t (time (all-phases))))))
 
-(defvar *program-name* (sbs "elPrep")
+(defvar *program-name* "elPrep"
   "Name of the elprep binary.")
 
-(defvar *program-version* (sbs "2.0")
+(defvar *program-version* "2.0"
   "Version of the elprep binary.")
 
-(defvar *program-url* (sbs "http://github.com/exascience/elprep")
+(defvar *program-url* "http://github.com/exascience/elprep"
   "URL for more information about elprep.")
 
 (defvar *program-help* "sam-file sam-output-file ~% [--replace-reference-sequences sam-file] ~% [--filter-unmapped-reads [strict]] ~% [--replace-read-group read-group-string]~% [--mark-duplicates [remove] [deterministic]] ~% [--sorting-order [keep | unknown | unsorted | queryname | coordinate]] ~% [--clean-sam] ~% [--nr-of-threads nr] ~% [--gc-on [0 | 1 | 2]] ~% [--timed] ~% [--reference-t fai-file] ~% [--reference-T fasta-file] ~%"
@@ -208,27 +209,27 @@
             (return-from elprep-filter-script))
           (let* ((cmd-string
                   (with-output-to-string (s nil :element-type 'base-char)
-                    (format s (sbs "~a ~a ~a")
+                    (format s "~a ~a ~a"
                             #+lispworks (first (command-line-arguments))
                             #+sbcl (first sb-ext:*posix-argv*)
                             (first conversion-parameters)
                             (second conversion-parameters))
-                    (when remove-unmapped-reads-filter (format s (sbs " --filter-unmapped-reads~@[ ~a~]") filter-unmapped-arg))
-                    (when clean-sam-filter (format s (sbs " --clean-sam")))
-                    (when replace-ref-seq-dct-filter (format s (sbs " --replace-reference-sequences ~a") ref-seq-dct))
-                    (when replace-read-group-filter (format s (sbs " --replace-read-group ~s") read-group-string))
+                    (when remove-unmapped-reads-filter (format s " --filter-unmapped-reads~@[ ~a~]" filter-unmapped-arg))
+                    (when clean-sam-filter (format s " --clean-sam"))
+                    (when replace-ref-seq-dct-filter (format s " --replace-reference-sequences ~a" ref-seq-dct))
+                    (when replace-read-group-filter (format s " --replace-read-group ~s" read-group-string))
                     (when mark-duplicates-filter
-                      (format s (sbs " --mark-duplicates"))
+                      (format s " --mark-duplicates")
                       (when remove-duplicates-filter
-                        (format s (sbs " remove")))
+                        (format s " remove"))
                       (when mark-duplicates-deterministic
-                        (format s (sbs " deterministic"))))
-                    (format s (sbs " --sorting-order ~(~a~) --gc-on ~a --nr-of-threads ~a") sorting-order gc-on nr-of-threads)
-                    (when timed (format s (sbs " --timed")))
-                    (when reference-fai (format s (sbs " --reference-t ~a") reference-fai))
-                    (when reference-fasta (format s (sbs " --reference-T ~a") reference-fasta))))
+                        (format s " deterministic")))
+                    (format s " --sorting-order ~(~a~) --gc-on ~a --nr-of-threads ~a" sorting-order gc-on nr-of-threads)
+                    (when timed (format s " --timed"))
+                    (when reference-fai (format s " --reference-t ~a" reference-fai))
+                    (when reference-fasta (format s " --reference-T ~a" reference-fasta))))
                  ; optimal order for filters
-                 (filters (nconc (list (add-pg-line (format nil (sbs "~A ~A") *program-name* *program-version*)
+                 (filters (nconc (list (add-pg-line (format nil "~A ~A" *program-name* *program-version*)
                                                     :pn *program-name*
                                                     :vn *program-version*
                                                     :ds *program-url*
@@ -306,9 +307,9 @@
           ; print feedback
           (let ((cmd-string
                  (with-output-to-string (s nil :element-type 'base-char)
-                   (format s (sbs "~a split ~a ~a ") (first (command-line-arguments)) (first io-parameters) (second io-parameters))
-                   (format s (sbs "--output-prefix ~a ") output-prefix)
-                   (format s (sbs "--output-type ~(~a~)") output-type))))
+                   (format s "~a split ~a ~a " (first (command-line-arguments)) (first io-parameters) (second io-parameters))
+                   (format s "--output-prefix ~a " output-prefix)
+                   (format s "--output-type ~(~a~)" output-type))))
             (format t "Executing command:~%  ~a~%" cmd-string))
           (setq *number-of-threads* nr-of-threads)
           (ensure-directories-exist output-path)
@@ -358,7 +359,7 @@
               ; print feedback
               (let ((cmd-string
                      (with-output-to-string (s nil :element-type 'base-char)
-                       (format s (sbs "~a merge ~a ~a") (first (command-line-arguments)) input-path output))))
+                       (format s "~a merge ~a ~a" (first (command-line-arguments)) input-path output))))
                 (format t "Executing command:~%  ~a~%" cmd-string))
               (setq *number-of-threads* nr-of-threads)
               (let ((working-directory (get-working-directory)))

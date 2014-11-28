@@ -9,20 +9,35 @@ Refer to the documentation of run-pipeline as a starting point.")
   (:use 
    #:cl-date-time-parser
    #:common-lisp
+   #+sbcl #:sb-gray
    #+lispworks #:stream
    #:string-case)
   (:shadow #:byte #:make-hash-table)
   #+lispworks
   (:import-from #:hcl #:get-working-directory #:modify-hash #:with-hash-table-locked)
   #+lispworks
-  (:import-from #:mp #:mailbox #:make-mailbox #:mailbox-send #:mailbox-read #:process-join)
+  (:import-from #:mp #:mailbox #:make-mailbox #:mailbox-send #:mailbox-read)
   #+lispworks
   (:import-from #:sys #:compare-and-swap)
   #+sbcl
   (:import-from #:sb-concurrency #:mailbox)
   #+sbcl
-  (:import-from #:sb-ext #:compare-and-swap)
+  (:import-from #:sb-ext
+   #:compare-and-swap
+   #:run-program
+   #:process-p
+   #:process-input
+   #:process-output
+   #:process-error
+   #:process-alive-p
+   #:process-wait
+   #:process-exit-code
+   #:process-close)
+  #+sbcl
+  (:import-from #:named-readtables #:defreadtable #:in-readtable)
+
   (:export 
+
    #:*number-of-threads*
 
    ;; sam-types
@@ -151,7 +166,6 @@ Refer to the documentation of run-pipeline as a starting point.")
    #:open-sam
    #:open-temporary-sam
    #:close-sam
-   #:sam-stream
    #:invoke-with-open-sam #:with-open-sam
 
    #:*reference-fasta*

@@ -1,4 +1,5 @@
 (in-package :elprep)
+(in-simple-base-string-syntax)
 
 (defun explain-flag (flag)
   (let ((result '()))
@@ -100,41 +101,44 @@
 
 ; code for splitting up sam files into chromosomes
 
-(define-symbol-macro optional-data-tag (sbs "sr:i:1"))
+(define-symbol-macro optional-data-tag "sr:i:1")
 
 (defun split-file-per-chromosome (input output-path output-prefix output-extension)
   "A function for splitting a sam file into : a file containing all unmapped reads, a file containing all pairs where reads map to different chromosomes, a file per chromosome containing all pairs where the reads map to that chromosome. There are no requirements on the input file for splitting."
   (with-open-sam (in input :direction :input)
     (let* ((header (parse-sam-header in))
            (chroms-encountered (make-single-thread-hash-table :test #'buffer= :hash-function #'buffer-hash))
-           (buf-unmapped (make-buffer (sbs "*"))))
+           (buf-unmapped (make-buffer "*")))
       ; tag the header as one created with elPrep split
-      (setf (sam-header-user-tag header :|@sr|) (list (sbs "This file was created using elprep split.")))
+      (setf (sam-header-user-tag header :|@sr|) (list "This file was created using elprep split."))
       ; fill in a file for unmapped reads
       (setf (gethash buf-unmapped chroms-encountered)
-            (let ((file (open-sam (merge-pathnames output-path (make-pathname :name (format nil "~a-unmapped" output-prefix) :type output-extension)) :direction :output)))
-              (format-sam-header (sam-stream file) header) ; fill in the header
-              file))
+            (multiple-value-bind
+                (file program)
+                (open-sam (merge-pathnames output-path (make-pathname :name (format nil "~a-unmapped" output-prefix) :type output-extension)) :direction :output)
+              (format-sam-header file header) ; fill in the header
+              (cons file program)))
       (loop for sn-form in (sam-header-sq header)
             do (let* ((chrom (getf sn-form :SN))
                       (buf-chrom (make-buffer chrom)))
                  (setf (gethash buf-chrom chroms-encountered)
-                       (let ((file (open-sam (merge-pathnames output-path (make-pathname :name (format nil "~a-~a" output-prefix chrom) :type output-extension)) :direction :output)))
-                         (format-sam-header (sam-stream file) header)
-                         file))))
+                       (multiple-value-bind
+                           (file program)
+                           (open-sam (merge-pathnames output-path (make-pathname :name (format nil "~a-~a" output-prefix chrom) :type output-extension)) :direction :output)
+                         (format-sam-header file header)
+                         (cons file program)))))
       (unwind-protect
           (with-open-sam (spread-reads-stream (merge-pathnames output-path (make-pathname :name (format nil "~a-spread" output-prefix) :type output-extension)) :direction :output)
-            (let ((buf-= (make-buffer (sbs "="))))
+            (let ((buf-= (make-buffer "=")))
               (format-sam-header spread-reads-stream header)
               (let ((rname (make-buffer))
                     (rnext (make-buffer))
                     (aln-string (make-buffer)))
-                (loop until (ascii-stream-end-of-file-p in)
+                (loop while (listen in)
                       do (progn (read-line-into-buffer in aln-string)
                            (buffer-partition aln-string #\Tab 2 rname 6 rnext)
-                           (let* ((file (gethash rname chroms-encountered))
-                                  (stream (sam-stream file)))
-                             (cond ((or (buffer= buf-= rnext) (buffer= buf-unmapped rname) (buffer= rname rnext)) (write-buffer aln-string stream))
+                           (let ((file (car (gethash rname chroms-encountered))))
+                             (cond ((or (buffer= buf-= rnext) (buffer= buf-unmapped rname) (buffer= rname rnext)) (write-buffer aln-string file))
                                    (t ; the read is part of a pair mapping to two different chromosomes
                                     (write-buffer aln-string spread-reads-stream)
                                     ; duplicate the info in the chromosome file so it can be used; mark the read as duplicate info
@@ -142,8 +146,9 @@
                                     (buffer-push aln-string #\Tab)
                                     (buffer-extend aln-string optional-data-tag)
                                     (buffer-push aln-string #\Newline)
-                                    (write-buffer aln-string stream)))))))))
-        (loop for file being each hash-value of chroms-encountered do (close-sam file))))))
+                                    (write-buffer aln-string file)))))))))
+        (loop for (file . program) being each hash-value of chroms-encountered
+              do (close-sam file program))))))
 
 (defun merge-sorted-files-split-per-chromosome (input-path output input-prefix input-extension header)
   "A function for merging files that were split with elPrep and sorted in coordinate order."
@@ -193,19 +198,19 @@
                           (pos2 (buffer-parse-integer chromosome-read-pos)))
                       (loop do (cond ((< pos1 pos2)
                                       (write-buffer spread-read out)
-                                      (cond ((ascii-stream-end-of-file-p spread-reads-file)
-                                             (reinitialize-buffer spread-read)
-                                             (loop-finish))
-                                            (t (read-line-into-buffer spread-reads-file spread-read)
-                                               (buffer-partition spread-read #\Tab 2 spread-read-refid 3 spread-read-pos)
-                                               (setq pos1 (buffer-parse-integer spread-read-pos)))))
+                                      (cond ((listen spread-reads-file)
+                                             (read-line-into-buffer spread-reads-file spread-read)
+                                             (buffer-partition spread-read #\Tab 2 spread-read-refid 3 spread-read-pos)
+                                             (setq pos1 (buffer-parse-integer spread-read-pos)))
+                                            (t (reinitialize-buffer spread-read)
+                                               (loop-finish))))
                                      (t (write-buffer chromosome-read out)
-                                        (cond ((ascii-stream-end-of-file-p file)
-                                               (reinitialize-buffer chromosome-read)
-                                               (loop-finish))
-                                              (t (read-line-into-buffer file chromosome-read)
-                                                 (buffer-partition chromosome-read #\Tab 3 chromosome-read-pos)
-                                                 (setq pos2 (buffer-parse-integer chromosome-read-pos))))))
+                                        (cond ((listen file)
+                                               (read-line-into-buffer file chromosome-read)
+                                               (buffer-partition chromosome-read #\Tab 3 chromosome-read-pos)
+                                               (setq pos2 (buffer-parse-integer chromosome-read-pos)))
+                                              (t (reinitialize-buffer chromosome-read)
+                                                 (loop-finish)))))
                             while (buffer= chromosome-read-refid spread-read-refid)))))
                 ; copy remaining reads in the file, if any
                 (when (not (buffer-emptyp chromosome-read)) (write-buffer chromosome-read out))
@@ -215,7 +220,7 @@
                 (loop while (buffer= spread-read-refid common-read-refid)
                       do
                       (write-buffer spread-read out)
-                      until (ascii-stream-end-of-file-p spread-reads-file)
+                      while (listen spread-reads-file)
                       do
                       (read-line-into-buffer spread-reads-file spread-read)
                       (buffer-partition spread-read #\Tab 2 spread-read-refid))))
@@ -226,8 +231,8 @@
 (declaim (inline parse-sam-alignment-from-stream))
 
 (defun parse-sam-alignment-from-stream (stream)
-  (when (ascii-stream-listen stream)
-    (parse-sam-alignment (ascii-stream-read-line stream))))
+  (when (listen stream)
+    (parse-sam-alignment (read-line stream))))
 
 (defun compare-sam-files (file1 file2 &optional (output "/dev/stdout"))
   "A function for comparing two sam files. The input files must be sorted by coordinate order."

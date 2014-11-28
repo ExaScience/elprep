@@ -1,4 +1,5 @@
 (in-package :elprep)
+(in-simple-base-string-syntax)
 
 (defgeneric run-pipeline (input output &key)
   (:documentation
@@ -202,7 +203,7 @@
    If this happens, and requested sorting order is :keep, then we need to effectively sort the result
    according to the original sorting order."
   (cond ((eq sorting-order :keep)
-         (cond ((string= (getf (sam-header-hd header) :so (sbs "unknown")) original-sorting-order) :keep)
+         (cond ((string= (getf (sam-header-hd header) :so "unknown") original-sorting-order) :keep)
                (t (sam-header-ensure-hd header :so original-sorting-order)
                   (intern-key (string-upcase original-sorting-order)))))
         (t (sam-header-ensure-hd header :so sorting-order)
@@ -216,20 +217,20 @@
     (:coordinate (load-time-value (list #'coordinate<)))
     (:queryname (load-time-value (list #'string< :key #'sam-alignment-qname)))))
 
-;;; generic filter process setup
+;;; generic filter thread setup
 
-(defun call-with-processes (threads name filter-process source-process)
+(defun call-with-threads (threads name filter-thread source-thread)
   "Set up the filter threads for a filter pipeline, and execute the input thread."
   (declare (fixnum threads) #.*optimization*)
   (loop repeat threads
         for mailbox = (make-mailbox)
-        for process = (process-run name filter-process mailbox)
+        for thread = (thread-run name filter-thread mailbox)
         collect mailbox into mailboxes
-        collect process into processes
+        collect thread into threads
         finally (unwind-protect
-                    (funcall (the function source-process) mailboxes)
+                    (funcall (the function source-thread) mailboxes)
                   (loop for mailbox in mailboxes do (mailbox-send mailbox :eop))
-                  (mapc #'process-join processes))))
+                  (mapc #'thread-join threads))))
 
 (defstruct (temporary-file (:constructor make-temporary-file (sibling)))
   "An internal representation for temporary files.
@@ -297,35 +298,35 @@
      (let* ((head (cons nil nil))
             (tail head)
             (mailbox (make-mailbox))
-            (process (process-run
-                      "in-memory output process"
-                      (lambda ()
-                        (setf (sam-header output) header)
-                        (with-chunk-output (chunk) (mailbox (not (eq sorting-order :unsorted)))
-                          (when chunk (setf (cdr tail) chunk tail (last chunk))))))))
+            (thread (thread-run
+                     "in-memory output thread"
+                     (lambda ()
+                       (setf (sam-header output) header)
+                       (with-chunk-output (chunk) (mailbox (not (eq sorting-order :unsorted)))
+                         (when chunk (setf (cdr tail) chunk tail (last chunk))))))))
        (values nil nil
                (lambda (chunk)
                  (mailbox-send mailbox chunk))
                (lambda ()
                  (mailbox-send mailbox :eop)
-                 (process-join process)
+                 (thread-join thread)
                  (setf (sam-alignments output) (cdr head))
                  output))))
     ((:coordinate :queryname)
      (let* ((tree    (make-simple-tree 16))
             (mailbox (make-mailbox))
-            (process (process-run
-                      "in-memory output process with sorting"
-                      (lambda ()
-                        (setf (sam-header output) header)
-                        (with-chunk-output (chunk) (mailbox nil)
-                          (when chunk (setq tree (insert-node tree chunk))))))))
+            (thread (thread-run
+                     "in-memory output thread with sorting"
+                     (lambda ()
+                       (setf (sam-header output) header)
+                       (with-chunk-output (chunk) (mailbox nil)
+                         (when chunk (setq tree (insert-node tree chunk))))))))
        (values nil nil
                (lambda (chunk)
                  (mailbox-send mailbox chunk))
                (lambda ()
                  (mailbox-send mailbox :eop)
-                 (process-join process)
+                 (thread-join thread)
                  (let ((sorting-criterion (sorting-criterion sorting-order)))
                    (setf (sam-alignments output)
                          (tree-reduce tree *number-of-threads*
@@ -338,13 +339,13 @@
 (defmethod get-output-functions ((output pathname) header &key (sorting-order :keep))
   (check-file-sorting-order sorting-order)
   (let* ((mailbox (make-mailbox))
-         (process (process-run
-                   "file output process"
-                   (lambda ()
-                     (with-open-sam (out output :direction :output)
-                       (format-sam-header out header)
-                       (with-chunk-output (chunk) (mailbox (not (eq sorting-order :unsorted)))
-                         (loop for aln in chunk do (writestr out aln))))))))
+         (thread (thread-run
+                  "file output thread"
+                  (lambda ()
+                    (with-open-sam (out output :direction :output)
+                      (format-sam-header out header)
+                      (with-chunk-output (chunk) (mailbox (not (eq sorting-order :unsorted)))
+                        (loop for aln in chunk do (writestr out aln))))))))
     (values (lambda (aln)
               (with-output-to-string (s nil :element-type 'base-char)
                 (format-sam-alignment s aln)))
@@ -353,26 +354,25 @@
               (mailbox-send mailbox chunk))
             (lambda ()
               (mailbox-send mailbox :eop)
-              (process-join process)
+              (thread-join thread)
               output))))
 
 (defmethod get-output-functions ((output temporary-file) header &key (sorting-order :keep))
   (check-file-sorting-order sorting-order)
   (let ((mailbox (make-mailbox))
         (outbox  (make-mailbox)))
-    (process-run
-     "temporary file output process"
+    (thread-run
+     "temporary file output thread"
      (lambda ()
        (multiple-value-bind
-           (out pathname)
+           (out program pathname)
            (open-temporary-sam (temporary-file-sibling output))
-         (let ((out-stream (sam-stream out)))
-           (unwind-protectn
-             (format-sam-header out-stream header)
-             (with-chunk-output (chunk) (mailbox (not (eq sorting-order :unsorted)))
-               (loop for aln in chunk do (writestr out aln)))
-             (close-sam out))
-           (mailbox-send outbox pathname)))))
+         (unwind-protectn
+           (format-sam-header out header)
+           (with-chunk-output (chunk) (mailbox (not (eq sorting-order :unsorted)))
+             (loop for aln in chunk do (writestr out aln)))
+           (close-sam out program))
+         (mailbox-send outbox pathname))))
     (values (lambda (aln)
               (with-output-to-string (s nil :element-type 'base-char)
                 (format-sam-alignment s aln)))
@@ -435,7 +435,7 @@
   (let ((inputv (copy-symbol 'input)))
     `(let* ((,inputv ,input)
             (,header (sam-header ,inputv))
-            (,original-sorting-order (getf (sam-header-hd ,header) :so (sbs "unknown")))
+            (,original-sorting-order (getf (sam-header-hd ,header) :so "unknown"))
             (,alns (sam-alignments ,inputv)))
        (if ,destructive
          (setf (sam-alignments ,inputv) '())
@@ -525,9 +525,9 @@
                  ;   if non-destructive, copy then modify, send to target
                  (global-init)
                  (unwind-protect
-                     (call-with-processes
+                     (call-with-threads
                       (max 1 (- *number-of-threads* 2))
-                      "in-memory filter process"
+                      "in-memory filter thread"
                       (lambda (mailbox)
                         (wrap-thread
                          (lambda ()
@@ -594,7 +594,7 @@
   (unwind-protect
       (with-open-sam (in input :direction :input)
         (let* ((header (parse-sam-header in))
-               (original-sorting-order (getf (sam-header-hd header) :so (sbs "unknown"))))
+               (original-sorting-order (getf (sam-header-hd header) :so "unknown")))
           (with-thread-filters (thread-filters global-init global-exit) (filters header)
             (setq sorting-order (effective-sorting-order sorting-order header original-sorting-order))
             (when (null thread-filters)
@@ -606,22 +606,21 @@
                                 (return-from run-pipeline output))
                 (temporary-file (check-file-sorting-order sorting-order)
                                 (multiple-value-bind
-                                    (out pathname)
+                                    (out program pathname)
                                     (open-temporary-sam (temporary-file-sibling output))
-                                  (let ((out-stream (sam-stream out)))
-                                    (unwind-protectn
-                                      (format-sam-header out-stream header)
-                                      (copy-stream in out-stream)
-                                      (close-sam out)))
+                                  (unwind-protectn
+                                    (format-sam-header out header)
+                                    (copy-stream in out)
+                                    (close-sam out program))
                                   (return-from run-pipeline pathname)))))
             (with-output-functions
                 (output-filter wrap-thread receive-chunk)
                 (apply #'get-output-functions output header :sorting-order sorting-order args)
               (global-init)
               (unwind-protect
-                  (call-with-processes
+                  (call-with-threads
                    (max 1 (- *number-of-threads* 2))
-                   "file filter process"
+                   "file filter thread"
                    (lambda (mailbox)
                      (wrap-thread
                       (lambda ()
@@ -642,10 +641,10 @@
                    (lambda (mailboxes)
                      (loop with serial = -1
                            for mailbox-ring = mailboxes then (or (cdr mailbox-ring) mailboxes)
-                           for alns = (when (ascii-stream-listen in)
+                           for alns = (when (listen in)
                                         (loop repeat chunk-size
-                                              for aln = (ascii-stream-read-line in)
-                                              collect aln while (ascii-stream-listen in)))
+                                              for aln = (read-line in)
+                                              collect aln while (listen in)))
                            while alns do (mailbox-send (car mailbox-ring) (cons (incf serial) alns)))))
                 (global-exit))))))
     (unless (or (not destructive) (eq destructive :default))
