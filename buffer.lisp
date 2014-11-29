@@ -163,11 +163,9 @@
     (multiple-value-bind (hi lo) (floor pos +buffer-chunk-size+)
       (declare (fixnum hi lo))
       (loop for i of-type fixnum below hi do
-            #+lispworks (stream-write-string stream (svref str i) 0 +buffer-chunk-size+)
-            #+sbcl (write-string (svref str i) stream :end +buffer-chunk-size+))
+            (write-string (svref str i) stream :end +buffer-chunk-size+))
       (when (> lo 0)
-        #+lispworks (stream-write-string stream (svref str hi) 0 lo)
-        #+sbcl (write-string (svref str hi) stream :end lo))))
+        (write-string (svref str hi) stream :end lo))))
   (values))
 
 (defun buffer-copy (source target)

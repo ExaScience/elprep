@@ -134,9 +134,9 @@
               (let ((rname (make-buffer))
                     (rnext (make-buffer))
                     (aln-string (make-buffer)))
-                (loop while (listen in)
-                      do (progn (read-line-into-buffer in aln-string)
-                           (buffer-partition aln-string #\Tab 2 rname 6 rnext)
+                (loop do (read-line-into-buffer in aln-string)
+                      until (buffer-emptyp aln-string)
+                      do (progn (buffer-partition aln-string #\Tab 2 rname 6 rnext)
                            (let ((file (car (gethash rname chroms-encountered))))
                              (cond ((or (buffer= buf-= rnext) (buffer= buf-unmapped rname) (buffer= rname rnext)) (write-buffer aln-string file))
                                    (t ; the read is part of a pair mapping to two different chromosomes
@@ -198,19 +198,17 @@
                           (pos2 (buffer-parse-integer chromosome-read-pos)))
                       (loop do (cond ((< pos1 pos2)
                                       (write-buffer spread-read out)
-                                      (cond ((listen spread-reads-file)
-                                             (read-line-into-buffer spread-reads-file spread-read)
-                                             (buffer-partition spread-read #\Tab 2 spread-read-refid 3 spread-read-pos)
-                                             (setq pos1 (buffer-parse-integer spread-read-pos)))
-                                            (t (reinitialize-buffer spread-read)
-                                               (loop-finish))))
+                                      (read-line-into-buffer spread-reads-file spread-read)
+                                      (cond ((buffer-emptyp spread-read)
+                                             (loop-finish))
+                                            (t (buffer-partition spread-read #\Tab 2 spread-read-refid 3 spread-read-pos)
+                                               (setq pos1 (buffer-parse-integer spread-read-pos)))))
                                      (t (write-buffer chromosome-read out)
-                                        (cond ((listen file)
-                                               (read-line-into-buffer file chromosome-read)
-                                               (buffer-partition chromosome-read #\Tab 3 chromosome-read-pos)
-                                               (setq pos2 (buffer-parse-integer chromosome-read-pos)))
-                                              (t (reinitialize-buffer chromosome-read)
-                                                 (loop-finish)))))
+                                        (read-line-into-buffer file chromosome-read)
+                                        (cond ((buffer-emptyp chromosome-read)
+                                               (loop-finish))
+                                              (t (buffer-partition chromosome-read #\Tab 3 chromosome-read-pos)
+                                                 (setq pos2 (buffer-parse-integer chromosome-read-pos))))))
                             while (buffer= chromosome-read-refid spread-read-refid)))))
                 ; copy remaining reads in the file, if any
                 (when (not (buffer-emptyp chromosome-read)) (write-buffer chromosome-read out))
@@ -220,9 +218,9 @@
                 (loop while (buffer= spread-read-refid common-read-refid)
                       do
                       (write-buffer spread-read out)
-                      while (listen spread-reads-file)
-                      do
                       (read-line-into-buffer spread-reads-file spread-read)
+                      until (buffer-emptyp spread-read)
+                      do
                       (buffer-partition spread-read #\Tab 2 spread-read-refid))))
         ; merge the remaining reads in the spread-reads file
         (when (not (buffer-emptyp spread-read)) (write-buffer spread-read out))
@@ -231,8 +229,8 @@
 (declaim (inline parse-sam-alignment-from-stream))
 
 (defun parse-sam-alignment-from-stream (stream)
-  (when (listen stream)
-    (parse-sam-alignment (read-line stream))))
+  (let ((line (read-line stream nil)))
+    (when line (parse-sam-alignment line))))
 
 (defun compare-sam-files (file1 file2 &optional (output "/dev/stdout"))
   "A function for comparing two sam files. The input files must be sorted by coordinate order."

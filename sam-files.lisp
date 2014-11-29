@@ -446,7 +446,8 @@
   "Parse a complete SAM file.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1."
   (make-sam :header     (parse-sam-header stream)
-            :alignments (loop while (listen stream) collect (parse-sam-alignment (read-line stream)))))
+            :alignments (loop for line = (read-line stream nil)
+                              while line collect (parse-sam-alignment line))))
 
 
 ;;; output
@@ -753,7 +754,7 @@
 (defun get-samtools ()
   "Determine location of the samtools binary."
   (or *samtools*
-      (let ((command (run-program "/bin/sh" '("-c" "command -v samtools") :output :stream)))
+      (let ((command (run-program "/bin/sh" '("-c" "command -v samtools") :output :stream :wait nil)))
         (unwind-protect
             (let ((line (read-line (process-output command))))
               (if line
@@ -876,11 +877,27 @@
                  (%open-sam pathname :output nil kind)
                (values file program pathname))))))
 
+#+lispworks
+(defun close-sam (file program &key (wait t))
+  (cond (program (process-close program :wait wait))
+        (t (when (output-stream-p file) (stream-flush-buffer file))
+           (unless (eq file *terminal-io*) (close file))))
+  (values))
+
+#+sbcl
 (defun close-sam (file program &key (wait t))
   (close file)
   (when program
-    (when wait (process-wait program))
-    (process-close program)))
+    (when wait
+      (let ((input (process-input program)))
+        (when input (close input)))
+      (let ((output (process-output program)))
+        (when output (close output)))
+      (let ((error (process-error program)))
+        (when error (close error)))
+      (process-wait program))
+    (process-close program))
+  (values))
 
 (defun invoke-with-open-sam (function filename &rest args &key (direction :input) header-only (wait t))
   "Call a function and pass it a stream for reading or writing a SAM file."
@@ -889,7 +906,7 @@
       (stream program)
       (apply #'open-sam filename args)
     (unwind-protect (funcall function stream)
-      (close-sam stream program))))
+      (close-sam stream program :wait wait))))
 
 (defmacro with-open-sam ((stream filename &rest args &key (direction :input) header-only (wait t)) &body body)
   "Macro version of invoke-with-open-sam."

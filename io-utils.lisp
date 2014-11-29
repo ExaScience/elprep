@@ -190,13 +190,11 @@
 
   (defmethod stream-listen ((stream buffered-ascii-input-stream))
     (declare #.*optimization*)
-    (loop (let ((index (slot-value stream 'index))
-                (limit (slot-value stream 'limit)))
-            (declare (fixnum index limit))
-            (when (< index limit)
-              (return-from stream-listen t)))
-          (unless (stream-fill-buffer stream)
-            (return-from stream-listen nil))))
+    (or (let ((index (slot-value stream 'index))
+              (limit (slot-value stream 'limit)))
+          (declare (fixnum index limit))
+          (< index limit))
+        (listen (slot-value stream 'stream))))
 
   (defmethod stream-unread-char ((stream buffered-ascii-input-stream) character)
     (declare (ignore character) #.*optimization*)
@@ -317,11 +315,18 @@
 (progn
   (defstruct process
     (stream nil :read-only t)
-    (input nil :read-only t)
-    (output nil :read-only t)
     (error nil :read-only t)
-    (pid nil :read-only t)
-    (result))
+    (pid nil :read-only t))
+
+  (declaim (inline process-input process-output))
+
+  (defun process-input (process)
+    (declare (process process) #.*optimization*)
+    (process-stream process))
+
+  (defun process-output (process)
+    (declare (process process) #.*optimization*)
+    (process-stream process))
 
   (defun run-program (command command-args &key
                               (input nil)
@@ -341,42 +346,17 @@
                                :if-output-exists if-output-exists
                                :if-error-output-exists if-error-exists
                                :save-exit-status t)
-      (if wait
-        (make-process :result stream)
-        (apply #'make-process
-               :stream stream
-               :error error-stream
-               :pid pid
-               `(,@(when (eq input :stream)
-                     `(:input ,stream))
-                 ,@(when (eq output :stream)
-                     `(:output ,stream)))))))
+      (if wait stream
+        (make-process :stream stream
+                      :error error-stream
+                      :pid pid))))
 
-  (declaim (inline process-alive-p process-wait process-exit-code))
-
-  (defun process-alive-p (process)
-    (let ((pid (process-pid process)))
-      (when pid (unless (process-result process)
-                  (null (setf (process-result process)
-                              (sys:pid-exit-status pid :wait nil)))))))
-
-  (defun process-wait (process)
-    (unless (process-result process)
-      (setf (process-result process)
-            (sys:pid-exit-status (process-pid process) :wait t)))
-    process)
-
-  (defun process-exit-code (process)
-    (or (process-result process)
-        (setf (process-result process)
-              (sys:pid-exit-status (process-pid process) :wait t))))
-
-  (defun process-close (process)
-    (let ((stream (process-stream process)))
+  (defun process-close (program &key (wait t))
+    (let ((stream (process-stream program)))
       (when stream (close stream)))
-    (let ((error-stream (process-error process)))
-      (when error-stream (close error-stream)))
-    (values)))
+    (let ((error (process-error program)))
+      (when error (close error)))
+    (sys:pid-exit-status (process-pid program) :wait wait)))
 
 #+sbcl
 (progn

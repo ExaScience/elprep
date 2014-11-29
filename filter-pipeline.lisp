@@ -315,12 +315,12 @@
     ((:coordinate :queryname)
      (let* ((tree    (make-simple-tree 16))
             (mailbox (make-mailbox))
-            (thread (thread-run
-                     "in-memory output thread with sorting"
-                     (lambda ()
-                       (setf (sam-header output) header)
-                       (with-chunk-output (chunk) (mailbox nil)
-                         (when chunk (setq tree (insert-node tree chunk))))))))
+            (thread  (thread-run
+                      "in-memory output thread with sorting"
+                      (lambda ()
+                        (setf (sam-header output) header)
+                        (with-chunk-output (chunk) (mailbox nil)
+                          (when chunk (setq tree (insert-node tree chunk))))))))
        (values nil nil
                (lambda (chunk)
                  (mailbox-send mailbox chunk))
@@ -339,13 +339,13 @@
 (defmethod get-output-functions ((output pathname) header &key (sorting-order :keep))
   (check-file-sorting-order sorting-order)
   (let* ((mailbox (make-mailbox))
-         (thread (thread-run
-                  "file output thread"
-                  (lambda ()
-                    (with-open-sam (out output :direction :output)
-                      (format-sam-header out header)
-                      (with-chunk-output (chunk) (mailbox (not (eq sorting-order :unsorted)))
-                        (loop for aln in chunk do (writestr out aln))))))))
+         (thread  (thread-run
+                   "file output thread"
+                   (lambda ()
+                     (with-open-sam (out output :direction :output)
+                       (format-sam-header out header)
+                       (with-chunk-output (chunk) (mailbox (not (eq sorting-order :unsorted)))
+                         (loop for aln in chunk do (writestr out aln))))))))
     (values (lambda (aln)
               (with-output-to-string (s nil :element-type 'base-char)
                 (format-sam-alignment s aln)))
@@ -641,10 +641,9 @@
                    (lambda (mailboxes)
                      (loop with serial = -1
                            for mailbox-ring = mailboxes then (or (cdr mailbox-ring) mailboxes)
-                           for alns = (when (listen in)
-                                        (loop repeat chunk-size
-                                              for aln = (read-line in)
-                                              collect aln while (listen in)))
+                           for alns = (loop repeat chunk-size
+                                            for aln = (read-line in nil)
+                                            while aln collect aln)
                            while alns do (mailbox-send (car mailbox-ring) (cons (incf serial) alns)))))
                 (global-exit))))))
     (unless (or (not destructive) (eq destructive :default))
