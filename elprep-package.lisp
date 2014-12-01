@@ -209,30 +209,13 @@ Refer to the documentation of run-pipeline as a starting point.")
    #:compute-unclipped-position
    #:mark-duplicates
  
+   ;; elprep utils
+   
+   #:explain-flag
+   #:merge-sorted-files-split-per-chromosome
+   #:split-file-per-chromosome
+
    ;; ui
 
    #:elprep-script
-
-   ;; buffer
-   #:make-buffer
-   #:reinitialize-buffer
-   #:buffer-emptyp
-   #:buffer-extend
-   #:buffer-hash
-   #:buffer-partition
-   #:buffer-string
-   #:buffer=
-   #:write-buffer
-   #:buffer-copy
-   #:read-line-into-buffer
-   #:buffer-parse-integer
-
-   ;; utils
-
-   #:explain-flag
-
-   ;; elprep utils
-   
-   #:merge-sorted-files-split-per-chromosome
-   #:split-file-per-chromosome
 ))

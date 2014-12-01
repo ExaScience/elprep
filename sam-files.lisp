@@ -792,7 +792,7 @@
                    (if (check-stdin pathname) *terminal-io*
                      (open pathname :direction :input :element-type 'base-char :if-does-not-exist :error))
                    #+sbcl
-                   (make-instance 'buffered-ascii-input-stream :stream (open pathname :direction :input :element-type 'octet :if-does-not-exist :error)))
+                   (make-buffered-ascii-input-stream (open pathname :direction :input :element-type 'octet :if-does-not-exist :error)))
                   (t (open pathname :direction :probe :if-does-not-exist :error)
                      (let ((program (run-program (get-samtools)
                                                  `("view" ,(if header-only "-H" "-h") "-@" ,(write-to-string *number-of-threads*)
@@ -800,9 +800,7 @@
                                                  :output :stream :wait nil :external-format :latin-1)))
                        (values
                         #+lispworks (process-output program)
-                        #+sbcl      (make-instance 'buffered-ascii-input-stream
-                                                   :element-type 'character
-                                                   :stream (process-output program))
+                        #+sbcl      (make-buffered-ascii-input-stream (process-output program) 'character)
                         program)))))
     (:output (cond ((eq kind :sam)
                     #+lispworks

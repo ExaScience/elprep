@@ -1,6 +1,8 @@
 (in-package :elprep)
 (in-simple-base-string-syntax)
 
+;;; input streams
+
 #+lispworks
 (defmacro with-buffer-dispatch (buffer &body body)
   (error "with-buffer-dispatch is not available in LispWorks: ~S."
@@ -15,29 +17,35 @@
 (progn
   (defconstant +ascii-stream-buffer-size+ (expt 2 13))
 
-  (defclass buffered-ascii-input-stream (fundamental-character-input-stream)
-    ((index :initform 0)
-     (limit :initform 0)
-     buffer
-     (secondary-buffer :initform nil)
-     (element-type :initarg :element-type :initform 'base-char :reader stream-element-type)
-     (stream :initarg :stream)))
+  (declaim (inline make-buffered-ascii-input-stream))
 
-  (defgeneric stream-fill-buffer (stream)
-    (:method ((stream buffered-ascii-input-stream))
-     (let ((position (read-sequence (slot-value stream 'buffer) (slot-value stream 'stream))))
-       (declare (fixnum position) #.*optimization*)
-       (when (> position 0)
-         (setf (slot-value stream 'index) 0
-               (slot-value stream 'limit) position)
-         t))))
-  
-  (defmethod initialize-instance :after ((stream buffered-ascii-input-stream) &key)
-    (setf (slot-value stream 'buffer)
-          (ecase (slot-value stream 'element-type)
-            (base-char (make-array +ascii-stream-buffer-size+ :element-type 'octet))
-            (character (make-array +ascii-stream-buffer-size+ :element-type 'character))))
-    (stream-fill-buffer stream))
+  (defstruct (buffered-ascii-input-stream
+              (:constructor make-buffered-ascii-input-stream
+               (stream &optional (element-type 'base-char) &aux
+                       (buffer (ecase element-type
+                                 (base-char (make-array +ascii-stream-buffer-size+ :element-type 'octet))
+                                 (character (make-array +ascii-stream-buffer-size+ :element-type 'character))))
+                       (limit  (read-sequence buffer stream)))))
+    (index 0 :type fixnum)
+    (limit 0 :type fixnum)
+    buffer
+    (secondary-buffer nil)
+    (element-type 'base-char :type symbol :read-only t)
+    (stream nil :type (or null stream)))
+
+  (defmethod input-stream-p ((stream buffered-ascii-input-stream)) t)
+
+  (declaim (inline stream-fill-buffer))
+
+  (defun stream-fill-buffer (stream)
+    (declare (buffered-ascii-input-stream stream) #.*optimization*)
+    (let ((position (read-sequence (buffered-ascii-input-stream-buffer stream)
+                                   (buffered-ascii-input-stream-stream stream))))
+      (declare (fixnum position))
+      (when (> position 0)
+        (setf (buffered-ascii-input-stream-index stream) 0
+              (buffered-ascii-input-stream-limit stream) position)
+        t)))
 
   (defmacro with-buffer-dispatch (buffer &body body)
     `(etypecase ,buffer
@@ -66,22 +74,28 @@
             ,@body)))))
 
   (defmacro with-ascii-stream-input-buffer (buffer stream &body body)
-    `(let ((,buffer (slot-value ,stream 'buffer)))
+    `(let ((,buffer (buffered-ascii-input-stream-buffer ,stream)))
        (with-buffer-dispatch ,buffer ,@body)))
+
+  (defmethod stream-element-type ((stream buffered-ascii-input-stream))
+    (buffered-ascii-input-stream-element-type stream))
 
   (defmethod close ((stream buffered-ascii-input-stream) &key abort)
     (declare (ignore abort))
-    (setf (slot-value stream 'stream) nil
-          (slot-value stream 'buffer) nil))
+    (setf (buffered-ascii-input-stream-stream stream) nil
+          (buffered-ascii-input-stream-buffer stream) nil
+          (buffered-ascii-input-stream-secondary-buffer stream) nil))
 
   (defmethod stream-file-position ((stream buffered-ascii-input-stream) &optional position)
     (declare #.*optimization*)
     (if position
-      (when (file-position (slot-value stream 'stream) position)
+      (when (file-position (buffered-ascii-input-stream-stream stream) position)
         (stream-fill-buffer stream) t)
-      (+ (file-position (slot-value stream 'stream))
-         (the fixnum (- (the fixnum (slot-value stream 'index))
-                        (the fixnum (slot-value stream 'limit)))))))
+      (+ (file-position (buffered-ascii-input-stream-stream stream))
+         (the fixnum (- (the fixnum (buffered-ascii-input-stream-index stream))
+                        (the fixnum (buffered-ascii-input-stream-limit stream)))))))
+
+  (defmethod stream-clear-input ((stream buffered-ascii-input-stream)))
 
   (defmethod stream-read-sequence ((stream buffered-ascii-input-stream) sequence &optional (start 0) end)
     (declare #.*optimization*)
@@ -92,14 +106,14 @@
       (declare (fixnum start end))
       (when (> end start)
         (with-ascii-stream-input-buffer buffer stream
-          (loop (let* ((index (slot-value stream 'index))
-                       (limit (slot-value stream 'limit))
+          (loop (let* ((index (buffered-ascii-input-stream-index stream))
+                       (limit (buffered-ascii-input-stream-limit stream))
                        (size  (min (the fixnum (- end start))
                                    (the fixnum (- limit index)))))
                   (declare (fixnum index limit size))
                   (setf (subseq sequence start end)
                         (subseq buffer index limit))
-                  (setf (slot-value stream 'index) (the fixnum (+ index size)))
+                  (setf (buffered-ascii-input-stream-index stream) (the fixnum (+ index size)))
                   (setq start (the fixnum (+ start size))))
                 (unless (stream-fill-buffer stream)
                   (return-from stream-read-sequence start)))))))
@@ -107,8 +121,8 @@
   (defmethod stream-peek-char ((stream buffered-ascii-input-stream))
     (declare #.*optimization*)
     (with-ascii-stream-input-buffer buffer stream
-      (loop (let ((index (slot-value stream 'index))
-                  (limit (slot-value stream 'limit)))
+      (loop (let ((index (buffered-ascii-input-stream-index stream))
+                  (limit (buffered-ascii-input-stream-limit stream)))
               (declare (fixnum index limit))
               (when (< index limit)
                 (return-from stream-peek-char (bchar buffer index))))
@@ -118,12 +132,12 @@
   (defmethod stream-read-char-no-hang ((stream buffered-ascii-input-stream))
     (declare #.*optimization*)
     (with-ascii-stream-input-buffer buffer stream
-      (loop (let ((index (slot-value stream 'index))
-                  (limit (slot-value stream 'limit)))
+      (loop (let ((index (buffered-ascii-input-stream-index stream))
+                  (limit (buffered-ascii-input-stream-limit stream)))
               (declare (fixnum index limit))
               (when (< index limit)
                 (let ((char (bchar buffer index)))
-                  (setf (slot-value stream 'index) (the fixnum (1+ index)))
+                  (setf (buffered-ascii-input-stream-index stream) (the fixnum (1+ index)))
                   (return-from stream-read-char-no-hang char))))
             (unless (stream-fill-buffer stream)
               (return-from stream-read-char-no-hang :eof)))))
@@ -131,12 +145,12 @@
   (defmethod stream-read-char ((stream buffered-ascii-input-stream))
     (declare #.*optimization*)
     (with-ascii-stream-input-buffer buffer stream
-      (loop (let ((index (slot-value stream 'index))
-                  (limit (slot-value stream 'limit)))
+      (loop (let ((index (buffered-ascii-input-stream-index stream))
+                  (limit (buffered-ascii-input-stream-limit stream)))
               (declare (fixnum index limit))
               (when (< index limit)
                 (let ((char (bchar buffer index)))
-                  (setf (slot-value stream 'index) (the fixnum (1+ index)))
+                  (setf (buffered-ascii-input-stream-index stream) (the fixnum (1+ index)))
                   (return-from stream-read-char char))))
             (unless (stream-fill-buffer stream)
               (return-from stream-read-char :eof)))))
@@ -146,8 +160,8 @@
     (let ((strings '()))
       (declare (list strings))
       (with-ascii-stream-input-buffer buffer stream
-        (loop (let ((index (slot-value stream 'index))
-                    (limit (slot-value stream 'limit)))
+        (loop (let ((index (buffered-ascii-input-stream-index stream))
+                    (limit (buffered-ascii-input-stream-limit stream)))
                 (declare (fixnum index limit))
                 (loop for end of-type fixnum from index below limit
                       for flag of-type boolean = (char= (bchar buffer end) #\Newline)
@@ -157,13 +171,13 @@
                         (loop for j of-type fixnum from index below end
                               for i of-type fixnum from 0
                               do (setf (schar string i) (bchar buffer j)))
-                        (cond (flag (setf (slot-value stream 'index) (the fixnum (1+ end)))
+                        (cond (flag (setf (buffered-ascii-input-stream-index stream) (the fixnum (1+ end)))
                                     (cond (strings (push string strings)
                                                    (return-from stream-read-line
                                                      (values (apply #'concatenate 'simple-base-string (nreverse strings)) nil)))
                                           (t       (return-from stream-read-line
                                                      (values string nil)))))
-                              (t   (setf (slot-value stream 'index) limit)
+                              (t   (setf (buffered-ascii-input-stream-index stream) limit)
                                    (push string strings))))))
               (unless (stream-fill-buffer stream)
                 (if strings
@@ -172,94 +186,91 @@
                     (return-from stream-read-line (values (car strings) t)))
                   (return-from stream-read-line (values :eof t))))))))
 
-  (defgeneric skip-line (stream)
-    (:method ((stream buffered-ascii-input-stream))
-     "Skip characters from stream until a newline is reached."
-     (declare #.*optimization*)
-     (with-ascii-stream-input-buffer buffer stream
-       (loop (let ((index (slot-value stream 'index))
-                   (limit (slot-value stream 'limit)))
-               (declare (fixnum index limit))
-               (loop for pos of-type fixnum from index below limit do
-                     (when (char= (bchar buffer pos) #\Newline)
-                       (setf (slot-value stream 'index) (the fixnum (1+ pos)))
-                       (return-from skip-line))
-                     finally (setf (slot-value stream 'index) pos)))
-             (unless (stream-fill-buffer stream)
-               (return-from skip-line))))))
+  (defun skip-line (stream)
+    "Skip characters from stream until a newline is reached."
+    (declare (buffered-ascii-input-stream stream) #.*optimization*)
+    (with-ascii-stream-input-buffer buffer stream
+      (loop (let ((index (buffered-ascii-input-stream-index stream))
+                  (limit (buffered-ascii-input-stream-limit stream)))
+              (declare (fixnum index limit))
+              (loop for pos of-type fixnum from index below limit do
+                    (when (char= (bchar buffer pos) #\Newline)
+                      (setf (buffered-ascii-input-stream-index stream) (the fixnum (1+ pos)))
+                      (return-from skip-line))
+                    finally (setf (buffered-ascii-input-stream-index stream) pos)))
+            (unless (stream-fill-buffer stream)
+              (return-from skip-line)))))
 
   (defmethod stream-listen ((stream buffered-ascii-input-stream))
     (declare #.*optimization*)
-    (or (let ((index (slot-value stream 'index))
-              (limit (slot-value stream 'limit)))
+    (or (let ((index (buffered-ascii-input-stream-index stream))
+              (limit (buffered-ascii-input-stream-limit stream)))
           (declare (fixnum index limit))
           (< index limit))
-        (listen (slot-value stream 'stream))))
+        (listen (buffered-ascii-input-stream-stream stream))))
 
   (defmethod stream-unread-char ((stream buffered-ascii-input-stream) character)
     (declare (ignore character) #.*optimization*)
-    (setf (slot-value stream 'index)
-          (the fixnum (1- (the fixnum (slot-value stream 'index)))))
+    (setf (buffered-ascii-input-stream-index stream)
+          (the fixnum (1- (the fixnum (buffered-ascii-input-stream-index stream)))))
     nil)
 
-  (defgeneric copy-stream (input output)
-    (:method ((input buffered-ascii-input-stream) (output stream))
-     "Efficient copying of the contents of an input stream to an output stream."
-     (declare #.*optimization*)
-     (ecase (slot-value input 'element-type)
-       (base-char (let ((buffer (slot-value input 'buffer))
-                        (second (or (slot-value input 'secondary-buffer)
-                                    (setf (slot-value input 'secondary-buffer)
-                                          (make-array +ascii-stream-buffer-size+ :element-type 'base-char)))))
-                    (declare ((simple-array octet (*)) buffer) (simple-base-string second))
-                    (loop (let ((index (slot-value input 'index))
-                                (limit (slot-value input 'limit)))
-                            (declare (fixnum index limit))
-                            (when (< index limit)
-                              (loop for i of-type fixnum from index below limit do
-                                    (setf (schar second i) (code-char (the octet (aref buffer i)))))
-                              (write-string second output :start index :end limit)
-                              (setf (slot-value input 'index) limit)))
-                          (unless (stream-fill-buffer input)
-                            (return-from copy-stream (values))))))
-       (character (let ((buffer (slot-value input 'buffer)))
-                    (declare ((simple-array character (*)) buffer))
-                    (loop (let ((index (slot-value input 'index))
-                                (limit (slot-value input 'limit)))
-                            (declare (fixnum index limit))
-                            (when (< index limit)
-                              (write-string buffer output :start index :end limit)
-                              (setf (slot-value input 'index) limit)))
-                          (unless (stream-fill-buffer input)
-                            (return-from copy-stream (values))))))))))
+  (defun copy-stream (input output)
+    "Efficient copying of the contents of an input stream to an output stream."
+    (declare (buffered-ascii-input-stream input) (stream output) #.*optimization*)
+    (ecase (buffered-ascii-input-stream-element-type input)
+      (base-char (let ((buffer (buffered-ascii-input-stream-buffer input))
+                       (second (or (buffered-ascii-input-stream-secondary-buffer input)
+                                   (setf (buffered-ascii-input-stream-secondary-buffer input)
+                                         (make-array +ascii-stream-buffer-size+ :element-type 'base-char)))))
+                   (declare ((simple-array octet (*)) buffer) (simple-base-string second))
+                   (loop (let ((index (buffered-ascii-input-stream-index input))
+                               (limit (buffered-ascii-input-stream-limit input)))
+                           (declare (fixnum index limit))
+                           (when (< index limit)
+                             (loop for i of-type fixnum from index below limit do
+                                   (setf (schar second i) (code-char (the octet (aref buffer i)))))
+                             (write-string second output :start index :end limit)
+                             (setf (buffered-ascii-input-stream-index input) limit)))
+                         (unless (stream-fill-buffer input)
+                           (return-from copy-stream (values))))))
+      (character (let ((buffer (buffered-ascii-input-stream-buffer input)))
+                   (declare ((simple-array character (*)) buffer))
+                   (loop (let ((index (buffered-ascii-input-stream-index input))
+                               (limit (buffered-ascii-input-stream-limit input)))
+                           (declare (fixnum index limit))
+                           (when (< index limit)
+                             (write-string buffer output :start index :end limit)
+                             (setf (buffered-ascii-input-stream-index input) limit)))
+                         (unless (stream-fill-buffer input)
+                           (return-from copy-stream (values)))))))))
 
 #+lispworks
 (progn
-  (defgeneric skip-line (stream)
-    (:method ((stream buffered-stream))
-     "Skip characters from stream until a newline is reached."
-     (declare #.*fixnum-optimization*)
-     (loop (with-stream-input-buffer (source index limit) stream
-             (declare (simple-base-string source) (fixnum index limit))
-             (loop for pos of-type fixnum from index below limit do
-                   (when (char= (lw:sbchar source pos) #\Newline)
-                     (setq index (1+ pos))
-                     (return-from skip-line))
-                   finally (setq index pos)))
-           (unless (stream-fill-buffer stream)
-             (return-from skip-line)))))
+  (defun skip-line (stream)
+    "Skip characters from stream until a newline is reached."
+    (declare (buffered-stream stream) #.*fixnum-optimization*)
+    (loop (with-stream-input-buffer (source index limit) stream
+            (declare (simple-base-string source) (fixnum index limit))
+            (loop for pos of-type fixnum from index below limit do
+                  (when (char= (lw:sbchar source pos) #\Newline)
+                    (setq index (1+ pos))
+                    (return-from skip-line))
+                  finally (setq index pos)))
+          (unless (stream-fill-buffer stream)
+            (return-from skip-line))))
 
-  (defgeneric copy-stream (input output)
-    (:method ((input buffered-stream) (output stream))
-     "Efficient copying of the contents of an input stream to an output stream."
-     (declare #.*optimization*)
-     (loop (with-stream-input-buffer (buffer index limit) input
-             (declare (simple-base-string buffer) (fixnum index limit))
-             (when (< index limit)
-               (stream-write-string output buffer index limit)
-               (setq index limit)))
-           (unless (stream-fill-buffer input)
-             (return-from copy-stream (values)))))))
+  (defun copy-stream (input output)
+    "Efficient copying of the contents of an input stream to an output stream."
+    (declare (buffered-stream input) (stream output) #.*optimization*)
+    (loop (with-stream-input-buffer (buffer index limit) input
+            (declare (simple-base-string buffer) (fixnum index limit))
+            (when (< index limit)
+              (stream-write-string output buffer index limit)
+              (setq index limit)))
+          (unless (stream-fill-buffer input)
+            (return-from copy-stream (values))))))
+
 
 ;;; output streams
 
