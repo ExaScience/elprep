@@ -138,15 +138,17 @@
                       until (buffer-emptyp aln-string)
                       do (progn (buffer-partition aln-string #\Tab 2 rname 6 rnext)
                            (let ((file (car (gethash rname chroms-encountered))))
-                             (cond ((or (buffer= buf-= rnext) (buffer= buf-unmapped rname) (buffer= rname rnext)) (write-buffer aln-string file))
+                             (cond ((or (buffer= buf-= rnext) (buffer= buf-unmapped rname) (buffer= rname rnext))
+                                    (write-buffer aln-string file)
+                                    (write-newline file))
                                    (t ; the read is part of a pair mapping to two different chromosomes
                                     (write-buffer aln-string spread-reads-stream)
+                                    (write-newline spread-reads-stream)
                                     ; duplicate the info in the chromosome file so it can be used; mark the read as duplicate info
-                                    (setf (buffer-pos aln-string) (- (buffer-pos aln-string) 1)) ; strip newline
-                                    (buffer-push aln-string #\Tab)
-                                    (buffer-extend aln-string optional-data-tag)
-                                    (buffer-push aln-string #\Newline)
-                                    (write-buffer aln-string file)))))))))
+                                    (write-buffer aln-string file)
+                                    (write-tab file)
+                                    (writestr file optional-data-tag)
+                                    (write-newline file)))))))))
         (loop for (file . program) being each hash-value of chroms-encountered
               do (close-sam file program))))))
 
@@ -198,12 +200,14 @@
                           (pos2 (buffer-parse-integer chromosome-read-pos)))
                       (loop do (cond ((< pos1 pos2)
                                       (write-buffer spread-read out)
+                                      (write-newline out)
                                       (read-line-into-buffer spread-reads-file spread-read)
                                       (cond ((buffer-emptyp spread-read)
                                              (loop-finish))
                                             (t (buffer-partition spread-read #\Tab 2 spread-read-refid 3 spread-read-pos)
                                                (setq pos1 (buffer-parse-integer spread-read-pos)))))
                                      (t (write-buffer chromosome-read out)
+                                        (write-newline out)
                                         (read-line-into-buffer file chromosome-read)
                                         (cond ((buffer-emptyp chromosome-read)
                                                (loop-finish))
@@ -211,19 +215,24 @@
                                                  (setq pos2 (buffer-parse-integer chromosome-read-pos))))))
                             while (buffer= chromosome-read-refid spread-read-refid)))))
                 ; copy remaining reads in the file, if any
-                (when (not (buffer-emptyp chromosome-read)) (write-buffer chromosome-read out))
+                (when (not (buffer-emptyp chromosome-read))
+                  (write-buffer chromosome-read out)
+                  (write-newline out))
                 (copy-stream file out))
               ; copy remaining reads in the spread file, if any, that are one the same chromosome as the file was
               (when (not (buffer-emptyp spread-read))
                 (loop while (buffer= spread-read-refid common-read-refid)
                       do
                       (write-buffer spread-read out)
+                      (write-newline out)
                       (read-line-into-buffer spread-reads-file spread-read)
                       until (buffer-emptyp spread-read)
                       do
                       (buffer-partition spread-read #\Tab 2 spread-read-refid))))
         ; merge the remaining reads in the spread-reads file
-        (when (not (buffer-emptyp spread-read)) (write-buffer spread-read out))
+        (when (not (buffer-emptyp spread-read))
+          (write-buffer spread-read out)
+          (write-newline out))
         (copy-stream spread-reads-file out)))))
 
 (declaim (inline parse-sam-alignment-from-stream))

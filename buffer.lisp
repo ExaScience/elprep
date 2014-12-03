@@ -188,13 +188,11 @@
   (reinitialize-buffer buf)
   (loop (with-stream-input-buffer (buffer index limit) stream
           (declare (simple-base-string buffer) (fixnum index limit))
-          (loop for i of-type fixnum from index below limit do
-                (when (char= (schar buffer i) #\Newline)
-                  (let ((new-index (1+ i))) ;make sure to include the newline
-                    (declare (fixnum new-index))
-                    (buffer-extend buf buffer index new-index)
-                    (setq index new-index)
-                    (return-from read-line-into-buffer buf)))
+          (loop for end of-type fixnum from index below limit do
+                (when (char= (lw:sbchar buffer end) #\Newline)
+                  (buffer-extend buf buffer index end)
+                  (setq index (1+ end))
+                  (return-from read-line-into-buffer buf))
                 finally
                 (buffer-extend buf buffer index limit)
                 (setq index limit)))
@@ -210,13 +208,11 @@
     (loop (let ((index (buffered-ascii-input-stream-index stream))
                 (limit (buffered-ascii-input-stream-limit stream)))
             (declare (fixnum index limit))
-            (loop for i of-type fixnum from index below limit do
-                  (when (char= (bchar buffer i) #\Newline)
-                    (let ((new-index (the fixnum (1+ i)))) ;make sure to include the newline
-                      (declare (fixnum new-index))
-                      (io-buffer-extend buf buffer index new-index)
-                      (setf (buffered-ascii-input-stream-index stream) new-index)
-                      (return-from read-line-into-buffer buf)))
+            (loop for end of-type fixnum from index below limit do
+                  (when (char= (bchar buffer end) #\Newline)
+                    (io-buffer-extend buf buffer index end)
+                    (setf (buffered-ascii-input-stream-index stream) (the fixnum (1+ end)))
+                    (return-from read-line-into-buffer buf))
                   finally
                   (io-buffer-extend buf buffer index limit)
                   (setf (buffered-ascii-input-stream-index stream) limit)))
