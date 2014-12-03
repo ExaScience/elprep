@@ -5,17 +5,20 @@
 
 #+lispworks
 (defmacro with-buffer-dispatch (buffer &body body)
+  "Specialize a body of code for different types of buffers in SBCL."
   (error "with-buffer-dispatch is not available in LispWorks: ~S."
          `(with-buffer-dispatch ,buffer ,@body)))
 
 #+lispworks
 (defmacro with-ascii-stream-input-buffer (buffer stream &body body)
+  "Specialize a body of code for different types of a buffered-ascii-input-stream's input buffer in SBCL."
   (error "with-ascii-stream-input-buffer is not available in LispWorks: ~S."
          `(with-ascii-stream-input-buffer ,buffer ,stream ,@body)))
 
 #+sbcl
 (progn
-  (defconstant +ascii-stream-buffer-size+ (expt 2 13))
+  (defconstant +ascii-stream-buffer-size+ (expt 2 13)
+    "Size of buffers in ascii-input-stream.")
 
   (declaim (inline make-buffered-ascii-input-stream))
 
@@ -25,7 +28,18 @@
                        (buffer (ecase element-type
                                  (base-char (make-array +ascii-stream-buffer-size+ :element-type 'octet))
                                  (character (make-array +ascii-stream-buffer-size+ :element-type 'character))))
-                       (limit  (read-sequence buffer stream)))))
+                       (limit  (read-sequence buffer stream))))
+              (:copier nil))
+    "A wrapper for input streams that efficiently buffers ASCII input and allows for direct access of the buffer.
+     This is somewhat similar to LispWorks's buffered-stream concept.
+     The struct buffered-ascii-input-stream has a constructor make-buffered-ascii-input-stream that takes a stream and an optional element-type as parameters.
+     Accessor buffered-ascii-input-stream-index refers to the current start position in the input buffer.
+     Accessor buffered-ascii-input-stream-limit refers to the current end position in the input buffer.
+     Accessor buffered-ascii-input-stream-buffer refers to the actual input buffer.
+     Accessor buffered-ascii-input-stream-secondary-buffer refers to a secondary buffer that can be used to convert the primary buffer to a different type.
+     Accessor buffered-ascii-input-stream-element-type refers to the element-type of the underlying stream.
+     Accessor buffered-ascii-input-stream-stream refers to the underlying stream.
+     The relevant Gray stream methods are specialized for this struct."
     (index 0 :type fixnum)
     (limit 0 :type fixnum)
     buffer
@@ -33,11 +47,32 @@
     (element-type 'base-char :type symbol :read-only t)
     (stream nil :type (or null stream)))
 
+  (setf (documentation 'make-buffered-ascii-input-stream 'function)
+        "Constructor for struct buffered-ascii-input-stream that takes a stream and an optional element-type as parameters."
+        (documentation 'buffered-ascii-input-stream-p 'function)
+        "Default predicate for struct buffered-ascii-input-stream-p."
+        (documentation 'buffered-ascii-input-stream-index 'function)
+        "Current start position in the input buffer of a buffered-ascii-input-stream."
+        (documentation 'buffered-ascii-input-stream-limit 'function)
+        "Current end position in the input buffer of a buffered-ascii-input-stream."
+        (documentation 'buffered-ascii-input-stream-buffer 'function)
+        "The input buffer of a buffered-ascii-input-stream."
+        (documentation 'buffered-ascii-input-stream-secondary-buffer 'function)
+        "A secondary buffer for a buffered-ascii-input-stream used in copy-stream.
+         May become obsolete when SBCL supports :element-type '(unsigned-byte 8) in sb-ext:run-program."
+        (documentation 'buffered-ascii-input-stream-element-type 'function)
+        "The element-type of stream underlying a buffered-ascii-input-stream.
+         May become obsolete when SBCL supports :element-type '(unsigned-byte 8) in sb-ext:run-program."
+        (documentation 'buffered-ascii-input-stream-stream 'function)
+        "The stream underlying a buffered-ascii-input-stream.")
+
   (defmethod input-stream-p ((stream buffered-ascii-input-stream)) t)
 
   (declaim (inline stream-fill-buffer))
 
   (defun stream-fill-buffer (stream)
+    "Fill the buffered-ascii-input-stream with data from the underlying stream.
+     If data is available, update index and limit and return true."
     (declare (buffered-ascii-input-stream stream) #.*optimization*)
     (let ((position (read-sequence (buffered-ascii-input-stream-buffer stream)
                                    (buffered-ascii-input-stream-stream stream))))
@@ -48,6 +83,7 @@
         t)))
 
   (defmacro with-buffer-dispatch (buffer &body body)
+    "Specialize a body of code for different types of buffers. In the code body, bchar can be used to access elements in the buffer."
     `(etypecase ,buffer
        ((simple-array octet (*))
         (let ((,buffer ,buffer))
@@ -74,6 +110,8 @@
             ,@body)))))
 
   (defmacro with-ascii-stream-input-buffer (buffer stream &body body)
+    "Specialize a body of code for different types of buffers in a buffered-ascii-input-stream.
+     In the code body, bchar can be used to access elements in the buffer."
     `(let ((,buffer (buffered-ascii-input-stream-buffer ,stream)))
        (with-buffer-dispatch ,buffer ,@body)))
 
@@ -187,7 +225,8 @@
                   (return-from stream-read-line (values :eof t))))))))
 
   (defun skip-line (stream)
-    "Skip characters from stream until a newline is reached."
+    "Skip characters from stream until a newline is reached.
+     Can be used in place of read-line when its return value is discarded."
     (declare (buffered-ascii-input-stream stream) #.*optimization*)
     (with-ascii-stream-input-buffer buffer stream
       (loop (let ((index (buffered-ascii-input-stream-index stream))
@@ -216,7 +255,7 @@
     nil)
 
   (defun copy-stream (input output)
-    "Efficient copying of the contents of an input stream to an output stream."
+    "Efficient copying of the contents of a buffered-ascii-input-stream to an output stream."
     (declare (buffered-ascii-input-stream input) (stream output) #.*optimization*)
     (ecase (buffered-ascii-input-stream-element-type input)
       (base-char (let ((buffer (buffered-ascii-input-stream-buffer input))
@@ -248,7 +287,8 @@
 #+lispworks
 (progn
   (defun skip-line (stream)
-    "Skip characters from stream until a newline is reached."
+    "Skip characters from stream until a newline is reached.
+     Can be used in place of read-line when its return value is discarded."
     (declare (buffered-stream stream) #.*fixnum-optimization*)
     (loop (with-stream-input-buffer (source index limit) stream
             (declare (simple-base-string source) (fixnum index limit))
@@ -261,7 +301,7 @@
             (return-from skip-line))))
 
   (defun copy-stream (input output)
-    "Efficient copying of the contents of an input stream to an output stream."
+    "Efficient copying of the contents of a buffered-stream to an output stream."
     (declare (buffered-stream input) (stream output) #.*optimization*)
     (loop (with-stream-input-buffer (buffer index limit) input
             (declare (simple-base-string buffer) (fixnum index limit))
@@ -278,11 +318,12 @@
 
 #+sbcl
 (defun writec (out c)
-  "Write a character to output stream."
+  "Write a character to an output stream."
   (write-char c out))
 
 #+lispworks
 (defun writec (out c)
+  "Write a character to an output stream."
   (declare (buffered-stream out) (base-char c) #.*optimization*)
   (loop (with-stream-output-buffer (buffer index limit) out
           (declare (simple-base-string buffer) (fixnum index limit))
@@ -293,11 +334,11 @@
         (stream-flush-buffer out)))
 
 (defun write-newline (out)
-  "Write a newline to output stream."
+  "Write a newline to an output stream."
   (writec out #\Newline))
 
 (defun write-tab (out)
-  "Write a tabulator to output stream."
+  "Write a tabulator to an output stream."
   (writec out #\Tab))
 
 #+sbcl
@@ -305,10 +346,12 @@
   (declaim (inline writestr))
   
   (defun writestr (out string)
+    "Write a string to an output stream."
     (write-string string out)))
 
 #+lispworks
 (defun writestr (out string)
+  "Write a simple-base-string to an output stream."
   (declare (buffered-stream out) (simple-base-string string) #.*optimization*)
   (let ((start 0) (end (length string)))
     (declare (fixnum start end))
@@ -325,17 +368,37 @@
 #+lispworks
 (progn
   (defstruct process
+    "This struct represents the return values of sys:run-shell-command in LispWorks.
+     It has default constructor, predicate, and copier.
+     Read-only accessor process-stream refers to the stream of a process.
+     Read-only accessor process-error refers to the error-stream of a process.
+     Read-only accessor process-pid refers to the PID of a process."
     (stream nil :read-only t)
     (error nil :read-only t)
     (pid nil :read-only t))
 
+  (setf (documentation 'make-process 'function)
+        "Default constructor for struct process."
+        (documentation 'copy-process 'function)
+        "Default copier for struct process."
+        (documentation 'process-p 'function)
+        "Default predicate for struct process."
+        (documentation 'process-stream 'function)
+        "The stream of an external process."
+        (documentation 'process-error 'function)
+        "The error stream of an external process."
+        (documentation 'process-pid 'function)
+        "The PID of an external process.")
+
   (declaim (inline process-input process-output))
 
   (defun process-input (process)
+    "Returns the result of process-stream. Exists for compatibility with SBCL's sb-ext:process-input."
     (declare (process process) #.*optimization*)
     (process-stream process))
 
   (defun process-output (process)
+    "Returns the result of process-stream. Exists for compatibility with SBCL's sb-ext:process-output."
     (declare (process process) #.*optimization*)
     (process-stream process))
 
@@ -348,6 +411,7 @@
                               (if-output-exists :error)
                               (if-error-exists :error)
                               (external-format :latin-1))
+    "A wrapper for sys:run-shell-command in LispWorks to make it behave more like SBCL's sb-ext:run-program."
     (declare (ignore external-format))
     (multiple-value-bind
         (stream error-stream pid)
@@ -363,6 +427,7 @@
                       :pid pid))))
 
   (defun process-close (program &key (wait t))
+    "Close all streams of an external process, wait for the process to finish if requested, and return its exit code if available."
     (let ((stream (process-stream program)))
       (when stream (close stream)))
     (let ((error (process-error program)))
@@ -386,5 +451,6 @@
 (declaim (inline command-line-arguments))
 
 (defun command-line-arguments ()
+  "Wrapper for sys:*line-arguments-list* in LispWorks, and sb-ext:*posix-argv* in SBCL."
   #+lispworks sys:*line-arguments-list*
   #+sbcl sb-ext:*posix-argv*)

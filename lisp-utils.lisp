@@ -5,9 +5,8 @@
   (defun read-simple-base-string (stream c)
     (declare (ignore c))
     (coerce (loop for char = (read-char stream t nil t)
-                  if (char= char #\\) collect (read-char stream t nil t)
-                  else if (char= char #\") do (loop-finish)
-                  else collect char)
+                  until (char= char #\")
+                  collect (if (char= char #\\) (read-char stream t nil t) char))
             'simple-base-string))
 
   (defreadtable simple-base-string-syntax
@@ -15,10 +14,13 @@
     (:macro-char #\" #'read-simple-base-string nil))
 
   (defmacro in-simple-base-string-syntax ()
+    "Make literal strings produce simple-base-string instead of (array character (*)) in SBCL."
     '(in-readtable simple-base-string-syntax)))
 
 #+lispworks
-(defmacro in-simple-base-string-syntax () ())
+(defmacro in-simple-base-string-syntax ()
+  "Make literal strings produce simple-base-string instead of (array character (*)) in SBCL."
+  ())
 
 (in-simple-base-string-syntax)
 
@@ -65,7 +67,8 @@
   (intern string *keyword*))
 
 (defun intern-key/copy (string)
-  "Intern a string in the :keyword package; copy string if not found."
+  "Find a symbol in the :keyword package or, if not found, intern a copy of the string in the :keyword package.
+   Can be used for mutable or stack-allocated strings, etc."
   (declare (simple-base-string string) #.*optimization*)
   (let ((keyword *keyword*))
     (or (find-symbol string keyword)
@@ -104,10 +107,11 @@
 
 (defvar *number-of-threads* 1
   "The number of threads used by run-pipeline and run-pipeline-in-situ to parallelize the filtering process.
-   Default is 1, which results in sequential execution. Usually, parallelization only occurs when this value is greater than 3.")
+   Default is 1, which results in sequential execution. Usually, parallelization only occurs when this value is greater than 3.
+   Also used as the number of threads to use in samtools when piping from/to BAM/CRAM files.")
 
 (defun thread-run (name function &rest arguments)
-  "Wrapper around mp:process-run-function / sb-thread:make-thread."
+  "Wrapper around mp:process-run-function in LispWorks, and sb-thread:make-thread in SBCL."
   (declare (dynamic-extent arguments))
   #+lispworks (apply #'mp:process-run-function name '() function arguments)
   #+sbcl (sb-thread:make-thread function :name name :arguments (copy-list arguments)))

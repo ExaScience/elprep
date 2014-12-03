@@ -8,11 +8,15 @@
 (defstruct (scanner (:constructor make-scanner (&optional (string "")))
                     (:copier nil)
                     (:predicate nil))
+  "A scanner to scan/parse string of type simple-base-string.
+   The struct scanner has a constructor make-scanner that takes an optional string to scan/parse as a parameter.
+   Accessor scanner-index refers to the current index into the string.
+   Accessor scanner-string refers to the string being scanned/parsed."
   (index 0 :type fixnum)
   (string "" :type simple-base-string))
 
 (setf (documentation 'make-scanner 'function)
-      "Create a scanner to scan/parse strings of type simple-base-string."
+      "Create a scanner to scan/parse strings of type simple-base-string. Takes an optional string to scan/parse as a parameter."
       (documentation 'scanner-index 'function)
       "The current index into the string while scanning/parsing it."
       (documentation 'scanner-string 'function)
@@ -763,17 +767,21 @@
           (process-close command)))))
 
 (defun check-stdout (pathname)
+  "Return true if pathname represents stdout."
   (ignore-errors
     (string= (namestring (truename pathname))
              (load-time-value (namestring (truename #p"/dev/stdout"))))))
 
 (defun check-stdin (pathname)
+  "Return true if pathname represents stdin."
   (ignore-errors
     (string= (namestring (truename pathname))
              (load-time-value (namestring (truename #p"/dev/stdin"))))))
 
-(defvar *reference-fasta* nil)
-(defvar *reference-fai* nil)
+(defvar *reference-fasta* nil
+  "The reference FASTA that samtools may need for generating a CRAM file.")
+(defvar *reference-fai* nil
+  "The reference FAI that samtools may need for generating a CRAM file.")
 
 (defun %open-sam (pathname direction header-only kind)
   "Open a SAM file for :input or :output. If kind is :bam or :cram, use samtools view for input or output.
@@ -783,8 +791,11 @@
   ; This is both fast and fully compatible with all ASCII I/O to and from files and pipes.
   ;
   ; In SBCL, we use :element-type 'octet for input files and wrap them with our own ASCII conversion.
-  ; For fast ASCII output, we use :element-type 'base-char and :external-format :utf-8.
-  ; See open-program for details on pipes.
+  ; When reading from a process-output in SBCL, we can unfortunately not choose an :element-type,
+  ; so we revert to :external-format :latin-1 instead, which is quite slow.
+  ; Consider using stdin as input and piping the result of samtools into elPrep externally instead.
+  ; For ASCII output, we use :element-type 'base-char and :external-format :utf-8,
+  ; which is sufficiently fast in SBCL.
   ;
   (ecase direction
     (:input (cond ((eq kind :sam)
@@ -843,11 +854,13 @@
 
 (defun open-sam (filename &key (direction :input) header-only)
   "Open a SAM file for :input or :output. If the file is .bam or .cram, use samtools view for input or output.
-   Tell samtools view to only return the header for :input when :header-only is true."
+   Tell samtools view to only return the header for :input when :header-only is true.
+   Returns two values: a stream to read or write, and optionally a process representation for samtools."
   (%open-sam filename direction header-only (sam-file-kind filename)))
 
 (defun open-temporary-sam (sibling)
-  "Open a temporary SAM file for :output in the same folder as the sibling file. If the file is .bam or .cram, use samtools view for output."
+  "Open a temporary SAM file for :output in the same folder as the sibling file. If the file is .bam or .cram, use samtools view for output.
+   Returns three values: a stream to read or write, optionally a process representation for samtools, and a pathname for the temporary file."
   #+lispworks
   (let ((location (lw:pathname-location (pathname sibling)))
         (kind (sam-file-kind sibling)))
@@ -877,6 +890,8 @@
 
 #+lispworks
 (defun close-sam (file program &key (wait t))
+  "Close the stream for a SAM/BAM/CRAM file, and the optional process representation for samtools.
+   Wait for the process to finish by default."
   (cond (program (process-close program :wait wait))
         (t (when (output-stream-p file) (stream-flush-buffer file))
            (unless (eq file *terminal-io*) (close file))))
@@ -884,6 +899,8 @@
 
 #+sbcl
 (defun close-sam (file program &key (wait t))
+  "Close the stream for a SAM/BAM/CRAM file, and the optional process representation for samtools.
+   Wait for the process to finish by default."
   (close file)
   (when program
     (when wait

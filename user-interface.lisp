@@ -73,6 +73,7 @@
 ;;; error handling
 
 (defun create-log-filename ()
+  "Create a log filename for writing error messages from within the elPrep binary."
   (multiple-value-bind
       (second minute hour date month year day daylight-p timezone)
       (get-decoded-time)
@@ -82,6 +83,7 @@
 
 #+lispworks
 (defun elprep-debugger-hook (condition hook)
+  "Write an error report to a log file and exist the elPrep binary."
   (declare (ignore hook))
   (dbg:log-bug-form (format nil "An error occurred in ~A ~A: ~A" *program-name* *program-version* condition)
                     :log-file (merge-pathnames (create-log-filename) (user-homedir-pathname))
@@ -90,6 +92,7 @@
 
 #+sbcl
 (defun elprep-debugger-hook (condition hook)
+  "Write an error report to a log file and exist the elPrep binary."
   (declare (ignore hook))
   (let ((log-path (merge-pathnames (create-log-filename) (user-homedir-pathname))))
     (ensure-directories-exist log-path)

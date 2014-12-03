@@ -2,6 +2,9 @@
 (in-simple-base-string-syntax)
 
 (defun explain-flag (flag)
+  "Return a symbolic representation of the FLAG entry in a SAM file alignment line.
+   This is primarily for debugging purposes.
+   See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4."
   (let ((result '()))
     (macrolet ((test (&rest bits)
                  `(progn ,@(loop for bit in bits
@@ -24,6 +27,8 @@
     result))
  
 (defun sam-alignment-differ (aln1 aln2)
+  "Return false if the two sam-alignments have the same mandatory fields.
+   Otherwise, return a symbol indicating which field differs."
   (declare (sam-alignment aln1 aln2) #.*optimization*)
   ; check that all mandatory fields are =
   (or (when (string/= (the simple-base-string (sam-alignment-qname aln1)) (the simple-base-string (sam-alignment-qname aln2))) 'qname)
@@ -36,6 +41,7 @@
       (when (string/= (the simple-base-string (sam-alignment-qual aln1)) (the simple-base-string (sam-alignment-qual aln2))) 'qual)))
 
 (defun sam-alignment-same (aln1 aln2)
+  "Return true if the two sam-alignments have the same mandatory fields, false otherwise."
   (declare (sam-alignment aln1 aln2) #.*optimization*)
   (and (string= (the simple-base-string (sam-alignment-qname aln1)) (the simple-base-string (sam-alignment-qname aln2)))
        (= (the fixnum (sam-alignment-flag aln1)) (the fixnum (sam-alignment-flag aln2)))
@@ -47,12 +53,13 @@
        (string= (the simple-base-string (sam-alignment-qual aln1)) (the simple-base-string (sam-alignment-qual aln2)))))
 
 (defun real-diffs (alns1 alns2)
+  "Return a list of sam-alignments in alns1 for which no alignments in alns2 exist that have the same mandatory fields."
   (loop for aln1 in alns1
         unless (find aln1 alns2 :test #'sam-alignment-same)
         collect aln1))
 
 (defun compare-sams (sam1-file sam2-file)
-  ; parse both sams to memory, then do a 1 by 1 comparison on the alignments for all obligatory fields
+  "Parse both SAM files, then compare the mandatory fields of all alignments one by one."
   (let ((sam1 (make-sam))
         (sam2 (make-sam))
         (working-directory (get-working-directory)))
@@ -73,7 +80,7 @@
       (real-diffs differences1 differences2)))) ; sort slightly different order in elprep so get out real diffs
 
 (defun verify-order-kept (sam-file)
-  ; assume the input is coordinate sorted; verify if this is still the case
+  "Assume the SAM file is sorted by coordinate order. Verify that this is stil the case."
   (format t "verifying order kept ~%")
   (let ((sam (make-sam))
         (working-directory (get-working-directory)))
@@ -94,6 +101,7 @@
             finally (return t)))))
 
 (defun count-duplicates (sam-file)
+  "Return the number of alignments in the SAM file that are marked as duplicates."
   (let ((sam (make-sam)))  
     (run-pipeline (merge-pathnames sam-file (get-working-directory)) sam)
     (loop for aln in (sam-alignments sam)
@@ -238,6 +246,9 @@
 (declaim (inline parse-sam-alignment-from-stream))
 
 (defun parse-sam-alignment-from-stream (stream)
+  "Read a line from a stream and parse it as a SAM alignment line.
+   Return NIL if stream is at end of file.
+   See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4."
   (let ((line (read-line stream nil)))
     (when line (parse-sam-alignment line))))
 

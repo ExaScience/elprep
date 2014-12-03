@@ -1,18 +1,39 @@
 (in-package :elprep)
 (in-simple-base-string-syntax)
 
-(defconstant +buffer-chunk-size+ 1024)
+(defconstant +buffer-chunk-size+ 1024
+  "Size of buffer chunks.")
 
 (declaim (inline %make-buffer buffer-p))
 
-(defstruct (buffer (:constructor %make-buffer ()))
+(defstruct (buffer (:constructor %make-buffer ())
+                   (:copier nil))
+  "A buffer can be used to create simple-base-strings that can grow arbitrarily large in size.
+   It is somewhat similar to adjustable strings in Common Lisp, but guarantees to allocate only as much as necessary,
+   and to never copy contents when growing. Buffers are also easy to reuse, and efficiently reuse already allocated memory.
+   Buffer has a default constructor %make-buffer, and a defaul predicate.
+   Accessor buffer-pos refers to the current active size of the buffer.
+   Accessor buffer-str refers to an array of string chunks.
+   Accessor buffer-hash-value refers to the hash value of the active contents of the buffer. If -1, the hash-value hasn't been computed yet."
   (pos 0 :type fixnum)
   (str #() :type simple-vector)
   (hash-value -1 :type fixnum))
 
+(setf (documentation '%make-buffer 'function)
+      "Default constructor for struct buffer."
+      (documentation 'buffer-p 'function)
+      "Default predicate for struct buffer."
+      (documentation 'buffer-pos 'function)
+      "The current active size of a buffer."
+      (documentation 'buffer-str 'function)
+      "An array of string chunks holding the contents of a buffer."
+      (documentation 'buffer-hash-value 'function)
+      "The hash-value for the active contents of a buffer. If -1, the hash-value hasn't been computed yet.")
+
 (declaim (inline reinitialize-buffer))
 
 (defun reinitialize-buffer (buf)
+  "Reset buffer-pos and buffer-hash-value, so this buffer can be reused."
   (declare (buffer buf) #.*optimization*)
   (setf (buffer-pos buf) 0)
   (setf (buffer-hash-value buf) -1)
@@ -21,11 +42,12 @@
 (declaim (inline buffer-emptyp))
 
 (defun buffer-emptyp (buf)
+  "Returns true if the active size of the buffer is 0."
   (declare (buffer buf) #.*optimization*)
   (= (buffer-pos buf) 0))
 
 (defun ensure-str (buf old-str n)
-  "internal"
+  "Ensure that buffer-str holds enough chunks (internal)."
   (declare (buffer buf) (simple-vector old-str) (fixnum n) #.*optimization*)
   (let ((new-str (make-array n #+lispworks :single-thread #+lispworks t)))
     (declare (simple-vector new-str))
@@ -40,7 +62,7 @@
 (declaim (inline ensure-chunk))
 
 (defun ensure-chunk (buf hi)
-  "internal"
+  "Ensure that buffer-str has enough chunks (internal)."
   (declare (buffer buf) (fixnum hi) #.*optimization*)
   (let ((str (buffer-str buf)))
     (declare (simple-vector str))
@@ -48,7 +70,6 @@
              (ensure-str buf str (the fixnum (1+ hi)))) hi)))
 
 (defmethod print-object ((buf buffer) stream)
-  "internal"
   (print-unreadable-object (buf stream :type t :identity t)
     (format stream ":POS ~S :STR ~S"
             (buffer-pos buf)
@@ -57,7 +78,7 @@
 (declaim (inline buffer-push))
 
 (defun buffer-push (buf char)
-  "add a character to a buffer"
+  "Add a single character to a buffer."
   (declare (buffer buf) (base-char char) #.*optimization*)
   (let ((pos (buffer-pos buf)))
     (declare (fixnum pos))
@@ -71,7 +92,7 @@
 (declaim (notinline slow-buffer-extend))
 
 (defun slow-buffer-extend (buf pos hi lo chunk string start end length)
-  "internal"
+  "Add a simple-base-string to a buffer (internal slow path)."
   (declare (buffer buf) (fixnum pos hi lo) (simple-base-string chunk)
            (simple-base-string string) (fixnum start end length) #.*optimization*)
   (loop with source of-type fixnum = start do
@@ -85,7 +106,7 @@
         (setq chunk (ensure-chunk buf hi))))
 
 (defun buffer-extend (buf string &optional (start 0) end)
-  "add a string to a buffer"
+  "Add a simple-base-string to a buffer."
   (declare (buffer buf) (simple-base-string string) (fixnum start) #.*optimization*)
   (let* ((end (or end (length string)))
          (length (the fixnum (- end start)))
@@ -110,7 +131,7 @@
   (declaim (notinline slow-io-buffer-extend))
 
   (defun slow-io-buffer-extend (buf pos hi lo chunk string start end length)
-    "internal"
+    "Add a region of a buffered-ascii-input-stream buffer to a buffer (internal slow path)."
     (declare (buffer buf) (fixnum pos hi lo) (simple-base-string chunk)
              (fixnum start end length) #.*optimization*)
     (with-buffer-dispatch string
@@ -125,7 +146,7 @@
             (setq chunk (ensure-chunk buf hi)))))
 
   (defun io-buffer-extend (buf string &optional (start 0) end)
-    "add a string to a buffer"
+    "Add a region of a buffered-ascii-input-stream buffer to a buffer."
     (declare (buffer buf) (fixnum start) #.*optimization*)
     (with-buffer-dispatch string
       (let* ((end (or end (length string)))
@@ -149,13 +170,13 @@
 (declaim (inline make-buffer))
 
 (defun make-buffer (&optional initial-string)
-  "create a buffer with an optional initial string"
+  "Create a buffer with an optional initial string"
   (let ((buf (%make-buffer)))
     (when initial-string (buffer-extend buf initial-string))
     buf))
 
 (defun write-buffer (buf stream)
-  "write a buffer to a stream"
+  "Write the active contents of a buffer to a stream"
   (declare (buffer buf) (stream stream) #.*optimization*)
   (let ((pos (buffer-pos buf))
         (str (buffer-str buf)))
@@ -169,7 +190,7 @@
   (values))
 
 (defun buffer-copy (source target)
-  "copy the contents of one buffer to another"
+  "Copy the active contents of one buffer to another."
   (declare (buffer source target) #.*fixnum-optimization*)
   (let ((pos (buffer-pos source))
         (str (buffer-str source)))
@@ -183,7 +204,7 @@
 
 #+lispworks
 (defun read-line-into-buffer (stream buf)
-  "read a line into a buffer"
+  "Read a line from a stream into a buffer, after reinitializing it."
   (declare (buffered-stream stream) (buffer buf) #.*fixnum-optimization*)
   (reinitialize-buffer buf)
   (loop (with-stream-input-buffer (buffer index limit) stream
@@ -201,7 +222,7 @@
 
 #+sbcl
 (defun read-line-into-buffer (stream buf)
-  "read a line into a buffer"
+  "Read a line from a stream into a buffer, after reinitializing it."
   (declare (buffered-ascii-input-stream stream) (buffer buf) #.*optimization*)
   (reinitialize-buffer buf)
   (with-ascii-stream-input-buffer buffer stream
@@ -220,7 +241,7 @@
             (return-from read-line-into-buffer buf)))))
 
 (defun buffer-partition (buf separator &rest targets)
-  "get substrings from a buffer and feed them to target buffers;
+  "Get substrings from a buffer and feed them to target buffers after reinitializing them;
    separator is a character, like #\Tab;
    targets is a property list with numbers as keys and buffers as values;
    the targets need to be sorted by key;
@@ -274,7 +295,8 @@
   (values))
 
 (defun buffer-string (buf)
-  "turn a buffer into a string representation; only for debugging"
+  "Return a string representation of the active contents of a buffer.
+   Use this only for debugging. When writing to a stream, use write-buffer instead."
   (declare (buffer buf) #.*optimization*)
   (let ((pos (buffer-pos buf))
         (str (buffer-str buf)))
@@ -298,7 +320,7 @@
         result))))
 
 (defun buffer= (buf1 buf2)
-  "compare the contents of two buffers"
+  "Compare the active contents of two buffers."
   (declare (buffer buf1 buf2) #.*optimization*)
   (or (eq buf1 buf2)
       (let ((pos1 (buffer-pos buf1))
@@ -326,7 +348,7 @@
           t))))
 
 (defun buffer-parse-integer (buf)
-  "convert a buffer to an integer"
+  "Parse a buffer as an integer."
   (declare (buffer buf) #.*optimization*)
   (let ((pos (buffer-pos buf))
         (str (buffer-str buf))
@@ -371,13 +393,13 @@
 (declaim (inline rotate-1))
 
 (defun rotate-1 (n)
-  "internal"
+  "Rotate a fixnum by one position."
   (declare (fixnum n) #.*optimization*)
   (the fixnum (logior (ash n -1) (the fixnum (ash (logand n 1) #.(1- (integer-length most-positive-fixnum)))))))
 
 (defun buffer-hash (buf)
-  "get the hash code for a buffer; once a hash code is computed, the buffer shouldn't change anymore!
-   can be used for hash tables, like in (make-hash-table :test #'buffer= :hash-function #'buffer-hash)"
+  "Get the hash code for a buffer; once a hash code is computed, the buffer shouldn't change anymore.
+   This can be used for hash tables, like in (make-hash-table :test #'buffer= :hash-function #'buffer-hash)."
   (declare (buffer buf) #.*optimization*)
   (let ((pos (buffer-pos buf))
         (str (buffer-str buf))
