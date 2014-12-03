@@ -93,7 +93,7 @@ Please ensure that the elPrep repository and its dependencies are visible to the
 
 Data sets in sequencing pipelines can become very large. Therefore you may need to tweak the default heap size of SBCL to be able to use an SBCL-based version of elPrep.
 
-Specifically, you may need to increase the value of \*backend-page-bytes\* before building SBCL itself. In the source distribution of SBCL, you can edit this variable in the file src/compiler/target/backend-parms.lisp, where target is the platform where you want to run elPrep, so for example in src/compiler/x86-64/backend-parms.lisp.
+Specifically, you may need to increase the value of \*gencgc-card-bytes\* before building SBCL itself. In the source distribution of SBCL, you can edit this variable in the file src/compiler/target/backend-parms.lisp, where target is the platform where you want to run elPrep, so for example in src/compiler/x86-64/backend-parms.lisp.
 
 You may also need to specify a larger dynamic space size when building elPrep. You can do this by building elPrep as follows:
 
