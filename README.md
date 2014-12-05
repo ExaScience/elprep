@@ -107,7 +107,7 @@ The output of elPrep is compatible (as input) with:
 * gatk 2.7.2
 * gatk 1.6
 * samtools-0.1.19
-* samtools-1.0
+* samtools-1.0, samtools-1.1
 * picard-tools-1.113
 
 elPrep may be compatible with other versions of these tools as well, but this has not been tested.
@@ -124,19 +124,19 @@ elPrep has been developed for Linux and has not been tested for other operating 
 
 elPrep is designed to operate in memory, i.e. data is stored in RAM during computation. As long as you do not use the in-memory sort or mark duplicates filter, elPrep operates as a streaming tool, and peak memory use is limited to a few GB.
 
-The in-memory sort and mark duplicates filter require keeping the entire input file in memory, and therefore use an amount of RAM that is proportional to the size of the input file. As a rule of thumb, elPrep requires 6x times more RAM memory than the size of the input file in .sam format when it is used for sorting or marking duplicates.
+The in-memory sort and mark duplicates filter require keeping the entire input file in memory, and therefore use an amount of RAM that is proportional to the size of the input file. As a rule of thumb, elPrep requires 6x times more RAM memory than the size of the input file in .sam format when it is used for sorting or marking duplicates. 
 
-elPrep provides a tool for splitting .sam files "per chromosome", and guarantees that processing these split files and then merging the results, is without information loss compared to processing a .sam file as a whole. Using the split/merge tool greatly reduces the RAM required to process a .sam file, but it comes at the cost of an additional processing step.
+elPrep provides a tool for splitting .sam files "per chromosome", and guarantees that processing these split files and then merging the results, is without information loss compared to processing a .sam file as a whole. Using the split/merge tool greatly reduces the RAM required to process a .sam file, but it comes at the cost of an additional processing step. For example, for the hg19 reference, the amount of RAM required is roughly a factor 0.6 of the input file in .sam format when using the split and merge tools.
 
-For whole-genome sequencing, we recommend a server with at least 256GB RAM and processing the data per chromosome. For exome sequencing, we recommend a server with 256GB of RAM, or processing the data per chromosome on a server with 20GB RAM.
+For example, in our experience, for whole-genome sequencing (+500GB .sam or 99GB .bam), a server with at least 256GB and splitting the data per chromosome is required. For exome sequencing (+-40GB .sam or +-8GB .bam), processing the data per chromsome requires a server with 30GB RAM.
 
-If your machine has less RAM than your input requires (after splitting), you have a couple of options. One solution is to (further) split up your input file per chromosomal region, which is for example also done to run analyses in a distributed setup. A variety of tools, such as SAMtools, provide commands to split up your input files in this way.
+If your machine has less RAM than your input requires (after splitting), you have a couple of options. One solution is to (further) split up your input file per genomic region. You can do this by splitting up the reference sequence dictionary into smaller genomic regions. We plan to add support for BED format to facilitate this. 
 
 Alternatively, you may configure a disk to extend the swap space of your server. Using swap space may have a penalty on execution time for a job compared to running the same job fully in RAM, but it does not change how elPrep is used. If configuring additional swap space is not an option, you may also run elPrep with the gc execution option. This option triggers more aggressive garbage collection during execution and may save peak memory use, but may significantly slow down execution compared to running fully in memory. See our manual reference pages for more details.
 
 ## Disk Space
 
-elPrep does not write any intermediate files, and therefore does not require additional (peek) disk space beyond what is needed for storing the input and output files.
+elPrep by default does not write any intermediate files, and therefore does not require additional (peek) disk space beyond what is needed for storing the input and output files. If you use the elPrep split and merge tools, elPrep requires additional disk space equal to the size of the input file.
 
 # Mailing List
 
@@ -190,7 +190,7 @@ elPrep is compatible with unix pipes and allows using /dev/stdin and /dev/stdout
 
 ### Using .bam or .cram
 
-elPrep uses SAMtools for compression and decompression of .bam and .cram files. When the user specifies the input or ouput to be in .bam or .cram, a call to SAMtools is generated to compress or decompress the data. The SAMtools and elPrep commands are connected via unix pipes to avoid generating intermediate files.
+elPrep by default uses SAMtools for compression and decompression of .bam and .cram files. When the user specifies the input or ouput to be in .bam or .cram, a call to SAMtools is generated to compress or decompress the data. The SAMtools and elPrep commands are connected via unix pipes to avoid generating intermediate files.
 
 For example, when the user executes the following elPrep command:
 
@@ -200,7 +200,7 @@ The actual command that is executed is the following:
 
 	samtools view -h input.bam /dev/stdout | elprep /dev/stdin /dev/stdout | samtools view -b -o output.bam /dev/stdin
 
-elPrep may pass additional parameters to SAMtools which are not shown above, for example for setting the number of compression threads. You are, of course, free to specify the SAMtools commands for .bam/.cram conversion manually in your own scripts.
+elPrep may pass additional parameters to SAMtools which are not shown above, for example for setting the number of compression threads. You are, of course, free to specify the SAMtools commands for .bam/.cram conversion manually in your own scripts. The elPrep download includes the Python scripts elprep\_io\_wrapper.py and elprep.py that illustrate how to do this.
 
 ### .cram Conversion Options
 
@@ -365,9 +365,13 @@ The elprep merge command requires two arguments: a path to the files that need t
 
 This command option sets the number of threads that elPrep uses during execution for converting between .bam/.sam formats. The default number of threads is 1. This option is only useful when the files to be marged are in .bam format or when the output-file is in .bam format.
 
+# Python Scripts
+
+The Python scripts have been tested with Python 2.7.3.
+
 ## Name
 
-### elprep-sfm - a Python script that illustrates the use of elprep split and merge
+### elprep-sfm.py - a Python script that illustrates the use of elprep split and merge
 
 ## Synopsis
 
@@ -380,6 +384,18 @@ A Python script that combines the elprep split, filter, and merge commands. The 
 * It first calls elprep split to split up the input file per chromosome. The script creates a temp folder in the current working directory for storing the split files created this way.
 * It then calls the elprep filter command for processing the split files one by one.
 * Finally, it calls the elprep merge command to create the output file from the split files.
+
+## Name
+
+### elprep\_io\_wrapper.py - a Python script that illustrates how to use piping with elPrep
+
+A Python script that implements the .bam/.cram conversion through piping to SAMtools. The script is loaded by the elprep-sfm.py and elprep.py scripts. You can edit the SAMtools calls to tweak the parameters to fit your needs, or use this script as a starting point for piping to other .bam/.cram conversion tools than SAMtools.
+
+## Name
+
+### elprep.py - a Python script that wraps the elPrep binary
+
+A Python script that wraps the elPrep binary and loads the elprep\_io\_wrapper.py script for .bam/.cram conversion using SAMtools rather than using the internal piping of elPrep. You can use this script as a drop-in replacement for the elprep binary. 
 
 <!--### --timed
 
