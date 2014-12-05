@@ -46,7 +46,7 @@ You can download a precompiled binary of elPrep [here](https://github.com/ExaSci
 
 ## GitHub
 
-The elPrep source code is freely available on GitHub. elPrep is implemented in Common Lisp using the LispWorks compiler for Linux.
+The elPrep source code is freely available on GitHub. elPrep is implemented in Common Lisp using the LispWorks and SBCL compilers for Linux.
 
 	elPrep GitHub clone URL:
 
@@ -61,6 +61,20 @@ elPrep works with the .sam, .bam, and .cram formats as input/output. To use .bam
 
 The .cram format is only supported for samtools-1.0 and up.
 
+## Building
+
+The following is only relevant information if you wish to build elPrep yourself. It is not necessary to use the elPrep binary we provide above.
+
+A build script is provided with the source code if you wish to build elPrep yourself.
+
+	Building elPrep using LispWorks:
+
+		sh make-lispworks-binary.sh
+
+	Building elPrep using SBCL:
+
+		sh make-sbcl-binary.sh
+
 The elPrep implementation depends on the Claws and cl-date-time-parser libraries:
 
 	Claws GitHub clone URL:
@@ -73,20 +87,6 @@ The elPrep implementation depends on the Claws and cl-date-time-parser libraries
 
 The elPrep implementation also depends on the string-case library which is available through the [quicklisp](http://www.quicklisp.org) package manager.
 
-Installing these libraries is only necessary if you wish to build elPrep yourself. It is not necessary to use the elPrep binary we provide above.
-
-## Building
-
-A build script is provided with the source code if you wish to build elPrep yourself.
-
-	Building elPrep using LispWorks:
-
-		lispworks -build save-elprep-script.lisp
-
-	Building elPrep using SBCL:
-
-		sbcl --script save-elprep-script.lisp
-
 Please ensure that the elPrep repository and its dependencies are visible to the asdf path of your LispWorks or SBCL compiler.
 
 ### SBCL-specific notes
@@ -97,7 +97,9 @@ Specifically, you may need to increase the value of \*gencgc-card-bytes\* before
 
 You may also need to specify a larger dynamic space size when building elPrep. You can do this by building elPrep as follows:
 
-	 	sbcl --dynamic-space-size NNNNNN --script save-elprep-script.lisp
+	 	sbcl --dynamic-space-size NNNNNN ...
+
+See the SBCL build script in make-sbcl-binary.sh, which includes an already relatively large setting for the dynamic space size.
 
 ## Compatibility
 
@@ -126,17 +128,17 @@ elPrep is designed to operate in memory, i.e. data is stored in RAM during compu
 
 The in-memory sort and mark duplicates filter require keeping the entire input file in memory, and therefore use an amount of RAM that is proportional to the size of the input file. As a rule of thumb, elPrep requires 6x times more RAM memory than the size of the input file in .sam format when it is used for sorting or marking duplicates. 
 
-elPrep provides a tool for splitting .sam files "per chromosome", and guarantees that processing these split files and then merging the results, is without information loss compared to processing a .sam file as a whole. Using the split/merge tool greatly reduces the RAM required to process a .sam file, but it comes at the cost of an additional processing step. For example, for the hg19 reference, the amount of RAM required is roughly a factor 0.6 of the input file in .sam format when using the split and merge tools.
+elPrep provides a tool for splitting .sam files "per chromosome," and guarantees that processing these split files and then merging the results does not lose information when compared to processing a .sam file as a whole. Using the split/merge tool greatly reduces the RAM required to process a .sam file, but it comes at the cost of an additional processing step. For example, for the hg19 reference, the amount of RAM required is roughly a factor 0.6 of the input file in .sam format when using the split and merge tools.
 
 For example, in our experience, for whole-genome sequencing (+500GB .sam or 99GB .bam), a server with at least 256GB and splitting the data per chromosome is required. For exome sequencing (+-40GB .sam or +-8GB .bam), processing the data per chromsome requires a server with 30GB RAM.
 
-If your machine has less RAM than your input requires (after splitting), you have a couple of options. One solution is to (further) split up your input file per genomic region. You can do this by splitting up the reference sequence dictionary into smaller genomic regions. We plan to add support for BED format to facilitate this. 
+If your machine has less RAM than your input requires (after splitting), you have a couple of options. One solution is to (further) split up your input file per genomic region. You can do this by splitting up the reference sequence dictionary into smaller genomic regions. We plan to add support for BED files to facilitate this. (Please contact us if you need this urgently.)
 
-Alternatively, you may configure a disk to extend the swap space of your server. Using swap space may have a penalty on execution time for a job compared to running the same job fully in RAM, but it does not change how elPrep is used. If configuring additional swap space is not an option, you may also run elPrep with the gc execution option. This option triggers more aggressive garbage collection during execution and may save peak memory use, but may significantly slow down execution compared to running fully in memory. See our manual reference pages for more details.
+Alternatively, you may configure a disk to extend the swap space of your server. Using swap space may have a penalty on execution time for a job compared to running the same job fully in RAM, but it does not change how elPrep is used. If configuring additional swap space is not an option, you may also run elPrep with the gc execution option. This option triggers more aggressive garbage collection during execution and may save peak memory use, but may significantly slow down execution compared to running fully in memory. See our manual reference pages below for more details.
 
 ## Disk Space
 
-elPrep by default does not write any intermediate files, and therefore does not require additional (peek) disk space beyond what is needed for storing the input and output files. If you use the elPrep split and merge tools, elPrep requires additional disk space equal to the size of the input file.
+elPrep by default does not write any intermediate files, and therefore does not require additional (peak) disk space beyond what is needed for storing the input and output files. If you use the elPrep split and merge tools, elPrep requires additional disk space equal to the size of the input file.
 
 # Mailing List
 
@@ -147,6 +149,8 @@ Use the Google [forum](https://groups.google.com/d/forum/elprep) for discussions
 As of today, there is no publication on elPrep yet. Please cite the ExaScience Life Lab with a link to the GitHub repository:
 
 		https://github.com/ExaScience/elprep
+
+Please use the LispWorks version when running and reporting benchmarks, since the SBCL version is in general slower. If performance is below your expectations, please contact us first before reporting your results.
 
 # Demo
 
@@ -170,7 +174,7 @@ We have a seperate [GitHub repository](https://github.com/ExaScience/elprep-demo
 
 ## Description
 
-The elprep command requires two arguments: the input file and the output file. The input/output format can be .sam, .bam. or .cram. To use .bam or .cram, SAMtools must be installed. elPrep determines the format by looking at the file extension. elPrep also allows to use /dev/stdin and /dev/stdout as respective input or output sources for using unix pipes. When doing so, elPrep assumes the input and output are in .sam format.
+The elprep command requires two arguments: the input file and the output file. The input/output format can be .sam, .bam. or .cram. To use .bam or .cram, SAMtools must be installed. elPrep determines the format by looking at the file extension. elPrep also allows to use /dev/stdin and /dev/stdout as respective input or output sources for using Unix pipes. When doing so, elPrep assumes the input and output are in .sam format.
 
 The elprep commandline tool has three types of command options: filters, which implement actual .sam/.bam/.cram manipulations, sorting options, and execution-related options, for example for setting the number of threads. For optimal performance, issue a single elprep call that combines all filters you wish to apply.
 
@@ -186,17 +190,17 @@ Sorting is done after filtering.
 
 ### Unix pipes
 
-elPrep is compatible with unix pipes and allows using /dev/stdin and /dev/stdout as input or output sources. elPrep assumes that input and output on /dev/stdin and /dev/stdout are in .sam format.
+elPrep is compatible with Unix pipes and allows using /dev/stdin and /dev/stdout as input or output sources. elPrep assumes that input and output on /dev/stdin and /dev/stdout are in .sam format.
 
 ### Using .bam or .cram
 
-elPrep by default uses SAMtools for compression and decompression of .bam and .cram files. When the user specifies the input or ouput to be in .bam or .cram, a call to SAMtools is generated to compress or decompress the data. The SAMtools and elPrep commands are connected via unix pipes to avoid generating intermediate files.
+elPrep by default uses SAMtools for compression and decompression of .bam and .cram files. When the user specifies the input or ouput to be in .bam or .cram, a call to SAMtools is generated to compress or decompress the data. The SAMtools and elPrep commands are connected via Unix pipes to avoid generating intermediate files.
 
 For example, when the user executes the following elPrep command:
 
 	 elprep input.bam output.bam
 
-The actual command that is executed is the following:
+The actual command that is executed is similar to the following:
 
 	samtools view -h input.bam /dev/stdout | elprep /dev/stdin /dev/stdout | samtools view -b -o output.bam /dev/stdin
 
@@ -214,7 +218,7 @@ For example, when the user executes the following elPrep command:
 
 	 elprep input.sam output.cram --reference-T ucsc.hg19.fasta
 
-The actual command that is executed is the following:
+The actual command that is executed is similar to the following:
 
 	 elprep input.sam /dev/stdout | samtools view -C -T ucsc.hg19.fasta -o output.cram /dev/stdin
 
@@ -230,7 +234,7 @@ For example, when the user executes the following elPrep command:
 
 	 elprep input.sam output.cram --reference-t ucsc.hg19.fai
 
-The actual command that is executed is the following:
+The actual command that is executed is similar to the following:
 
 	 elprep input.sam /dev/stdout | samtools view -C -t ucsc.hg19.fai -o output.cram /dev/stdin
 
@@ -325,7 +329,7 @@ We provide an example python script "elprep-sfm.py" that illustrates how to use 
 
 ## Description
 
-The elprep split command requires two arguments: the input file and a path to a directory where elPrep can store the split files. The input file can be .sam, .bam, or .cram. It is also possible to use /dev/stdin as the input for using unix pipes. There are no structural requirements on the input file for using elprep split. For example, it is not necessary to sort the input file, nor is it necessary to convert to .bam or index the input file.
+The elprep split command requires two arguments: the input file and a path to a directory where elPrep can store the split files. The input file can be .sam, .bam, or .cram. It is also possible to use /dev/stdin as the input for using Unix pipes. There are no structural requirements on the input file for using elprep split. For example, it is not necessary to sort the input file, nor is it necessary to convert to .bam or index the input file.
 
 elPrep creates the output directory denoted by the output path, unless the directory already exists, in which case elPrep may override the existing files in that directory. Please make sure elPrep has the correct permissions for writing that directory.
 
@@ -357,7 +361,7 @@ This command option sets the number of threads that elPrep uses during execution
 
 ## Description
 
-The elprep merge command requires two arguments: a path to the files that need to be merged, and an output file. Use this command to merge files created with elprep split. The output file can be .sam, .bam, or .cram. It is also possible to use /dev/stdout as output when using unix pipes for connecting other tools.
+The elprep merge command requires two arguments: a path to the files that need to be merged, and an output file. Use this command to merge files created with elprep split. The output file can be .sam, .bam, or .cram. It is also possible to use /dev/stdout as output when using Unix pipes for connecting other tools.
 
 ## Options
 
