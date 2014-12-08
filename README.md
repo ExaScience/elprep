@@ -401,6 +401,10 @@ A Python script that implements the .bam/.cram conversion through piping to SAMt
 
 A Python script that wraps the elPrep binary and loads the elprep\_io\_wrapper.py script for .bam/.cram conversion using SAMtools rather than using the internal piping of elPrep. You can use this script as a drop-in replacement for the elprep binary. 
 
+# Extending elPrep
+
+If you wish to extend elPrep, for example by adding your own filters, please consult our [API documentation](http://exascience.github.io/elprep/elprep-package/index.html). 
+
 <!--### --timed
 
 When this option is passed, elPrep times and prints the execution spent per phase --filtering, sorting, I/O-- to the standard output.
