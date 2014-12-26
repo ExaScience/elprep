@@ -144,13 +144,12 @@
           (assert (and (char<= #\0 char) (char<= char #\9)))
           (loop do (nextc) while (and (char<= #\0 char) (char<= char #\9)))))
       (setf (scanner-index scanner) pos)
-      (with-input-from-string (stream string :start index :end pos)
-        (let ((*read-base* 10) (*read-default-float-format* 'single-float) (*read-eval* nil))
-          (let ((value (read stream)))
-            (etypecase value
-              (integer value)
-              (single-float value)
-              (number (coerce value 'single-float)))))))))
+      (let ((*read-base* 10) (*read-default-float-format* 'single-float) (*read-eval* nil))
+        (let ((value (read-from-string string t nil :start index :end pos)))
+          (etypecase value
+            (integer value)
+            (single-float value)
+            (number (coerce value 'single-float))))))))
 
 (defun parse-sam-tag (scanner &optional (tag-string (make-array 2 :element-type 'base-char)))
   "Parse the TAG: portion of a SAM file tag."
