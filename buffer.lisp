@@ -106,25 +106,29 @@
         (setq chunk (ensure-chunk buf hi))))
 
 (defun buffer-extend (buf string &optional (start 0) end)
-  "Add a simple-base-string to a buffer."
-  (declare (buffer buf) (simple-base-string string) (fixnum start) #.*optimization*)
+  "Add a base-string to a buffer."
+  (declare (buffer buf) (base-string string) (fixnum start) #.*optimization*)
   (let* ((end (or end (length string)))
          (length (the fixnum (- end start)))
          (pos (buffer-pos buf)))
     (declare (fixnum end length pos))
-    (multiple-value-bind (hi lo) (floor pos +buffer-chunk-size+)
-      (declare (fixnum hi lo))
-      (let ((chunk (ensure-chunk buf hi)))
-        (declare (simple-base-string chunk))
-        (if (<= (the fixnum (+ lo length)) +buffer-chunk-size+)
-          (loop for i of-type fixnum from start below end
-                for j of-type fixnum from lo do
-                (setf (schar chunk j)
-                      (schar string i))
-                finally
-                (setf (buffer-pos buf) (the fixnum (+ pos length)))
-                (return (values)))
-          (slow-buffer-extend buf pos hi lo chunk string start end length))))))
+    (multiple-value-bind (string offset) (unwrap-displaced-array string)
+      (declare (simple-base-string string) (fixnum offset))
+      (setq start (the fixnum (+ start offset))
+            end   (the fixnum (+ end offset)))
+      (multiple-value-bind (hi lo) (floor pos +buffer-chunk-size+)
+        (declare (fixnum hi lo))
+        (let ((chunk (ensure-chunk buf hi)))
+          (declare (simple-base-string chunk))
+          (if (<= (the fixnum (+ lo length)) +buffer-chunk-size+)
+            (loop for i of-type fixnum from start below end
+                  for j of-type fixnum from lo do
+                  (setf (schar chunk j)
+                        (schar string i))
+                  finally
+                  (setf (buffer-pos buf) (the fixnum (+ pos length)))
+                  (return (values)))
+            (slow-buffer-extend buf pos hi lo chunk string start end length)))))))
 
 #+sbcl
 (progn

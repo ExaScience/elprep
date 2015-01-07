@@ -450,3 +450,17 @@
         (vector (split-hash-table-vector table)))
     (declare (function hash-function) (vector vector))
     (svref vector (rem (rotate-15 (funcall hash-function key)) (length vector)))))
+
+(declaim (inline unwrap-displaced-array))
+
+(defun unwrap-displaced-array (array)
+  (declare (array array) #.*fixnum-optimization*)
+  (let ((displaced array) (index 0))
+    (declare (array displaced) (fixnum index))
+    (loop (multiple-value-bind
+              (displaced* index*)
+              (array-displacement displaced)
+            (if displaced*
+              (setq displaced displaced*
+                    index (the fixnum (+ index index*)))
+              (return-from unwrap-displaced-array (values displaced index)))))))

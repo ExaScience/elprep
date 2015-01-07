@@ -34,12 +34,16 @@
   (let ((string (sam-alignment-qual aln))
         (score-table (load-time-value (make-phred-score-table) t))
         (score 0) (error 0))
-    (declare (simple-base-string string) ((simple-array octet (512)) score-table) (fixnum score error))
-    (loop for i of-type fixnum below (length string)
-          for pos of-type fixnum = (ash (char-code (schar string i)) 1) do
-          (setq score (+ score (aref score-table pos))
-                error (logior error (aref score-table (the fixnum (1+ pos))))))
-    (assert (= error 0))
+    (declare (base-string string) ((simple-array octet (512)) score-table) (fixnum score error))
+    (multiple-value-bind (string* offset) (unwrap-displaced-array string)
+      (declare (simple-base-string string*) (fixnum offset))
+      (let ((end (the fixnum (+ (length string) offset))))
+        (declare (fixnum end))
+        (loop for i of-type fixnum from offset below end
+              for pos of-type fixnum = (ash (char-code (schar string* i)) 1) do
+              (setq score (+ score (aref score-table pos))
+                    error (logior error (aref score-table (the fixnum (1+ pos))))))
+        (assert (= error 0))))
     score))
 
 (define-symbol-macro upcase-cigar-operations "MIDNSHPX=")
@@ -199,7 +203,7 @@
 (defun fragment-hash (f)
   "Hash function that corresponds to handle-fragment=, but operates an a sam-alignment directly."
   (declare (sam-alignment f) #.*optimization*)
-  (logxor (sxhash (the simple-base-string (sam-alignment-rg f)))
+  (logxor (sxhash (the base-string (sam-alignment-rg f)))
           (sxhash (the int32 (sam-alignment-refid f)))
           (sxhash (the int32 (sam-alignment-adapted-pos f)))
           (sxhash (the boolean (sam-alignment-reversed-p f)))))
@@ -263,8 +267,8 @@
   "Hash function that corresponds to sam-alignment-pair=."
   (declare (sam-alignment aln) #.*optimization*)
   (or (sam-alignment-temp aln :pair-hash)
-      (let ((hash (logxor (sxhash (the simple-base-string (sam-alignment-rg aln)))
-                          (sxhash (the simple-base-string (sam-alignment-qname aln))))))
+      (let ((hash (logxor (sxhash (the base-string (sam-alignment-rg aln)))
+                          (sxhash (the base-string (sam-alignment-qname aln))))))
         (setf (sam-alignment-temps aln)
               (list* :pair-hash hash (sam-alignment-temps aln)))
         hash)))
@@ -348,7 +352,7 @@
 (defun pair-hash (p)
   "Hash function that corresponds to handle-pair=, but operates on a pair directly."
   (declare (pair p) #.*optimization*)
-  (logxor (sxhash (the simple-base-string (pair-rg p)))
+  (logxor (sxhash (the base-string (pair-rg p)))
           (sxhash (the int32 (pair-refid1 p)))
           (sxhash (the int32 (pair-refid2 p)))
           (sxhash (+ (ash (the int32 (pair-pos1 p)) 32) (the int32 (pair-pos2 p))))

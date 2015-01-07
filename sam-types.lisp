@@ -78,31 +78,31 @@
   "A single read alignment with mandatory and optional fields that can be contained in a SAM file alignment line.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Sections 1.4 and 1.5.
    The struct sam-alignment has a default constructor make-sam-alignment.
-   Accessor sam-alignment-qname of type simple-base-string refers to the Query template NAME.
+   Accessor sam-alignment-qname of type base-string refers to the Query template NAME.
    Accessor sam-alignment-flag of type fixnum refers to the bitwise FLAG.
-   Accessor sam-alignment-rname of type simple-base-string refers to the Reference sequence NAME.
+   Accessor sam-alignment-rname of type base-string refers to the Reference sequence NAME.
    Accessor sam-alignment-pos of type int32 refers to the 1-based leftmost mapping POSition.
    Accessor sam-alignment-mapq of type fixnum refers to the MAPping quality.
-   Accessor sam-alignment-cigar of type simple-base-string refers to the CIGAR string.
-   Accessor sam-alignment-rnext of type simple-base-string refers to the Reference sequence name of the mate/NEXT read.
+   Accessor sam-alignment-cigar of type base-string refers to the CIGAR string.
+   Accessor sam-alignment-rnext of type base-string refers to the Reference sequence name of the mate/NEXT read.
    Accessor sam-alignment-pnext of type int32 refers to the 1-based leftmost mapping Position of the mate/NEXT read.
    Accessor sam-alignment-tlen of type int32 refers to the observed Template LENgth.
-   Accessor sam-alignment-seq of type simple-base-string refers to the segment SEQuence.
-   Accessor sam-alignment-qual of type simple-base-string refers to the ASCII of Phred-scaled base QUALity+33.
+   Accessor sam-alignment-seq of type base-string refers to the segment SEQuence.
+   Accessor sam-alignment-qual of type base-string refers to the ASCII of Phred-scaled base QUALity+33.
    Accessor sam-alignment-tags of type property list refers to the optional fields in a read alignment.
    Accessor sam-alignment-xtags of type property list refers to additional optional fields not stored in SAM files, but reserved for other storage formats.
    Accessor sam-alignment-temps of type property list refers to additional optional fields not stored in any storage format, but reserved for temporary values in filters."
-  (qname   "" :type simple-base-string)
+  (qname   "" :type base-string)
   (flag    0  :type uint16)
-  (rname   "" :type simple-base-string)
+  (rname   "" :type base-string)
   (pos     0  :type int32)
   (mapq    0  :type octet)
-  (cigar   "" :type simple-base-string)
-  (rnext   "" :type simple-base-string)
+  (cigar   "" :type base-string)
+  (rnext   "" :type base-string)
   (pnext   0  :type int32)
   (tlen    0  :type int32)
-  (seq     "" :type simple-base-string)
-  (qual    "" :type simple-base-string)
+  (seq     "" :type base-string)
+  (qual    "" :type base-string)
   (tags   '() :type list)
   (xtags  '() :type list)
   (temps  '() :type list))
@@ -114,27 +114,27 @@
       (documentation 'copy-sam-alignment 'function)
       "Default copier function for struct sam-header."
       (documentation 'sam-alignment-qname 'function)
-      "Access the sam-alignment Query template NAME of type simple-base-string."
+      "Access the sam-alignment Query template NAME of type base-string."
       (documentation 'sam-alignment-flag 'function)
       "Access the sam-alignment bitwise FLAG of type fixnum."
       (documentation 'sam-alignment-rname 'function)
-      "Access the sam-alignment Reference sequence NAME of type simple-base-string."
+      "Access the sam-alignment Reference sequence NAME of type base-string."
       (documentation 'sam-alignment-pos 'function)
       "Access the sam-alignment 1-based leftmost mapping POSition of type int32."
       (documentation 'sam-alignment-mapq 'function)
       "Access the sam-alignment MAPping quality of type fixnum."
       (documentation 'sam-alignment-cigar 'function)
-      "Access the sam-alignment CIGAR string of type simple-base-string."
+      "Access the sam-alignment CIGAR string of type base-string."
       (documentation 'sam-alignment-rnext 'function)
-      "Access the sam-alignment Reference sequence name of the mate/NEXT read of type simple-base-string."
+      "Access the sam-alignment Reference sequence name of the mate/NEXT read of type base-string."
       (documentation 'sam-alignment-pnext 'function)
       "Access the sam-alignment 1-based leftmost mapping Position of the mate/NEXT read of type int32."
       (documentation 'sam-alignment-tlen 'function)
       "Access the sam-alignment observed Template LENgth of type int32."
       (documentation 'sam-alignment-seq 'function)
-      "Access the sam-alignment segment SEQuence of type simple-base-string."
+      "Access the sam-alignment segment SEQuence of type base-string."
       (documentation 'sam-alignment-qual 'function)
-      "Access the sam-alignment ASCII of Phred-scaled base QUALity+33 of type simple-base-string."
+      "Access the sam-alignment ASCII of Phred-scaled base QUALity+33 of type base-string."
       (documentation 'sam-alignment-tags 'function)
       "Access the sam-alignment optional fields of type property list."
       (documentation 'sam-alignment-xtags 'function)
@@ -438,23 +438,27 @@
 (defun slow-scan-cigar-string-to-list (cigar)
   "Convert a cigar string to an association list, slow path.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.6."
-  (declare (simple-base-string cigar) #.*optimization*)
-  (loop with table = *cigar-operations*
-        with i of-type fixnum = 0
-        with cigar-operation do
-        (setf (values cigar-operation i) (make-cigar-operation table cigar i))
-        collect cigar-operation into list
-        until (= i (length cigar))
-        finally (return (with-modify-hash (key value found) 
-                            ((the hash-table *cigar-list-cache*) cigar)
-                          (if found value list)))))
+  (declare (base-string cigar) #.*optimization*)
+  (let ((end (length cigar)))
+    (declare (fixnum end))
+    (multiple-value-bind (cigar i) (unwrap-displaced-array cigar)
+      (declare (simple-base-string cigar) (fixnum i))
+      (setq end (the fixnum (+ end i)))
+      (loop with table = *cigar-operations*
+            with cigar-operation do
+            (setf (values cigar-operation i) (make-cigar-operation table cigar i))
+            collect cigar-operation into list
+            until (= i end)
+            finally (return (with-modify-hash (key value found) 
+                                ((the hash-table *cigar-list-cache*) cigar)
+                              (if found value list)))))))
 
 (declaim (inline fast-scan-cigar-string-to-list))
 
 (defun fast-scan-cigar-string-to-list (cigar)
   "Convert a cigar string to an association list, fast path.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.6."
-  (declare (simple-base-string cigar) #.*optimization*)
+  (declare (base-string cigar) #.*optimization*)
   (multiple-value-bind (value found)
       (gethash cigar (the hash-table *cigar-list-cache*))
     (if found value (slow-scan-cigar-string-to-list cigar))))
@@ -471,29 +475,33 @@
 (defun slow-scan-cigar-string-to-vector (cigar)
   "Convert a cigar string to an assocation vector, slow path.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.6."
-  (declare (simple-base-string cigar) #.*optimization*)
-  (loop with table = *cigar-operations*
-        with vector = (make-array (loop for i of-type fixnum = 0 then (1+ i)
-                                        until (= i (length cigar))
-                                        count (let ((char (char-code (schar cigar i))))
-                                                (declare (fixnum char))
-                                                (or (< char #.(char-code #\0)) (> char #.(char-code #\9))))))
-        with i of-type fixnum = 0
-        with cigar-operation
-        for index of-type fixnum from 0 do
-        (setf (values cigar-operation i) (make-cigar-operation table cigar i))
-        (setf (svref vector index) cigar-operation)
-        until (= i (length cigar))
-        finally (return (with-modify-hash (key value found)
-                            ((the hash-table *cigar-vector-cache*) cigar)
-                          (if found value vector)))))
+  (declare (base-string cigar) #.*optimization*)
+  (let ((end (length cigar)))
+    (declare (fixnum end))
+    (multiple-value-bind (cigar i) (unwrap-displaced-array cigar)
+      (declare (simple-base-string cigar) (fixnum i))
+      (setq end (the fixnum (+ end i)))
+      (loop with table = *cigar-operations*
+            with vector = (make-array (loop for j of-type fixnum = i then (1+ j)
+                                            until (= j end)
+                                            count (let ((char (char-code (schar cigar j))))
+                                                    (declare (fixnum char))
+                                                    (or (< char #.(char-code #\0)) (> char #.(char-code #\9))))))
+            with cigar-operation
+            for index of-type fixnum from 0 do
+            (setf (values cigar-operation i) (make-cigar-operation table cigar i))
+            (setf (svref vector index) cigar-operation)
+            until (= i end)
+            finally (return (with-modify-hash (key value found)
+                                ((the hash-table *cigar-vector-cache*) cigar)
+                              (if found value vector)))))))
 
 (declaim (inline fast-scan-cigar-string-to-vector))
 
 (defun fast-scan-cigar-string-to-vector (cigar)
   "Convert a cigar string to an association vector, fast path.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.6."
-  (declare (simple-base-string cigar) #.*optimization*)
+  (declare (base-string cigar) #.*optimization*)
   (or (gethash cigar (the hash-table *cigar-vector-cache*))
       (slow-scan-cigar-string-to-vector cigar)))
 

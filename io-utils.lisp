@@ -352,18 +352,22 @@
 #+lispworks
 (defun writestr (out string)
   "Write a simple-base-string to an output stream."
-  (declare (buffered-stream out) (simple-base-string string) #.*optimization*)
+  (declare (buffered-stream out) (base-string string) #.*optimization*)
   (let ((start 0) (end (length string)))
     (declare (fixnum start end))
-    (loop (with-stream-output-buffer (buffer index limit) out
-            (declare (simple-base-string buffer) (fixnum index limit))
-            (loop for i of-type fixnum from index below limit do
-                  (setf (lw:sbchar buffer i) (lw:sbchar string start))
-                  (when (= (setq start (the fixnum (1+ start))) end)
-                    (setq index (the fixnum (1+ i)))
-                    (return-from writestr string))
-                  finally (setq index limit)))
-          (stream-flush-buffer out))))
+    (multiple-value-bind (string offset) (unwrap-displaced-array string)
+      (declare (simple-base-string string) (fixnum offset))
+      (setq start (the fixnum (+ start offset))
+            end   (the fixnum (+ end offset)))
+      (loop (with-stream-output-buffer (buffer index limit) out
+              (declare (simple-base-string buffer) (fixnum index limit))
+              (loop for i of-type fixnum from index below limit do
+                    (setf (lw:sbchar buffer i) (lw:sbchar string start))
+                    (when (= (setq start (the fixnum (1+ start))) end)
+                      (setq index (the fixnum (1+ i)))
+                      (return-from writestr string))
+                    finally (setq index limit)))
+            (stream-flush-buffer out)))))
 
 #+lispworks
 (progn

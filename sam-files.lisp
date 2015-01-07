@@ -82,13 +82,20 @@
         with string of-type simple-base-string = (scanner-string scanner)
         for end of-type fixnum from index below (length string)
         until (char= (schar string end) #\Tab) finally
-        (let ((result (make-array (the fixnum (- end index)) :element-type 'base-char)))
-          (declare (simple-base-string result))
-          (loop for j of-type fixnum from index below end
-                for i of-type fixnum from 0
-                do (setf (schar result i) (schar string j)))
-          (setf (scanner-index scanner) end)
-          (return result))))
+        (let ((length (- end index)))
+          (declare (fixnum length))
+          (let ((result (if (> length 24)
+                          (make-array length :element-type 'base-char
+                                      :displaced-to string
+                                      :displaced-index-offset (scanner-index scanner))
+                          (let ((result (make-array length :element-type 'base-char)))
+                            (declare (simple-base-string result))
+                            (loop for j of-type fixnum from index below end
+                                  for i of-type fixnum from 0
+                                  do (setf (schar result i) (schar string j)))
+                            result))))
+            (setf (scanner-index scanner) end)
+            (return result)))))
 
 (defun scan-integer (scanner)
   "Scan an integer from scanner."
@@ -311,13 +318,20 @@
     (declare (fixnum index) (simple-base-string string))
     (when (char= (schar string index) #\Tab)
       (incf index))
-    (let ((result (make-array (- (length string) index) :element-type 'base-char)))
-      (declare (simple-base-string result))
-      (loop for j of-type fixnum from index below (length string)
-            for i of-type fixnum from 0
-            do (setf (schar result i) (schar string j)))
-      (setf (scanner-index scanner) (length string))
-      result)))
+    (let ((length (the fixnum (- (length string) index))))
+      (declare (fixnum length))
+      (let ((result (if (> length 24)
+                      (make-array length :element-type 'base-char
+                                  :displaced-to string
+                                  :displaced-index-offset index)
+                      (let ((result (make-array (- (length string) index) :element-type 'base-char)))
+                        (declare (simple-base-string result))
+                        (loop for j of-type fixnum from index below (length string)
+                              for i of-type fixnum from 0
+                              do (setf (schar result i) (schar string j)))
+                        result))))
+        (setf (scanner-index scanner) (length string))
+        result))))
 
 (defun parse-sam-header-code (scanner &optional (code-string (make-array 3 :element-type 'base-char)))
   "Parse the record type code of a SAM header line."
@@ -465,7 +479,7 @@
 
 (defun format-sam-integer (out tag value)
   "Write a SAM file TAG of type integer."
-  (declare (stream out) (simple-base-string tag) (integer value) #.*optimization*)
+  (declare (stream out) (base-string tag) (integer value) #.*optimization*)
   (write-tab out)
   (writestr out tag)
   (format out ":~D" value))
@@ -473,7 +487,7 @@
 (defun format-sam-byte-array (out tag byte-array)
   "Write a SAM file TAG of type byte array.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.5, Type H."
-  (declare (stream out) (simple-base-string tag) (sequence byte-array) #.*optimization*)
+  (declare (stream out) (base-string tag) (sequence byte-array) #.*optimization*)
   (write-tab out)
   (writestr out tag)
   (writec out #\:)
@@ -486,7 +500,7 @@
 (defun format-sam-datetime (out tag datetime)
   "Write a SAM file TAG of type date/time.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3, Tag @RG, DT."
-  (declare (stream out) (simple-base-string tag) (integer datetime) #.*optimization*)
+  (declare (stream out) (base-string tag) (integer datetime) #.*optimization*)
   (write-tab out)
   (writestr out tag)
   (multiple-value-bind

@@ -31,26 +31,26 @@
    Otherwise, return a symbol indicating which field differs."
   (declare (sam-alignment aln1 aln2) #.*optimization*)
   ; check that all mandatory fields are =
-  (or (when (string/= (the simple-base-string (sam-alignment-qname aln1)) (the simple-base-string (sam-alignment-qname aln2))) 'qname)
+  (or (when (string/= (the base-string (sam-alignment-qname aln1)) (the base-string (sam-alignment-qname aln2))) 'qname)
       (when (/= (the fixnum (sam-alignment-flag aln1)) (the fixnum (sam-alignment-flag aln2))) 'flag)
-      (when (string/= (the simple-base-string (sam-alignment-rname aln1)) (the simple-base-string (sam-alignment-rname aln2))) 'rname)
+      (when (string/= (the base-string (sam-alignment-rname aln1)) (the base-string (sam-alignment-rname aln2))) 'rname)
       (when (/= (the int32 (sam-alignment-pos aln1)) (the int32 (sam-alignment-pos aln2))) 'pos)
       (when (/= (sam-alignment-mapq aln1) (sam-alignment-mapq aln2)) 'mapq)
-      (when (string/= (the simple-base-string (sam-alignment-cigar aln1)) (the simple-base-string (sam-alignment-cigar aln2))) 'cigar)
-      (when (string/= (the simple-base-string (sam-alignment-rnext aln1)) (the simple-base-string (sam-alignment-rnext aln2))) 'rnext)
-      (when (string/= (the simple-base-string (sam-alignment-qual aln1)) (the simple-base-string (sam-alignment-qual aln2))) 'qual)))
+      (when (string/= (the base-string (sam-alignment-cigar aln1)) (the base-string (sam-alignment-cigar aln2))) 'cigar)
+      (when (string/= (the base-string (sam-alignment-rnext aln1)) (the base-string (sam-alignment-rnext aln2))) 'rnext)
+      (when (string/= (the base-string (sam-alignment-qual aln1)) (the base-string (sam-alignment-qual aln2))) 'qual)))
 
 (defun sam-alignment-same (aln1 aln2)
   "Return true if the two sam-alignments have the same mandatory fields, false otherwise."
   (declare (sam-alignment aln1 aln2) #.*optimization*)
-  (and (string= (the simple-base-string (sam-alignment-qname aln1)) (the simple-base-string (sam-alignment-qname aln2)))
+  (and (string= (the base-string (sam-alignment-qname aln1)) (the base-string (sam-alignment-qname aln2)))
        (= (the fixnum (sam-alignment-flag aln1)) (the fixnum (sam-alignment-flag aln2)))
-       (string= (the simple-base-string (sam-alignment-rname aln1)) (the simple-base-string (sam-alignment-rname aln2)))
+       (string= (the base-string (sam-alignment-rname aln1)) (the base-string (sam-alignment-rname aln2)))
        (= (the int32 (sam-alignment-pos aln1)) (the int32 (sam-alignment-pos aln2)))
        (= (sam-alignment-mapq aln1) (sam-alignment-mapq aln2))
-       (string= (the simple-base-string (sam-alignment-cigar aln1)) (the simple-base-string (sam-alignment-cigar aln2)))
-       (string= (the simple-base-string (sam-alignment-rnext aln1)) (the simple-base-string (sam-alignment-rnext aln2)))
-       (string= (the simple-base-string (sam-alignment-qual aln1)) (the simple-base-string (sam-alignment-qual aln2)))))
+       (string= (the base-string (sam-alignment-cigar aln1)) (the base-string (sam-alignment-cigar aln2)))
+       (string= (the base-string (sam-alignment-rnext aln1)) (the base-string (sam-alignment-rnext aln2)))
+       (string= (the base-string (sam-alignment-qual aln1)) (the base-string (sam-alignment-qual aln2)))))
 
 (defun real-diffs (alns1 alns2)
   "Return a list of sam-alignments in alns1 for which no alignments in alns2 exist that have the same mandatory fields."
