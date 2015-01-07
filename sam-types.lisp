@@ -90,7 +90,6 @@
    Accessor sam-alignment-seq of type base-string refers to the segment SEQuence.
    Accessor sam-alignment-qual of type base-string refers to the ASCII of Phred-scaled base QUALity+33.
    Accessor sam-alignment-tags of type property list refers to the optional fields in a read alignment.
-   Accessor sam-alignment-xtags of type property list refers to additional optional fields not stored in SAM files, but reserved for other storage formats.
    Accessor sam-alignment-temps of type property list refers to additional optional fields not stored in any storage format, but reserved for temporary values in filters."
   (qname   "" :type base-string)
   (flag    0  :type uint16)
@@ -104,7 +103,6 @@
   (seq     "" :type base-string)
   (qual    "" :type base-string)
   (tags   '() :type list)
-  (xtags  '() :type list)
   (temps  '() :type list))
 
 (setf (documentation 'make-sam-alignment 'function)
@@ -137,8 +135,6 @@
       "Access the sam-alignment ASCII of Phred-scaled base QUALity+33 of type base-string."
       (documentation 'sam-alignment-tags 'function)
       "Access the sam-alignment optional fields of type property list."
-      (documentation 'sam-alignment-xtags 'function)
-      "Access the sam-alignment extended optional fields of type property list."
       (documentation 'sam-alignment-temps 'function)
       "Access the sam-alignment temporary values of type property list.")
 
@@ -153,18 +149,6 @@
   "Access a sam-alignment optional field in the sam-alignment."
   (declare (sam-alignment aln) (symbol tag) #.*optimization*)
   (setf (getf (sam-alignment-tags aln) tag) value))
-
-(declaim (inline sam-alignment-xtag (setf sam-alignment-xtag)))
-
-(defun sam-alignment-xtag (aln tag)
-  "Access a sam-alignment extended optional field in the sam-alignment."
-  (declare (sam-alignment aln) (symbol tag) #.*optimization*)
-  (getf (sam-alignment-xtags aln) tag))
-
-(defun (setf sam-alignment-xtag) (value aln tag)
-  "Access a sam-alignment extended optional field in the sam-alignment."
-  (declare (sam-alignment aln) (symbol tag) #.*optimization*)
-  (setf (getf (sam-alignment-xtags aln) tag) value))
 
 (declaim (inline sam-alignment-temp (setf sam-alignment-temp)))
 

@@ -72,11 +72,9 @@ Refer to the documentation of run-pipeline as a starting point.")
    #:sam-alignment-seq
    #:sam-alignment-qual
    #:sam-alignment-tags
-   #:sam-alignment-xtags
    #:sam-alignment-temps
 
    #:sam-alignment-tag
-   #:sam-alignment-xtag
    #:sam-alignment-temp
    #:sam-alignment-refid
 
