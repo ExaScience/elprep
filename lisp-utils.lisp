@@ -110,39 +110,59 @@
    Default is 1, which results in sequential execution. Usually, parallelization only occurs when this value is greater than 3.
    Also used as the number of threads to use in samtools when piping from/to BAM/CRAM files.")
 
+(declaim (inline thread-run thread-join))
+
 (defun thread-run (name function &rest arguments)
   "Wrapper around mp:process-run-function in LispWorks, and sb-thread:make-thread in SBCL."
   (declare (dynamic-extent arguments))
   #+lispworks (apply #'mp:process-run-function name '() function arguments)
   #+sbcl (sb-thread:make-thread function :name name :arguments (copy-list arguments)))
 
-#+sbcl
-(progn
-  (declaim (inline make-mailbox mailbox-send mailbox-read thread-join))
+(defun thread-join (thread)
+  "Similar to LispWorks's mp:process-join."
+  #+lispworks (mp:process-join thread)
+  #+sbcl (sb-thread:join-thread thread))
 
-  (defun make-mailbox ()
-    "Similar to LispWorks's mp:make-mailbox."
-    (sb-concurrency:make-mailbox))
+(defstruct (bounded-mailbox (:constructor make-bounded-mailbox
+                             (capacity &aux (semaphore
+                                             #+lispworks (mp:make-semaphore :count capacity)
+                                             #+sbcl (sb-thread:make-semaphore :count capacity)))))
+  (semaphore nil :read-only t)
+  (mailbox #+lispworks (mp:make-mailbox) #+sbcl (sb-concurrency:make-mailbox) :read-only t))
 
-  (defun mailbox-send (mailbox object)
-    "Similar to LispWorks's mp:mailbox-send."
-    (sb-concurrency:send-message mailbox object))
+(defun make-mailbox (&optional (capacity nil))
+  (if (null capacity)
+    #+lispworks (mp:make-mailbox)
+    #+sbcl (sb-concurrency:make-mailbox)
+    (make-bounded-mailbox capacity)))
 
-  (defun mailbox-read (mailbox)
-    "Similar to LispWorks's mp:mailbox-read."
-    (sb-concurrency:receive-message mailbox))
+(defgeneric mailbox-send (mailbox object)
+  (:method ((mailbox mailbox) object)
+   #+lispworks (mp:mailbox-send mailbox object)
+   #+sbcl (sb-concurrency:send-message mailbox object))
+  (:method ((mailbox bounded-mailbox) object)
+   #+lispworks
+   (progn
+     (assert (mp:semaphore-acquire (bounded-mailbox-semaphore mailbox)))
+     (mp:mailbox-send (bounded-mailbox-mailbox mailbox) object))
+   #+sbcl
+   (progn
+     (assert (sb-thread:wait-on-semaphore (bounded-mailbox-semaphore mailbox)))
+     (sb-concurrency:send-message (bounded-mailbox-mailbox mailbox) object))))
 
-  (defun thread-join (thread)
-    "Similar to LispWorks's mp:process-join."
-    (sb-thread:join-thread thread)))
-
-#+lispworks
-(progn
-  (declaim (inline thread-join))
-
-  (defun thread-join (thread)
-    "Similar to LispWorks's mp:process-join."
-    (mp:process-join thread)))
+(defgeneric mailbox-read (mailbox)
+  (:method ((mailbox mailbox))
+   #+lispworks (mp:mailbox-read mailbox)
+   #+sbcl (sb-concurrency:receive-message mailbox))
+  (:method ((mailbox bounded-mailbox))
+   #+lispworks
+   (multiple-value-prog1
+       (mp:mailbox-read (bounded-mailbox-mailbox mailbox))
+     (mp:semaphore-release (bounded-mailbox-semaphore mailbox)))
+   #+sbcl
+   (multiple-value-prog1
+       (sb-concurrency:receive-message (bounded-mailbox-mailbox mailbox))
+     (sb-thread:signal-semaphore (bounded-mailbox-semaphore mailbox)))))
 
 (declaim (inline make-single-thread-hash-table make-synchronized-hash-table))
 

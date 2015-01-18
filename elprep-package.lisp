@@ -16,7 +16,7 @@ Refer to the documentation of run-pipeline as a starting point.")
   #+lispworks
   (:import-from #:hcl #:get-working-directory #:modify-hash #:with-hash-table-locked)
   #+lispworks
-  (:import-from #:mp #:mailbox #:make-mailbox #:mailbox-send #:mailbox-read)
+  (:import-from #:mp #:mailbox)
   #+lispworks
   (:import-from #:sys #:compare-and-swap)
   #+sbcl

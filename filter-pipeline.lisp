@@ -223,7 +223,7 @@
   "Set up the filter threads for a filter pipeline, and execute the input thread."
   (declare (fixnum threads) #.*optimization*)
   (loop repeat threads
-        for mailbox = (make-mailbox)
+        for mailbox = (make-mailbox 2)
         for thread = (thread-run name filter-thread mailbox)
         collect mailbox into mailboxes
         collect thread into threads
@@ -297,7 +297,7 @@
     ((:keep :unknown :unsorted)
      (let* ((head (cons nil nil))
             (tail head)
-            (mailbox (make-mailbox))
+            (mailbox (make-mailbox *number-of-threads*))
             (thread (thread-run
                      "in-memory output thread"
                      (lambda ()
@@ -314,7 +314,7 @@
                  output))))
     ((:coordinate :queryname)
      (let* ((tree    (make-simple-tree 16))
-            (mailbox (make-mailbox))
+            (mailbox (make-mailbox *number-of-threads*))
             (thread  (thread-run
                       "in-memory output thread with sorting"
                       (lambda ()
@@ -338,7 +338,7 @@
 
 (defmethod get-output-functions ((output pathname) header &key (sorting-order :keep))
   (check-file-sorting-order sorting-order)
-  (let* ((mailbox (make-mailbox))
+  (let* ((mailbox (make-mailbox *number-of-threads*))
          (thread  (thread-run
                    "file output thread"
                    (lambda ()
@@ -359,7 +359,7 @@
 
 (defmethod get-output-functions ((output temporary-file) header &key (sorting-order :keep))
   (check-file-sorting-order sorting-order)
-  (let ((mailbox (make-mailbox))
+  (let ((mailbox (make-mailbox *number-of-threads*))
         (outbox  (make-mailbox)))
     (thread-run
      "temporary file output thread"
