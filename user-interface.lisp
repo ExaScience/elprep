@@ -321,7 +321,7 @@
 
 (defvar *merge-program-help* "merge /path/to/input/ sam-output-file ~% [--nr-of-threads nr] ~%"
   "Help string for the elprep-merge-script binary.")
-                    
+
 (defun elprep-merge-script ()
   "Command line script for elprep merge script."
   (let ((cmd-line (rest (rest (command-line-arguments)))) ; skip elprep merge part of the command
@@ -366,7 +366,12 @@
                 (format t "Executing command:~%  ~a~%" cmd-string))
               (setq *number-of-threads* nr-of-threads)
               (let ((working-directory (get-working-directory)))
-                (merge-sorted-files-split-per-chromosome (merge-pathnames input-path working-directory) (merge-pathnames output working-directory) input-prefix input-extension header)))))))
+                (let ((sorting-order (getf (sam-header-hd header) :so)))
+                  (if (string= sorting-order "coordinate")
+                      (merge-sorted-files-split-per-chromosome (merge-pathnames input-path working-directory) 
+                                                               (merge-pathnames output working-directory) input-prefix input-extension header)
+                    (merge-unsorted-files-split-per-chromosome (merge-pathnames input-path working-directory) 
+                                                               (merge-pathnames output working-directory) input-prefix input-extension header)))))))))
 
 (defun elprep-script ()
   "Command line script for elPrep."

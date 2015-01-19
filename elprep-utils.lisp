@@ -247,6 +247,28 @@
           (write-newline out))
         (copy-stream spread-reads-file out)))))
 
+(defun merge-unsorted-files-split-per-chromosome (input-path output input-prefix input-extension header)
+  "A function for merging files that were split with elPrep and are unsorted"
+  ; merge loop
+  (with-open-sam (out output :direction :output)
+      (format-sam-header out header)
+      ; first merge the unmapped reads
+      (with-open-sam (unmapped-file (merge-pathnames input-path (make-pathname :name (format nil "~a-unmapped" input-prefix) :type input-extension)) :direction :input)
+                     (skip-sam-header unmapped-file)
+                     (copy-stream unmapped-file out))
+      ; merge spread reads
+      (with-open-sam (spread-reads-file (merge-pathnames input-path (make-pathname :name (format nil "~a-spread" input-prefix) :type input-extension)) :direction :input)
+                     (skip-sam-header spread-reads-file)
+                     (copy-stream spread-reads-file out))
+      ; merge the rest of the files
+      (loop for sn-form in (sam-header-sq header)
+            for chrom = (getf sn-form :SN)
+            for file-name = (merge-pathnames input-path (make-pathname :name (format nil "~a-~a" input-prefix chrom) :type input-extension))
+            when (probe-file file-name) do
+            (with-open-sam (file file-name :direction :input)
+                           (skip-sam-header file)
+                           (copy-stream file out)))))
+
 (declaim (inline parse-sam-alignment-from-stream))
 
 (defun parse-sam-alignment-from-stream (stream)
