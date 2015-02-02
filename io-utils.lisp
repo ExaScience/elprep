@@ -343,31 +343,189 @@
 
 #+sbcl
 (progn
-  (declaim (inline writestr))
+  (declaim (inline writestr writeln))
   
   (defun writestr (out string)
     "Write a string to an output stream."
-    (write-string string out)))
+    (write-string string out))
+
+  (defun writeln (out string &aux (length (length string)))
+    "Write a simple-base-string to an output stream, but only up to a #\Newline."
+    (declare (simple-base-string string) (fixnum length) #.*optimization*)
+    (write-line string out :end (loop for i of-type fixnum below length
+                                      when (char= (schar string i) #\Newline) return i
+                                      finally (return length)))))
 
 #+lispworks
-(defun writestr (out string)
-  "Write a simple-base-string to an output stream."
-  (declare (buffered-stream out) (base-string string) #.*optimization*)
-  (let ((start 0) (end (length string)))
-    (declare (fixnum start end))
-    (multiple-value-bind (string offset) (unwrap-displaced-array string)
-      (declare (simple-base-string string) (fixnum offset))
-      (setq start (the fixnum (+ start offset))
-            end   (the fixnum (+ end offset)))
+(progn 
+  (defun writestr (out string)
+    "Write a base-string to an output stream."
+    (declare (buffered-stream out) (base-string string) (fixnum length) #.*optimization*)
+    (multiple-value-bind (string* start) (unwrap-displaced-array string)
+      (declare (simple-base-string string*) (fixnum start))
+      (let ((end (the fixnum (+ start (length string)))))
+        (declare (fixnum end))
+        (loop (with-stream-output-buffer (buffer index limit) out
+                (declare (simple-base-string buffer) (fixnum index limit))
+                (loop for i of-type fixnum from index below limit do
+                      (setf (lw:sbchar buffer i) (lw:sbchar string* start))
+                      (when (= (setq start (the fixnum (1+ start))) end)
+                        (setq index (the fixnum (1+ i)))
+                        (return-from writestr string))
+                      finally (setq index limit)))
+              (stream-flush-buffer out)))))
+
+  (defun writeln (out string)
+    "Write a simple-base-string to an output stream, but only up to a #\Newline."
+    (declare (buffered-stream out) (simple-base-string string) #.*optimization*)
+    (let ((start 0) (end (length string)))
+      (declare (fixnum start end))
       (loop (with-stream-output-buffer (buffer index limit) out
               (declare (simple-base-string buffer) (fixnum index limit))
               (loop for i of-type fixnum from index below limit do
-                    (setf (lw:sbchar buffer i) (lw:sbchar string start))
-                    (when (= (setq start (the fixnum (1+ start))) end)
-                      (setq index (the fixnum (1+ i)))
-                      (return-from writestr string))
+                    (cond ((= start end)
+                           (setf (lw:sbchar buffer i) #\Newline)
+                           (setq index (the fixnum (1+ i)))
+                           (return-from writeln string))
+                          ((char= (setf (lw:sbchar buffer i) (lw:sbchar string start)) #\Newline)
+                           (setq index (the fixnum (1+ i)))
+                           (return-from writeln string))
+                          (t (setq start (the fixnum (1+ start)))))
                     finally (setq index limit)))
             (stream-flush-buffer out)))))
+
+(declaim (inline make-sim-stream))
+
+(defstruct (sim-stream (:constructor make-sim-stream
+                        (&optional (initial-size 128) &aux
+                                   (string (make-array initial-size :element-type 'base-char
+                                                       #+lispworks :single-thread #+lispworks t)))))
+  (string "" :type simple-base-string)
+  (index   0 :type fixnum)
+  (%floats nil))
+
+(declaim (inline sim-stream-floats))
+
+(defun sim-stream-floats (s)
+  (declare (sim-stream s) #.*optimization*)
+  (or (sim-stream-%floats s)
+      (setf (sim-stream-%floats s)
+            (make-string-output-stream :element-type 'base-char))))
+
+(defun slow-ensure-sim-space (out string index required-length)
+  (declare (sim-stream out) (simple-base-string string) (fixnum index required-length) #.*optimization*)
+  (let ((new-string (make-array (the fixnum (+ (the fixnum (* 128 (the fixnum (floor required-length 128)))) 128))
+                                :element-type 'base-char #+lispworks :single-thread #+lispworks t)))
+    (declare (simple-base-string new-string))
+    (loop for i of-type fixnum below index
+          do (setf (schar new-string i) (schar string i)))
+    (setf (sim-stream-string out) new-string)))
+
+(declaim (inline ensure-sim-space))
+
+(defun ensure-sim-space (out length)
+  (declare (sim-stream out) (fixnum length) #.*optimization*)
+  (let ((string (sim-stream-string out))
+        (index  (sim-stream-index out)))
+    (declare (simple-base-string string) (fixnum index))
+    (let ((required-length (+ index length)))
+      (declare (fixnum required-length))
+      (if (< required-length (length string)) string
+        (slow-ensure-sim-space out string index required-length)))))
+
+(declaim (inline sim-writec sim-write-newline sim-write-tab))
+
+(defun sim-writec (out c)
+  (declare (sim-stream out) (base-char c) #.*optimization*)
+  (let ((string (ensure-sim-space out 1))
+        (index  (sim-stream-index out)))
+    (declare (simple-base-string string) (fixnum index))
+    (setf (schar string index) c)
+    (setf (sim-stream-index out) (the fixnum (1+ index)))))
+
+(defun sim-write-newline (out)
+  (sim-writec out #\Newline))
+
+(defun sim-write-tab (out)
+  (sim-writec out #\Tab))
+
+(defun sim-writestr (out string &aux (length (length string)))
+  (declare (sim-stream out) (string string) (fixnum length) #.*optimization*)
+  (multiple-value-bind (source start) (unwrap-displaced-array string)
+    (declare (simple-string source) (fixnum start))
+    (let ((target (ensure-sim-space out length))
+          (index  (sim-stream-index out))
+          (end (the fixnum (+ start length))))
+      (declare (simple-base-string target) (fixnum index end))
+      (loop for i of-type fixnum from start below end
+            for j of-type fixnum from index
+            do (setf (schar target j) (schar source i)))
+      (setf (sim-stream-index out) (the fixnum (+ index length))))))
+
+(defun sim-write-integer (out integer)
+  (declare (sim-stream out) (integer integer) #.*optimization*)
+  (when (< integer 0)
+    (sim-writec out #\-)
+    (setq integer (- integer)))
+  (let ((start (sim-stream-index out)))
+    (declare (fixnum start))
+    (flet ((truncate-fixnum-loop (fixnum)
+             (declare (fixnum fixnum))
+             (multiple-value-bind (div rem) (truncate fixnum 10)
+               (declare (fixnum div rem))
+               (loop do (sim-writec out (code-char (the fixnum (+ #.(char-code #\0) rem))))
+                     until (= div 0)
+                     do (setf (values div rem) (truncate div 10))))))
+      (if (typep integer 'fixnum)
+        (truncate-fixnum-loop integer)
+        (multiple-value-bind (div rem) (truncate integer 10)
+          (declare (integer div) (fixnum rem))
+          (loop do (sim-writec out (code-char (the fixnum (+ #.(char-code #\0) rem))))
+                until (typep div 'fixnum)
+                do (setf (values div rem) (truncate div 10))
+                finally (truncate-fixnum-loop div)))))
+    (let* ((string (sim-stream-string out))
+           (end (sim-stream-index out))
+           (half (floor (the fixnum (- end start)) 2)))
+      (declare (fixnum end half))
+      (setq end (the fixnum (1- end)))
+      (loop for i of-type fixnum below half
+            do (rotatef (schar string (the fixnum (+ start i)))
+                        (schar string (the fixnum (- end i))))))))
+
+(declaim (inline sim-write-byte))
+
+(defun sim-write-byte (out byte)
+  (declare (sim-stream out) (fixnum byte) #.*optimization*)
+  (flet ((sim-write-nibble (nibble)
+           (declare (fixnum nibble))
+           (sim-writec out (code-char (the fixnum (+ (if (< nibble 10)
+                                                       #.(char-code #\0)
+                                                       #.(- (char-code #\A) 10))
+                                                     nibble))))))
+    (multiple-value-bind (hi lo) (floor byte 16)
+      (declare (fixnum hi lo))
+      (sim-write-nibble hi)
+      (sim-write-nibble lo))))
+
+(defun sim-write-fixed-size-fixnum (out fixnum size)
+  (declare (sim-stream out) (fixnum fixnum size) #.*optimization*)
+  (let* ((string (ensure-sim-space out size))
+         (index  (sim-stream-index out))
+         (new-index (+ index size)))
+    (declare (simple-base-string string) (fixnum index new-index))
+    (multiple-value-bind (div rem) (truncate fixnum 10)
+      (declare (fixnum div rem))
+      (loop for i of-type fixnum from (the fixnum (1- new-index)) downto index do
+            (setf (schar string i) (code-char (the fixnum (+ #.(char-code #\0) rem))))
+            (setf (values div rem) (truncate div 10))))
+    (setf (sim-stream-index out) new-index)))
+
+(defun sim-write-float (out float)
+  (declare (sim-stream out) (single-float float) #.*optimization*)
+  (let ((stream (sim-stream-floats out)))
+    (format stream "~E" float)
+    (sim-writestr out (get-output-stream-string stream))))
 
 #+lispworks
 (progn

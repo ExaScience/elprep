@@ -91,6 +91,7 @@
    Accessor sam-alignment-qual of type base-string refers to the ASCII of Phred-scaled base QUALity+33.
    Accessor sam-alignment-tags of type property list refers to the optional fields in a read alignment.
    Accessor sam-alignment-temps of type property list refers to additional optional fields not stored in any storage format, but reserved for temporary values in filters."
+  (line    "" :type simple-base-string)
   (qname   "" :type base-string)
   (flag    0  :type uint16)
   (rname   "" :type base-string)
@@ -137,6 +138,14 @@
       "Access the sam-alignment optional fields of type property list."
       (documentation 'sam-alignment-temps 'function)
       "Access the sam-alignment temporary values of type property list.")
+
+(defvar *sam-alignment-line-output-length-factor* (/ 105 100))
+
+(declaim (inline estimate-sam-alignment-output-length))
+
+(defun estimate-sam-alignment-output-length (aln)
+  (declare (sam-alignment aln) #.*optimization*)
+  (ceiling (* (length (sam-alignment-line aln)) *sam-alignment-line-output-length-factor*)))
 
 (declaim (inline sam-alignment-tag (setf sam-alignment-tag)))
 

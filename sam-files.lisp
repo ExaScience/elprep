@@ -435,6 +435,7 @@
                (scanc scanner #\Tab))))
       (declare (inline do-stringn do-string do-int32))
       (make-sam-alignment
+       :line  string
        :qname (do-string)
        :flag  (do-int32)
        :rname (do-string)
@@ -469,49 +470,94 @@
 
 ;;; output
 
-(defun format-sam-string (out tag string)
-  "Write a SAM file TAG of type string."
-  (declare (stream out) (string tag string) #.*optimization*)
-  (write-tab out)
-  (writestr out tag)
-  (writec out #\:)
-  (writestr out string))
+(defgeneric format-sam-string (out tag string)
+  (:documentation "Write a SAM file TAG of type string.")
+  (:method ((out stream) tag string)
+   (declare (string tag string) #.*optimization*)
+   (write-tab out)
+   (writestr out tag)
+   (writec out #\:)
+   (writestr out string))
+  (:method ((out sim-stream) tag string)
+   (declare (string tag string) #.*optimization*)
+   (sim-write-tab out)
+   (sim-writestr out tag)
+   (sim-writec out #\:)
+   (sim-writestr out string)))
 
-(defun format-sam-integer (out tag value)
-  "Write a SAM file TAG of type integer."
-  (declare (stream out) (base-string tag) (integer value) #.*optimization*)
-  (write-tab out)
-  (writestr out tag)
-  (format out ":~D" value))
+(defgeneric format-sam-integer (out tag value)
+  (:documentation "Write a SAM file TAG of type integer.")
+  (:method ((out stream) tag value)
+   (declare (base-string tag) (integer value) #.*optimization*)
+   (write-tab out)
+   (writestr out tag)
+   (format out ":~D" value))
+  (:method ((out sim-stream) tag value)
+   (declare (base-string tag) (integer value) #.*optimization*)
+   (sim-write-tab out)
+   (sim-writestr out tag)
+   (sim-write-integer out value)))
 
-(defun format-sam-byte-array (out tag byte-array)
-  "Write a SAM file TAG of type byte array.
-   See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.5, Type H."
-  (declare (stream out) (base-string tag) (sequence byte-array) #.*optimization*)
-  (write-tab out)
-  (writestr out tag)
-  (writec out #\:)
-  (etypecase byte-array
-    (list   (loop for byte in (the list byte-array)
-                  do (format out "~2,'0X" byte)))
-    (vector (loop for byte across (the vector byte-array)
-                  do (format out "~2,'0X" byte)))))
+(defgeneric format-sam-byte-array (out tag byte-array)
+  (:documentation "Write a SAM file TAG of type byte array.
+                   See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.5, Type H.")
+  (:method ((out stream) tag byte-array)
+   (declare (base-string tag) (sequence byte-array) #.*optimization*)
+   (write-tab out)
+   (writestr out tag)
+   (writec out #\:)
+   (etypecase byte-array
+     (list   (loop for byte in (the list byte-array)
+                   do (format out "~2,'0X" byte)))
+     (vector (loop for byte across (the vector byte-array)
+                   do (format out "~2,'0X" byte)))))
+  (:method ((out sim-stream) tag byte-array)
+   (declare (base-string tag) (sequence byte-array) #.*optimization*)
+   (sim-write-tab out)
+   (sim-writestr out tag)
+   (sim-writec out #\:)
+   (etypecase byte-array
+     (list   (loop for byte in (the list byte-array)
+                   do (sim-write-byte out byte)))
+     (vector (loop for byte across (the vector byte-array)
+                   do (sim-write-byte out byte))))))
 
-(defun format-sam-datetime (out tag datetime)
-  "Write a SAM file TAG of type date/time.
-   See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3, Tag @RG, DT."
-  (declare (stream out) (base-string tag) (integer datetime) #.*optimization*)
-  (write-tab out)
-  (writestr out tag)
-  (multiple-value-bind
-      (sec min hour day month year)
-      (decode-universal-time datetime)
-    (format out ":~4,'0D-~2,'0D-~2,'0DT~2,'0D:~2,'0D:~2,'0DZ"
-            year month day hour min sec)))
+(defgeneric format-sam-datetime (out tag datetime)
+  (:documentation "Write a SAM file TAG of type date/time.
+                   See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3, Tag @RG, DT.")
+  (:method ((out stream) tag datetime)
+   (declare (base-string tag) (integer datetime) #.*optimization*)
+   (write-tab out)
+   (writestr out tag)
+   (multiple-value-bind
+       (sec min hour day month year)
+       (decode-universal-time datetime)
+     (format out ":~4,'0D-~2,'0D-~2,'0DT~2,'0D:~2,'0D:~2,'0DZ"
+             year month day hour min sec)))
+  (:method ((out sim-stream) tag datetime)
+   (declare (base-string tag) (integer datetime) #.*optimization*)
+   (sim-write-tab out)
+   (sim-writestr out tag)
+   (sim-writec out #\:)
+   (multiple-value-bind
+       (sec min hour day month year)
+       (decode-universal-time datetime)
+     (sim-write-fixed-size-fixnum out year 4)
+     (sim-writec out #\-)
+     (sim-write-fixed-size-fixnum out month 2)
+     (sim-writec out #\-)
+     (sim-write-fixed-size-fixnum out day 2)
+     (sim-writec out #\T)
+     (sim-write-fixed-size-fixnum out hour 2)
+     (sim-writec out #\:)
+     (sim-write-fixed-size-fixnum out min 2)
+     (sim-writec out #\:)
+     (sim-write-fixed-size-fixnum out sec 2)
+     (sim-writec out #\Z))))
 
 (defun format-sam-header-user-tag (out tag value)
   "Write a user-defined SAM file TAG of type string."
-  (declare (stream out) (symbol tag) #.*optimization*)
+  (declare (symbol tag) #.*optimization*)
   (let ((tag-string (symbol-name tag)))
     (if (sam-header-user-tag-p tag-string)
       (format-sam-string out tag-string value)
@@ -520,23 +566,27 @@
 (defun format-sam-header-line (out list)
   "Write an @HD line in a SAM file header section.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3."
-  (declare (stream out) (list list) #.*optimization*)
+  (declare (list list) #.*optimization*)
   (when list
     (unless (presentp :VN list)
       (cerror "Ignore absence of VN tag and continue."
               "VN tag missing in @HD line when writing ~A." out))
-    (writestr out "@HD")
+    (etypecase out
+      (stream (writestr out "@HD"))
+      (sim-stream (sim-writestr out "@HD")))
     (loop for (tag value) of-type (symbol t) on list by #'cddr do
           (case tag 
             (:VN (format-sam-string out "VN" value))
             (:SO (format-sam-string out "SO" value))
             (t   (format-sam-header-user-tag out tag value))))
-    (write-newline out)))
+    (etypecase out
+      (stream (write-newline out))
+      (sim-stream (sim-write-newline out)))))
 
 (defun format-sam-reference-sequence-dictionary (out list)
   "Write the @SQ lines in a SAM file header section.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3."
-  (declare (stream out) (list list) #.*optimization*)
+  (declare (list list) #.*optimization*)
   (loop for plist in list do
         (unless (presentp :SN plist)
           (cerror "Ignore absence of SN tag and continue."
@@ -544,7 +594,9 @@
         (unless (presentp :LN plist)
           (cerror "Ignore absence of LN tag and continue."
                   "LN tag missing in @SQ line when writing ~A." out))
-        (writestr out "@SQ")
+        (etypecase out
+          (stream (writestr out "@SQ"))
+          (sim-stream (sim-writestr out "@SQ")))
         (loop for (tag value) on plist by #'cddr do
               (case tag
                 (:SN (format-sam-string out "SN" value))
@@ -554,17 +606,21 @@
                 (:SP (format-sam-string out "SP" value))
                 (:UR (format-sam-string out "UR" value))
                 (t   (format-sam-header-user-tag out tag value))))
-        (write-newline out)))
+        (etypecase out
+          (stream (write-newline out))
+          (sim-stream (sim-write-newline out)))))
 
 (defun format-sam-read-groups (out list)
   "Write the @RG lines in a SAM file header section.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3."
-  (declare (stream out) (list list) #.*optimization*)
+  (declare (list list) #.*optimization*)
   (loop for plist in list do
         (unless (presentp :ID plist)
           (cerror "Ignore absence of ID tag and continue."
                   "ID tag missing in @RG line when writing ~A." out))
-        (writestr out "@RG")
+        (etypecase out
+          (stream (writestr out "@RG"))
+          (sim-stream (sim-writestr out "@RG")))
         (loop for (tag value) on plist by #'cddr do
               (case tag
                 (:ID (format-sam-string out "ID" value))
@@ -580,17 +636,21 @@
                 (:PU (format-sam-string out "PU" value))
                 (:SM (format-sam-string out "SM" value))
                 (t   (format-sam-header-user-tag out tag value))))
-        (write-newline out)))
+        (etypecase out
+          (stream (write-newline out))
+          (sim-stream (sim-write-newline out)))))
 
 (defun format-sam-programs (out list)
   "Write the @PG lines in a SAM file header section.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3."
-  (declare (stream out) (list list) #.*optimization*)
+  (declare (list list) #.*optimization*)
   (loop for plist in list do
         (unless (presentp :ID plist)
           (cerror "Ignore absence of ID tag and continue."
                   "ID tag missing in @PG line when writing ~A." out))
-        (writestr out "@PG")
+        (etypecase out
+          (stream (writestr out "@PG"))
+          (sim-stream (sim-writestr out "@PG")))
         (loop for (tag value) on plist by #'cddr do
               (case tag
                 (:ID (format-sam-string out "ID" value))
@@ -600,34 +660,54 @@
                 (:DS (format-sam-string out "DS" value))
                 (:VN (format-sam-string out "VN" value))
                 (t   (format-sam-header-user-tag out tag value))))
-        (write-newline out)))
+        (etypecase out
+          (stream (write-newline out))
+          (sim-stream (sim-write-newline out)))))
 
-(defun format-sam-comments (out list)
-  "Write the @CO lines in a SAM file header section.
-   See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3."
-  (declare (stream out) (list list) #.*optimization*)
-  (loop for string in list do
-        (writestr out "@CO")
-        (write-tab out)
-        (writestr out string)
-        (write-newline out)))
+(defgeneric format-sam-comments (out list)
+  (:documentation "Write the @CO lines in a SAM file header section.
+                   See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3.")
+  (:method ((out stream) list)
+   (declare (list list) #.*optimization*)
+   (loop for string in list do
+         (writestr out "@CO")
+         (write-tab out)
+         (writestr out string)
+         (write-newline out)))
+  (:method ((out sim-stream) list)
+   (declare (list list) #.*optimization*)
+   (loop for string in list do
+         (sim-writestr out "@CO")
+         (sim-write-tab out)
+         (sim-writestr out string)
+         (sim-write-newline out))))
 
-(defun format-sam-user-tags (out tags)
-  "Write the user-defined header lines.
-   See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3."
-  (declare (stream out) (list tags) #.*optimization*)
-  (loop for (code list) of-type (symbol list) on tags by #'cddr
-        for code-string = (symbol-name code) do
-        (loop for string in list do
-              (writestr out code-string)
-              (write-tab out)
-              (writestr out string)
-              (write-newline out))))
+(defgeneric format-sam-user-tags (out tags)
+  (:documentation "Write the user-defined header lines.
+                   See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3.")
+  (:method ((out stream) tags)
+   (declare (list tags) #.*optimization*)
+   (loop for (code list) of-type (symbol list) on tags by #'cddr
+         for code-string = (symbol-name code) do
+         (loop for string in list do
+               (writestr out code-string)
+               (write-tab out)
+               (writestr out string)
+               (write-newline out))))
+  (:method ((out sim-stream) tags)
+   (declare (list tags) #.*optimization*)
+   (loop for (code list) of-type (symbol list) on tags by #'cddr
+         for code-string = (symbol-name code) do
+         (loop for string in list do
+               (sim-writestr out code-string)
+               (sim-write-tab out)
+               (sim-writestr out string)
+               (sim-write-newline out)))))
 
 (defun format-sam-header (out header)
   "Write a SAM file header section.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3."
-  (declare (stream out) (sam-header header) #.*optimization*)
+  (declare (sam-header header) #.*optimization*)
   (format-sam-header-line                   out (sam-header-hd header))
   (format-sam-reference-sequence-dictionary out (sam-header-sq header))
   (format-sam-read-groups                   out (sam-header-rg header))
@@ -702,53 +782,93 @@
     (loop for number in numbers
           for types = (copy-list (integer-types number))
           then (nintersection types (integer-types number) :key #'car :test #'char=)
-          unless types return #\f
+          unless types return num
           finally (return (caar (stable-sort types #'< :key #'cdr))))))
 
-(defun format-sam-tag (out tag value)
-  "Write a SAM file TAG, dispatching on actual type of the given value.
-   See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.5."
-  (declare (stream out) (symbol tag) #.*optimization*)
-  (write-tab out)
-  (writestr out (symbol-name tag))
-  (etypecase value
-    (character    (writestr out ":A:") (writec out value))           ; printable character
-    (int32        (format out ":i:~D" value))                        ; signed 32-bit integer
-    (integer      (format out ":f:~D" value))                        ; single-precision floating point number
-    (single-float (format out ":f:~E" value))                        ; single-precision floating point number
-    (double-float (format out ":f:~E" (coerce value 'single-float))) ; single-precision floating point number
-    (string       (writestr out ":Z:")                               ; printable string
-                  (writestr out value))
-    (vector       (writestr out ":H:")                               ; byte array in hex format
-                  (loop for byte across (the vector value)
-                        do (format out "~2,'0X" byte)))
-    (list         (writestr out ":B:")                               ; integer or numeric array
-                  (let ((type (common-number-type value)))
-                    (writec out type)
-                    (if (char= type num)
-                      (loop for number in value do
-                            (if (integerp number) (format out ",~D" number)
-                              (format out ",~E" (coerce number 'single-float))))
-                      (loop for number in value do (format out ",~D" number)))))))
+(defgeneric format-sam-tag (out tag value)
+  (:documentation "Write a SAM file TAG, dispatching on actual type of the given value.
+                   See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.5.")
+  (:method ((out stream) tag value)
+   (declare (symbol tag) #.*optimization*)
+   (write-tab out)
+   (writestr out (symbol-name tag))
+   (etypecase value
+     (character    (writestr out ":A:") (writec out value))           ; printable character
+     (int32        (format out ":i:~D" value))                        ; signed 32-bit integer
+     (integer      (format out ":f:~D" value))                        ; single-precision floating point number
+     (single-float (format out ":f:~E" value))                        ; single-precision floating point number
+     (double-float (format out ":f:~E" (coerce value 'single-float))) ; single-precision floating point number
+     (string       (writestr out ":Z:")                               ; printable string
+                   (writestr out value))
+     (vector       (writestr out ":H:")                               ; byte array in hex format
+                   (loop for byte across (the vector value)
+                         do (format out "~2,'0X" byte)))
+     (list         (writestr out ":B:")                               ; integer or numeric array
+                   (let ((type (common-number-type value)))
+                     (writec out type)
+                     (if (char= type num)
+                       (loop for number in value do
+                             (if (integerp number) (format out ",~D" number)
+                               (format out ",~E" (coerce number 'single-float))))
+                       (loop for number in value do (format out ",~D" number)))))))
+  (:method ((out sim-stream) tag value)
+   (declare (symbol tag) #.*optimization*)
+   (sim-write-tab out)
+   (sim-writestr out (symbol-name tag))
+   (etypecase value
+     (character    (sim-writestr out ":A:") (sim-writec out value))                             ; printable character
+     (int32        (sim-writestr out ":i:") (sim-write-integer out value))                      ; signed 32-bit integer
+     (integer      (sim-writestr out ":f:") (sim-write-integer out value))                      ; single-precision floating point number
+     (single-float (sim-writestr out ":f:") (sim-write-float out value))                        ; single-precision floating point number
+     (double-float (sim-writestr out ":f:") (sim-write-float out (coerce value 'single-float))) ; single-precision floating point number
+     (string       (sim-writestr out ":Z:") (sim-writestr out value))                           ; printable string
+     (vector       (sim-writestr out ":H:")                                                     ; byte array in hex format
+                   (loop for byte across (the vector value)
+                         do (sim-write-byte out byte)))
+     (list         (sim-writestr out ":B:")                                                     ; integer or numeric array
+                   (let ((type (common-number-type value)))
+                     (sim-writec out type)
+                     (if (char= type num)
+                       (loop for number in value do
+                             (if (integerp number) (sim-write-integer out number)
+                               (sim-write-float out (coerce number 'single-float))))
+                       (loop for number in value do (sim-write-integer out number))))))))
 
-(defun format-sam-alignment (out aln)
-  "Write a SAM file read alignment line.
-   See http://samtools.github.io/hts-specs/SAMv1.pdf - Sections 1.4 and 1.5."
-  (declare (stream out) (sam-alignment aln) #.*optimization*)
-  (writestr out (sam-alignment-qname aln)) (write-tab out)
-  (format out "~D" (sam-alignment-flag aln))  (write-tab out)
-  (writestr out    (sam-alignment-rname aln)) (write-tab out)
-  (format out "~D" (sam-alignment-pos aln))   (write-tab out)
-  (format out "~D" (sam-alignment-mapq aln))  (write-tab out)
-  (writestr out    (sam-alignment-cigar aln)) (write-tab out)
-  (writestr out    (sam-alignment-rnext aln)) (write-tab out)
-  (format out "~D" (sam-alignment-pnext aln)) (write-tab out)
-  (format out "~D" (sam-alignment-tlen aln))  (write-tab out)
-  (writestr out    (sam-alignment-seq aln))   (write-tab out)
-  (writestr out    (sam-alignment-qual aln))
-  (loop for (key value) on (sam-alignment-tags aln) by #'cddr
-        do (format-sam-tag out key value))
-  (write-newline out))
+(defgeneric format-sam-alignment (out aln)
+  (:documentation "Write a SAM file read alignment line.
+                   See http://samtools.github.io/hts-specs/SAMv1.pdf - Sections 1.4 and 1.5.")
+  (:method ((out stream) aln)
+   (declare (sam-alignment aln) #.*optimization*)
+   (writestr out (sam-alignment-qname aln)) (write-tab out)
+   (format out "~D" (sam-alignment-flag aln))  (write-tab out)
+   (writestr out    (sam-alignment-rname aln)) (write-tab out)
+   (format out "~D" (sam-alignment-pos aln))   (write-tab out)
+   (format out "~D" (sam-alignment-mapq aln))  (write-tab out)
+   (writestr out    (sam-alignment-cigar aln)) (write-tab out)
+   (writestr out    (sam-alignment-rnext aln)) (write-tab out)
+   (format out "~D" (sam-alignment-pnext aln)) (write-tab out)
+   (format out "~D" (sam-alignment-tlen aln))  (write-tab out)
+   (writestr out    (sam-alignment-seq aln))   (write-tab out)
+   (writestr out    (sam-alignment-qual aln))
+   (loop for (key value) on (sam-alignment-tags aln) by #'cddr
+         do (format-sam-tag out key value))
+   (write-newline out))
+  (:method ((out sim-stream) aln)
+   (declare (sam-alignment aln) #.*optimization*)
+   (sim-writestr      out (sam-alignment-qname aln)) (sim-write-tab out)
+   (sim-write-integer out (sam-alignment-flag aln))  (sim-write-tab out)
+   (sim-writestr      out (sam-alignment-rname aln)) (sim-write-tab out)
+   (sim-write-integer out (sam-alignment-pos aln))   (sim-write-tab out)
+   (sim-write-integer out (sam-alignment-mapq aln))  (sim-write-tab out)
+   (sim-writestr      out (sam-alignment-cigar aln)) (sim-write-tab out)
+   (sim-writestr      out (sam-alignment-rnext aln)) (sim-write-tab out)
+   (sim-write-integer out (sam-alignment-pnext aln)) (sim-write-tab out)
+   (sim-write-integer out (sam-alignment-tlen aln))  (sim-write-tab out)
+   (sim-writestr      out (sam-alignment-seq aln))   (sim-write-tab out)
+   (sim-writestr      out (sam-alignment-qual aln))
+   (loop for (key value) on (sam-alignment-tags aln) by #'cddr
+         do (format-sam-tag out key value))
+   (sim-write-newline out)))
 
 (defun format-sam (out sam)
   "Write a complete SAM file.
