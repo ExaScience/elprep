@@ -352,42 +352,37 @@
   (defun writeln (out string &aux (length (length string)))
     "Write a simple-base-string to an output stream, but only up to a #\Newline."
     (declare (simple-base-string string) (fixnum length) #.*optimization*)
-    (write-line string out :end (loop for i of-type fixnum below length
-                                      when (char= (schar string i) #\Newline) return i
-                                      finally (return length)))))
+    (write-string string out :end (the fixnum (1+ (the fixnum (loop for i of-type fixnum below length
+                                                                    when (char= (schar string i) #\Newline) return i
+                                                                    finally (return length))))))))
 
 #+lispworks
 (progn 
-  (defun writestr (out string)
+  (defun writestr (out string &key (end (length string)))
     "Write a base-string to an output stream."
-    (declare (buffered-stream out) (base-string string) (fixnum length) #.*optimization*)
+    (declare (buffered-stream out) (base-string string) (fixnum end) #.*optimization*)
     (multiple-value-bind (string* start) (unwrap-displaced-array string)
       (declare (simple-base-string string*) (fixnum start))
-      (let ((end (the fixnum (+ start (length string)))))
-        (declare (fixnum end))
-        (loop (with-stream-output-buffer (buffer index limit) out
-                (declare (simple-base-string buffer) (fixnum index limit))
-                (loop for i of-type fixnum from index below limit do
-                      (setf (lw:sbchar buffer i) (lw:sbchar string* start))
-                      (when (= (setq start (the fixnum (1+ start))) end)
-                        (setq index (the fixnum (1+ i)))
-                        (return-from writestr string))
-                      finally (setq index limit)))
-              (stream-flush-buffer out)))))
+      (setq end (the fixnum (+ start end)))
+      (loop (with-stream-output-buffer (buffer index limit) out
+              (declare (simple-base-string buffer) (fixnum index limit))
+              (loop for i of-type fixnum from index below limit do
+                    (setf (lw:sbchar buffer i) (lw:sbchar string* start))
+                    (when (= (setq start (the fixnum (1+ start))) end)
+                      (setq index (the fixnum (1+ i)))
+                      (return-from writestr string))
+                    finally (setq index limit)))
+            (stream-flush-buffer out))))
 
   (defun writeln (out string)
     "Write a simple-base-string to an output stream, but only up to a #\Newline."
     (declare (buffered-stream out) (simple-base-string string) #.*optimization*)
-    (let ((start 0) (end (length string)))
-      (declare (fixnum start end))
+    (let ((start 0))
+      (declare (fixnum start))
       (loop (with-stream-output-buffer (buffer index limit) out
               (declare (simple-base-string buffer) (fixnum index limit))
               (loop for i of-type fixnum from index below limit do
-                    (cond ((= start end)
-                           (setf (lw:sbchar buffer i) #\Newline)
-                           (setq index (the fixnum (1+ i)))
-                           (return-from writeln string))
-                          ((char= (setf (lw:sbchar buffer i) (lw:sbchar string start)) #\Newline)
+                    (cond ((char= (setf (lw:sbchar buffer i) (lw:sbchar string start)) #\Newline)
                            (setq index (the fixnum (1+ i)))
                            (return-from writeln string))
                           (t (setq start (the fixnum (1+ start)))))

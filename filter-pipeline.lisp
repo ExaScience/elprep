@@ -349,7 +349,7 @@
     (values (lambda (aln)
               (let ((sim (make-sim-stream (estimate-sam-alignment-output-length aln))))
                 (declare (dynamic-extent sim))
-                (format-sam-alignment sim aln)
+                (sim-format-sam-alignment sim aln)
                 (sim-stream-string sim)))
             nil
             (lambda (chunk)
@@ -378,7 +378,7 @@
     (values (lambda (aln)
               (let ((sim (make-sim-stream (estimate-sam-alignment-output-length aln))))
                 (declare (dynamic-extent sim))
-                (format-sam-alignment sim aln)
+                (sim-format-sam-alignment sim aln)
                 (sim-stream-string sim)))
             nil
             (lambda (chunk)
