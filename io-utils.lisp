@@ -358,7 +358,7 @@
 
 #+lispworks
 (progn 
-  (defun writestr (out string &key (end (length string)))
+  (defun writestr (out string &aux (end (length string)))
     "Write a base-string to an output stream."
     (declare (buffered-stream out) (base-string string) (fixnum end) #.*optimization*)
     (multiple-value-bind (string* start) (unwrap-displaced-array string)
