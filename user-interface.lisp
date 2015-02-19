@@ -61,7 +61,7 @@
 (defvar *program-name* "elPrep"
   "Name of the elprep binary.")
 
-(defvar *program-version* "2.0"
+(defvar *program-version* "2.11"
   "Version of the elprep binary.")
 
 (defvar *program-url* "http://github.com/exascience/elprep"
@@ -264,7 +264,7 @@
                               :filters ,filters :gc-on ,gc-on :timed ,timed))))
                 (apply #'run-best-practices-pipeline conversion-parameters)))))))
 
-(defvar *split-program-help* "split sam-file /path/to/output/ ~% [--output-prefix name] ~% [--output-type [sam | bam | cram]] ~% [--nr-of-threads nr] ~%"
+(defvar *split-program-help* "split [sam-file | /path/to/input/] /path/to/output/ ~% [--output-prefix name] ~% [--output-type [sam | bam | cram]] ~% [--nr-of-threads nr] ~%"
   "Help string for the elprep-split-script binary.")
 
 (defun elprep-split-script ()
