@@ -139,7 +139,7 @@
       (documentation 'sam-alignment-temps 'function)
       "Access the sam-alignment temporary values of type property list.")
 
-(defvar *sam-alignment-line-output-length-factor* (/ 105 100))
+(defvar *sam-alignment-line-output-length-factor* 1.05)
 
 (declaim (inline estimate-sam-alignment-output-length))
 
