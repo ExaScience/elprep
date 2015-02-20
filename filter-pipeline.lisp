@@ -514,15 +514,14 @@
 (defmacro with-prepared-header ((header original-sorting-order alns) (input destructive) &body body)
   "Prepare the header for further processing, when input is in memory."
   (let ((inputv (copy-symbol 'input)))
-    `(let* ((,inputv ,input)
-            (,original-sorting-order (getf (sam-header-hd ,header) :so "unknown"))
-            (,alns (sam-alignments ,inputv)))
-       (unless ,header
-         (setq ,header (sam-header ,inputv)))
-       (if ,destructive
-         (setf (sam-alignments ,inputv) '())
-         (setq ,header (copy-structure ,header)))
-       ,@body)))
+    `(let ((,inputv ,input))
+       (unless ,header (setq ,header (sam-header ,inputv)))
+       (let ((,alns (sam-alignments ,inputv))
+             (,original-sorting-order (getf (sam-header-hd ,header) :so "unknown")))
+         (if ,destructive
+           (setf (sam-alignments ,inputv) '())
+           (setq ,header (copy-structure ,header)))
+         ,@body))))
 
 (defmethod run-pipeline ((input sam) (output sam) &key header filters (sorting-order :keep) (destructive :default))
   "Optimize when both input and output are in memory."
