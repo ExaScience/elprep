@@ -255,7 +255,7 @@
   "Assert that no sorting is asked for files."
   (ecase sorting-order ((:keep :unknown :unsorted))))
 
-(defgeneric get-output-functions (output header &key sorting-order &allow-other-keys)
+(defgeneric get-output-functions (output header original-sq &key sorting-order &allow-other-keys)
   (:documentation
    "Sets up the output thread, feeds the given header to the output data set, and returns four functions:
     One for potential additional output mapping of alignments (output-filter, can be NIL, which defaults to #'IDENTITY),
@@ -293,7 +293,7 @@
   "Macro version of chunk-output-loop."
   `(chunk-output-loop ,mailbox ,ordered (lambda (,chunk) ,@body)))
 
-(defmethod get-output-functions ((output sam) header &key (sorting-order :keep) (split-file nil))
+(defmethod get-output-functions ((output sam) header original-sq &key (sorting-order :keep) (split-file nil))
   (ecase sorting-order
     ((:keep :unknown :unsorted)
      (let* ((head (cons nil nil))
@@ -346,9 +346,11 @@
                                              (declare (fixnum refid))
                                              (if (< refid 0)
                                                (setq min-pos 0 max-pos 0 bucket-size 1)
-                                               (let ((sq (nth refid (sam-header-sq header))))
-                                                 (setq min-pos (getf sq :|mn| 1)
-                                                       max-pos (getf sq :|mx| #.(1- (expt 2 31)))
+                                               (let ((sq (loop with sn = (getf (nth refid (sam-header-sq header)) :sn)
+                                                               for entry in original-sq
+                                                               when (string= sn (getf entry :sn)) return entry)))
+                                                 (setq min-pos (parse-integer (getf sq :|mn| 1))
+                                                       max-pos (parse-integer (getf sq :|mx| #.(1- (expt 2 31))))
                                                        bucket-size (/ (- (1+ max-pos) min-pos) threads))))))
                                          (floor (the int32 (- (the int32 (sam-alignment-pos aln)) (the int32 min-pos)))
                                                 (the int32 bucket-size))))
@@ -413,7 +415,8 @@
                                         (apply #'merge 'list left right sorting-criterion)))))
                  output))))))
 
-(defmethod get-output-functions ((output pathname) header &key (sorting-order :keep))
+(defmethod get-output-functions ((output pathname) header original-sq &key (sorting-order :keep))
+  (declare (ignore original-sq))
   (check-file-sorting-order sorting-order)
   (let* ((mailbox (make-mailbox *number-of-threads*))
          (thread  (thread-run
@@ -436,7 +439,8 @@
               (thread-join thread)
               output))))
 
-(defmethod get-output-functions ((output temporary-file) header &key (sorting-order :keep))
+(defmethod get-output-functions ((output temporary-file) header original-sq &key (sorting-order :keep))
+  (declare (ignore original-sq))
   (check-file-sorting-order sorting-order)
   (let ((mailbox (make-mailbox *number-of-threads*))
         (outbox  (make-mailbox)))
@@ -464,8 +468,8 @@
               (mailbox-send mailbox :eop)
               (mailbox-read outbox)))))
 
-(defmethod get-output-functions ((output null) header &key sorting-order)
-  (declare (ignore header sorting-order))
+(defmethod get-output-functions ((output null) header original-sq &key sorting-order)
+  (declare (ignore header original-sq sorting-order))
   (values nil (constantly nil) (constantly nil)))
 
 (defmacro with-output-functions ((output-filter wrap-thread receive-chunk) form &body body)
@@ -511,13 +515,15 @@
                  sam))
   sam)
 
-(defmacro with-prepared-header ((header original-sorting-order alns) (input destructive) &body body)
+(defmacro with-prepared-header ((header original-sorting-order original-sq alns) (input destructive) &body body)
   "Prepare the header for further processing, when input is in memory."
   (let ((inputv (copy-symbol 'input)))
     `(let ((,inputv ,input))
        (unless ,header (setq ,header (sam-header ,inputv)))
        (let ((,alns (sam-alignments ,inputv))
-             (,original-sorting-order (getf (sam-header-hd ,header) :so "unknown")))
+             (,original-sorting-order (getf (sam-header-hd ,header) :so "unknown"))
+             (,original-sq (sam-header-sq ,header)))
+         (declare (ignorable ,original-sq))
          (if ,destructive
            (setf (sam-alignments ,inputv) '())
            (setq ,header (copy-structure ,header)))
@@ -529,7 +535,7 @@
     ;; enable multithreading
     (call-next-method)
     ;; simplified case: everything in a single thread when copying completely in-memory
-    (with-prepared-header (header original-sorting-order alns) (input destructive)
+    (with-prepared-header (header original-sorting-order original-sq alns) (input destructive)
       (with-thread-filters (thread-filters global-init global-exit) (filters header)
         (setf (sam-header output) header)
         (if (null alns)
@@ -570,12 +576,12 @@
 (defmethod run-pipeline ((input sam) output &rest args &key
                          header filters (sorting-order :keep) (destructive :default) (chunk-size +default-chunk-size+))
   (declare (dynamic-extent args))
-  (with-prepared-header (header original-sorting-order alns) (input destructive)
+  (with-prepared-header (header original-sorting-order original-sq alns) (input destructive)
     (with-thread-filters (thread-filters global-init global-exit) (filters header)
       (setq sorting-order (effective-sorting-order sorting-order header original-sorting-order))
       (with-output-functions
           (output-filter wrap-thread receive-chunk)
-          (apply #'get-output-functions output header :sorting-order sorting-order args)
+          (apply #'get-output-functions output header original-sq :sorting-order sorting-order args)
         (when alns
           (cond ((and (null thread-filters)
                       (null output-filter))
@@ -676,7 +682,8 @@
       (with-open-sam (in input :direction :input)
         (if header (skip-sam-header in)
           (setq header (parse-sam-header in)))
-        (let ((original-sorting-order (getf (sam-header-hd header) :so "unknown")))
+        (let ((original-sorting-order (getf (sam-header-hd header) :so "unknown"))
+              (original-sq (sam-header-sq header)))
           (with-thread-filters (thread-filters global-init global-exit) (filters header)
             (setq sorting-order (effective-sorting-order sorting-order header original-sorting-order))
             (when (null thread-filters)
@@ -697,7 +704,7 @@
                                   (return-from run-pipeline pathname)))))
             (with-output-functions
                 (output-filter wrap-thread receive-chunk)
-                (apply #'get-output-functions output header :sorting-order sorting-order args)
+                (apply #'get-output-functions output header original-sq :sorting-order sorting-order args)
               (global-init)
               (unwind-protect
                   (call-with-threads
