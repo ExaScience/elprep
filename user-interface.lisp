@@ -1,12 +1,6 @@
 (in-package :elprep)
 (in-simple-base-string-syntax)
 
-(defun get-extra-parameters (filename)
-  (ignore-errors
-    (with-open-file (s (merge-pathnames (make-pathname :type "params") filename)
-                       :direction :input :if-does-not-exist :error)
-      (let ((*read-eval* nil)) (read s)))))
-
 (defun run-best-practices-pipeline-intermediate-list (file-in file-out &key (sorting-order :keep) (filters '()) (filters2 '()) (gc-on 0) (timed nil))
   "Run the best practices pipeline. Version that uses an intermediate list so that sorting and mark-duplicates are supported."
   #+lispworks-32bit
@@ -23,8 +17,7 @@
              (apply #'run-pipeline
                     filename filtered-reads
                     :filters filters
-                    :sorting-order sorting-order
-                    (get-extra-parameters filename))))
+                    :sorting-order sorting-order)))
       (cond (timed
              (format t "Reading SAM into memory and applying filters.~%")
              (time (first-phase)))
@@ -41,8 +34,7 @@
                (apply #'run-pipeline
                       filtered-reads file-out-name
                       :sorting-order (if (eq sorting-order :unsorted) :unsorted :keep)
-                      :filters filters2
-                      (get-extra-parameters file-out-name))))
+                      :filters filters2)))
         (cond (timed
                (format t "Write to file.~%")
                (time (second-phase)))
@@ -63,9 +55,7 @@
                   (file-out-name (merge-pathnames file-out working-directory)))
              (run-pipeline file-in-name file-out-name
                            :filters filters
-                           :sorting-order sorting-order
-                           (append (get-extra-parameters file-in-name)
-                                   (get-extra-parameters file-out-name))))))
+                           :sorting-order sorting-order))))
     (cond (timed
            (format t "Running pipeline.~%")
            (time (all-phases)))

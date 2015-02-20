@@ -292,7 +292,7 @@
   "Macro version of chunk-output-loop."
   `(chunk-output-loop ,mailbox ,ordered (lambda (,chunk) ,@body)))
 
-(defmethod get-output-functions ((output sam) header &key (sorting-order :keep) (single-chromosome nil) (min-pos 1) (max-pos #.(1- (expt 2 31))))
+(defmethod get-output-functions ((output sam) header &key (sorting-order :keep) (split-file nil) (min-pos 1) (max-pos #.(1- (expt 2 31))))
   (ecase sorting-order
     ((:keep :unknown :unsorted)
      (let* ((head (cons nil nil))
@@ -313,11 +313,14 @@
                  (setf (sam-alignments output) (cdr head))
                  output))))
     ((:coordinate)
+     ;; todo: special case for unmapped reads:
+     ;; - thread-run-loop should use a different with-chunk-output loop if table has only one bucket
+     ;; - after thread-join: if table has only bucket and refid is -1, then no sorting necessary
      (let* ((threads *number-of-threads*)
-            (table (make-array (if single-chromosome threads
+            (table (make-array (if split-file threads
                                  (1+ (length (sam-header-sq header))))
                                :initial-element '() #+lispworks :single-thread #+lispworks t))
-            (bucket-size (when single-chromosome
+            (bucket-size (when split-file
                            (/ (- (1+ max-pos) min-pos) threads)))
             (mailbox (make-mailbox threads))
             (thread  (thread-run
@@ -335,7 +338,7 @@
                                                 (setf chunk (cdr chunk)
                                                       (cdr cons) (svref table index)
                                                       (svref table index) cons))))))
-                          (if single-chromosome
+                          (if split-file
                             (receive-chunks (the fixnum (floor (the int32 (- (the int32 (sam-alignment-pos aln)) (the int32 min-pos)))
                                                                (the int32 bucket-size))))
                             (receive-chunks (the fixnum (1+ (the int32 (sam-alignment-refid aln)))))))))))
