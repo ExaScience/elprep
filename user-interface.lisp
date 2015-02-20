@@ -1,22 +1,30 @@
 (in-package :elprep)
 (in-simple-base-string-syntax)
 
+(defun get-extra-parameters (filename)
+  (ignore-errors
+    (with-open-file (s (merge-pathnames (make-pathname :type "params") filename)
+                       :direction :input :if-does-not-exist :error)
+      (let ((*read-eval* nil)) (read s)))))
+
 (defun run-best-practices-pipeline-intermediate-list (file-in file-out &key (sorting-order :keep) (filters '()) (filters2 '()) (gc-on 0) (timed nil))
   "Run the best practices pipeline. Version that uses an intermediate list so that sorting and mark-duplicates are supported."
   #+lispworks-32bit
   (declare (ignore gc-on))
-  (let ((filtered-reads (make-sam)) ; where the result of run-pipeline will be stored
-        (working-directory (get-working-directory)))
+  (let* ((filtered-reads (make-sam)) ; where the result of run-pipeline will be stored
+         (working-directory (get-working-directory))
+         (filename (merge-pathnames file-in working-directory)))
     #+lispworks-64bit
     (unless (= gc-on 2) (system:set-blocking-gen-num 0 :do-gc nil))
     #+sbcl
     (unless (= gc-on 2) (setf (sb-ext:bytes-consed-between-gcs)
                               (sb-ext:dynamic-space-size)))
     (flet ((first-phase ()
-             (run-pipeline (merge-pathnames file-in working-directory)
-                           filtered-reads
-                           :filters filters
-                           :sorting-order sorting-order)))
+             (apply #'run-pipeline
+                    filename filtered-reads
+                    :filters filters
+                    :sorting-order sorting-order
+                    (get-extra-parameters filename))))
       (cond (timed
              (format t "Reading SAM into memory and applying filters.~%")
              (time (first-phase)))
@@ -30,9 +38,11 @@
       (unless (check-stdout file-out)
         (ensure-directories-exist file-out-name))
       (flet ((second-phase ()
-               (run-pipeline filtered-reads file-out-name
-                             :sorting-order (if (eq sorting-order :unsorted) :unsorted :keep)
-                             :filters filters2)))
+               (apply #'run-pipeline
+                      filtered-reads file-out-name
+                      :sorting-order (if (eq sorting-order :unsorted) :unsorted :keep)
+                      :filters filters2
+                      (get-extra-parameters file-out-name))))
         (cond (timed
                (format t "Write to file.~%")
                (time (second-phase)))
@@ -48,11 +58,14 @@
   (unless (= gc-on 2) (setf (sb-ext:bytes-consed-between-gcs)
                             (sb-ext:dynamic-space-size)))
   (flet ((all-phases ()
-           (let ((working-directory (get-working-directory)))
-             (run-pipeline (merge-pathnames file-in working-directory)
-                           (merge-pathnames file-out working-directory)
+           (let* ((working-directory (get-working-directory))
+                  (file-in-name (merge-pathnames file-in working-directory))
+                  (file-out-name (merge-pathnames file-out working-directory)))
+             (run-pipeline file-in-name file-out-name
                            :filters filters
-                           :sorting-order sorting-order))))
+                           :sorting-order sorting-order
+                           (append (get-extra-parameters file-in-name)
+                                   (get-extra-parameters file-out-name))))))
     (cond (timed
            (format t "Running pipeline.~%")
            (time (all-phases)))

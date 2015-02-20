@@ -292,7 +292,7 @@
   "Macro version of chunk-output-loop."
   `(chunk-output-loop ,mailbox ,ordered (lambda (,chunk) ,@body)))
 
-(defmethod get-output-functions ((output sam) header &key (sorting-order :keep))
+(defmethod get-output-functions ((output sam) header &key (sorting-order :keep) (single-chromosome nil) (min-pos 1) (max-pos #.(1- (expt 2 31))))
   (ecase sorting-order
     ((:keep :unknown :unsorted)
      (let* ((head (cons nil nil))
@@ -312,11 +312,64 @@
                  (thread-join thread)
                  (setf (sam-alignments output) (cdr head))
                  output))))
-    ((:coordinate :queryname)
+    ((:coordinate)
+     (let* ((threads *number-of-threads*)
+            (table (make-array (if single-chromosome threads
+                                 (1+ (length (sam-header-sq header))))
+                               :initial-element '() #+lispworks :single-thread #+lispworks t))
+            (bucket-size (when single-chromosome
+                           (/ (- (1+ max-pos) min-pos) threads)))
+            (mailbox (make-mailbox threads))
+            (thread  (thread-run
+                      "in-memory output thread with sorting by coordinate"
+                      (lambda ()
+                        (declare #.*optimization*)
+                        (setf (sam-header output) header)
+                        (macrolet ((receive-chunks (index-form)
+                                     `(with-chunk-output (chunk) (mailbox nil)
+                                        (loop while chunk do
+                                              (let* ((cons chunk)
+                                                     (aln (car cons))
+                                                     (index ,index-form))
+                                                (declare (cons chunk cons) (sam-alignment aln) (fixnum index))
+                                                (setf chunk (cdr chunk)
+                                                      (cdr cons) (svref table index)
+                                                      (svref table index) cons))))))
+                          (if single-chromosome
+                            (receive-chunks (the fixnum (floor (the int32 (- (the int32 (sam-alignment-pos aln)) (the int32 min-pos)))
+                                                               (the int32 bucket-size))))
+                            (receive-chunks (the fixnum (1+ (the int32 (sam-alignment-refid aln)))))))))))
+       (values nil nil
+               (lambda (chunk)
+                 (mailbox-send mailbox chunk))
+               (lambda ()
+                 (mailbox-send mailbox :eop)
+                 (thread-join thread)
+                 (claws:reset-workers threads)
+                 (labels ((recur (min max)
+                            (declare (fixnum min max) #.*optimization*)
+                            (let ((length (- max min)))
+                              (declare (fixnum length))
+                              (cond ((= length 0))
+                                    ((= length 1)
+                                     (setf (svref table min)
+                                           (stable-sort (svref table min) #'< :key #'sam-alignment-pos)))
+                                    (t (let* ((half (ash length -1))
+                                              (mid (+ min half)))
+                                         (declare (fixnum half mid))
+                                         (claws:spawn () (recur mid max))
+                                         (recur min mid)
+                                         (claws:sync)))))))
+                   (recur 0 (length table)))
+                 (claws:reset-workers 1)
+                 (setf (sam-alignments output)
+                       (loop for list across table nconc list))
+                 output))))
+    ((:queryname)
      (let* ((tree    (make-simple-tree 16))
             (mailbox (make-mailbox *number-of-threads*))
             (thread  (thread-run
-                      "in-memory output thread with sorting"
+                      "in-memory output thread with sorting by queryname"
                       (lambda ()
                         (setf (sam-header output) header)
                         (with-chunk-output (chunk) (mailbox nil)
