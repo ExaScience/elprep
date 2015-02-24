@@ -201,6 +201,7 @@ Refer to the documentation of run-pipeline as a starting point.")
    #:add-pg-line
    #:clean-sam
    #:add-refid
+   #:filter-optional-header-info
 
    #:sam-alignment-rg
    #:compute-phred-score

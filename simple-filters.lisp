@@ -74,6 +74,15 @@
       (lambda (alignment)
         (declare (sam-alignment alignment) #.*optimization*)
         (not (sam-alignment-tag alignment :|sr|))))))
+
+(defun filter-optional-header-info (header)
+  "A filter for removing header entries that represent optional information in elPrep."
+  (loop for sn-form in (sam-header-sq header)
+        do (remf sn-form :|mn|)
+        (remf sn-form :|mx|))
+  (lambda ()
+    (lambda (alignment)
+      alignment)))
            
 (defun add-or-replace-read-group (read-group)
   "A filter for adding or replacing the read group both in sam-header and each sam-alignment."

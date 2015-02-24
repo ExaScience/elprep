@@ -41,11 +41,7 @@ def elprep_sfm ():
   # command for spread file
   spread_out_file = os.path.join(result_dir, output_prefix + "-spread.sam")
   elprep_io_wrapper.cmd_wrap_io(["elprep"], spread_file, spread_out_file , sys.argv[3:])
-  # remove directories split inputs
-  for root, dirs, files in os.walk(split_dir):
-    for file in files:
-      ffile = os.path.join(root, file)
-      os.remove(ffile)
+  os.remove(spread_file)
   os.rmdir(split_dir)
   # merge command
   elprep_io_wrapper.cmd_wrap_output(["elprep", "merge"], result_dir, file_out, nr_of_threads_opt)

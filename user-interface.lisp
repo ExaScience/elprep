@@ -139,7 +139,8 @@
         (reference-fai nil)
         (reference-fasta nil)
         (split-file nil)
-        (header nil))
+        (header nil)
+        (filter-optional-header-info nil))
     (loop with entry while cmd-line do (setq entry (pop cmd-line))
           if (string= entry "-h") do
           (format t *program-help*)
@@ -205,7 +206,8 @@
           else if (string= entry "--rename-chromosomes")
           do (setf rename-chromosomes-filter (list #'rename-chromosomes))
           else if (string= entry "--split-file")
-          do (setf split-file t)
+          do (progn (setf split-file t)
+               (setf filter-optional-header-info (list #'filter-optional-header-info)))
           else if (string= entry "--header")
           do (let ((header-file (first cmd-line)))
                (cond ((or (not header-file) (search "--" cmd-line)) ; no file given
@@ -265,7 +267,7 @@
                                  (when (or replace-ref-seq-dct-filter mark-duplicates-filter (member sorting-order '(:coordinate :queryname))) (list #'add-refid))
                                  mark-duplicates-filter
                                  (list #'filter-optional-reads)))
-                 (filters2 remove-duplicates-filter)) ; only used in conjuction with filters that split up processing in multiple phases
+                 (filters2 (append filter-optional-header-info remove-duplicates-filter))) ; only used in conjuction with filters that split up processing in multiple phases
             (format t "Executing command:~%  ~a~%" cmd-string)
             (setq *number-of-threads* nr-of-threads
                   *reference-fasta* reference-fasta
@@ -281,7 +283,7 @@
               (let ((conversion-parameters
                      (nconc conversion-parameters
                             `(:sorting-order ,sorting-order
-                              :filters ,filters :gc-on ,gc-on :timed ,timed :split-file ,split-file :header ,header))))
+                              :filters ,(append filters filter-optional-header-info) :gc-on ,gc-on :timed ,timed :split-file ,split-file :header ,header))))
                 (apply #'run-best-practices-pipeline conversion-parameters)))))))
 
 (defvar *split-program-help* "split [sam-file | /path/to/input/] /path/to/output/ ~% [--output-prefix name] ~% [--output-type [sam | bam | cram]] ~% [--nr-of-threads nr] ~%"

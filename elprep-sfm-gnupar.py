@@ -55,10 +55,9 @@ def elprep_sfm_gnupar ():
       ffile = os.path.join(root, file)
       os.remove(ffile)
   os.rmdir(splits_path)
-  for root, dirs, files in os.walk(split_dir):
-    for file in files:
-      ffile = os.path.join(root, file)
-      os.remove(ffile)
+  os.remove(spread_file)
+  os.remove(header_file)
+  os.rmdir(split_dir)
   for root, dirs, files in os.walk(result_dir):
     for file in files:
       ffile = os.path.join(root, file)
