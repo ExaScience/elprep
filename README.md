@@ -428,7 +428,7 @@ A Python script that combines the elprep split, filter, and merge commands with 
 The script is structured as follows:
 
 * It first calls elprep split to split up the input file per chromosome. The script creates a temp folder in the current working directory for storing the split files created this way.
-* It then calls the elprep filter command for processing the split files in parallel using GNU parallel. There will be [--nr-of-jobs split] files executed in parallel, which each use [--nr-of-thread] threads for their execution.
+* It then calls the elprep filter command for processing the split files in parallel using GNU parallel. There will be [--nr-of-jobs] split files executed in parallel, which each use [--nr-of-threads] threads for their execution.
 * It then calls the elprep filter command for processing the spread reads file created by the elprep split command.
 * Finally, the script calls the elprep merge command to combine the results of processing the split files and the spread reads file into a single output.
 
