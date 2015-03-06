@@ -1,7 +1,7 @@
 (in-package :elprep)
 (in-simple-base-string-syntax)
 
-(defgeneric run-pipeline (input output &key)
+(defgeneric run-pipeline (input output &key &allow-other-keys)
   (:documentation
    "Reads a SAM data set from input, applies filters to the header and the alignments,
     and writes the result to output. Eventually returns the output.
@@ -46,7 +46,7 @@
     pipelines over the same input and output sources, and to identify cases where the pipeline has to effectively
     run in situ because input and output are the same."))
 
-(defgeneric run-pipeline-in-situ (sam &key)
+(defgeneric run-pipeline-in-situ (sam &key &allow-other-keys)
   (:documentation
    "Applies filters destructively and returns the first argument.
     This is like run-pipeline, except that input and output are the same.
