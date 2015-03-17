@@ -286,13 +286,13 @@
                               :filters ,(append filters filter-optional-header-info) :gc-on ,gc-on :timed ,timed :split-file ,split-file :header ,header))))
                 (apply #'run-best-practices-pipeline conversion-parameters)))))))
 
-(defvar *split-program-help* "split [sam-file | /path/to/input/] /path/to/output/ ~% [--output-prefix name] ~% [--output-type [sam | bam | cram]] ~% [--nr-of-threads nr] ~%"
+(defvar *split-program-help* "split [sam-file | /path/to/input/] /path/to/output/ ~% [--output-prefix name] ~% [--output-type [sam | bam | cram]] ~% [--nr-of-threads nr] ~% [--reference-t fai-file] ~% [--reference-T fasta-file] ~%"
   "Help string for the elprep-split-script binary.")
 
 (defun elprep-split-script ()
   "Command line script for elprep split script."
   (let ((cmd-line (rest (rest (command-line-arguments)))) ; skip elprep split part of the command
-        (input nil) (output-path nil) (output-prefix nil) (output-type :sam) (output-extension nil) (nr-of-threads 1))
+        (input nil) (output-path nil) (output-prefix nil) (output-type :sam) (output-extension nil) (nr-of-threads 1) (reference-fai nil) (reference-fasta nil))
     (loop with entry while cmd-line do (setq entry (pop cmd-line))
           if (string= entry "-h") do
           (format t *split-program-help*)
@@ -317,6 +317,20 @@
                       (setf output-prefix prefix))))
           else if (string= entry "--nr-of-threads")
           do (setf nr-of-threads (parse-integer (pop cmd-line)))
+          else if (string= entry "--reference-t")
+          do (let ((ref (first cmd-line)))
+               (cond ((or (not ref) (search "--" cmd-line)) ; no file given
+                      (format t "Please provide reference file with --reference-t.~%")
+                      (format t *split-program-help*)
+                      (return-from elprep-split-script))
+                     (t (setf *reference-fai* (setf reference-fai (pop cmd-line))))))
+          else if (string= entry "--reference-T")
+          do (let ((ref (first cmd-line)))
+               (cond ((or (not ref) (search "--" cmd-line)) ; no file given
+                      (format t "Please provide reference file with --reference-T.~%")
+                      (format t *split-program-help*)
+                      (return-from elprep-split-script))
+                     (t (setf *reference-fasta* (setf reference-fasta (pop cmd-line))))))
           else collect entry into io-parameters
           finally
           (when (/= (length io-parameters) 2) ; checks on input parameters
@@ -334,26 +348,44 @@
                  (with-output-to-string (s nil :element-type 'base-char)
                    (format s "~a split ~a ~a " (first (command-line-arguments)) (first io-parameters) (second io-parameters))
                    (format s "--output-prefix ~a " output-prefix)
-                   (format s "--output-type ~(~a~)" output-type))))
+                   (format s "--output-type ~(~a~) " output-type)
+                   (when reference-fai
+                     (format s "--reference-t ~a" reference-fai))
+                   (when reference-fasta
+                     (format s "--reference-T ~a" reference-fasta)))))
             (format t "Executing command:~%  ~a~%" cmd-string))
           (setq *number-of-threads* nr-of-threads)
           (ensure-directories-exist output-path)
           (let ((working-directory (get-working-directory)))
             (split-file-per-chromosome (merge-pathnames input working-directory) (merge-pathnames output-path working-directory) output-prefix output-extension)))))
 
-(defvar *merge-program-help* "merge /path/to/input/ sam-output-file ~% [--nr-of-threads nr] ~%"
+(defvar *merge-program-help* "merge /path/to/input/ sam-output-file ~% [--nr-of-threads nr] ~% [--reference-t fai-file] ~% [--reference-T fasta-file] ~%"
   "Help string for the elprep-merge-script binary.")
 
 (defun elprep-merge-script ()
   "Command line script for elprep merge script."
   (let ((cmd-line (rest (rest (command-line-arguments)))) ; skip elprep merge part of the command
-        (input-path nil) (output nil) (nr-of-threads 1))
+        (input-path nil) (output nil) (nr-of-threads 1) (reference-fai nil) (reference-fasta nil))
     (loop with entry while cmd-line do (setq entry (pop cmd-line))
           if (string= entry "-h") do
           (format t *merge-program-help*)
           (return-from elprep-merge-script)
           else if (string= entry "--nr-of-threads")
           do (setf nr-of-threads (parse-integer (pop cmd-line)))
+          else if (string= entry "--reference-t")
+          do (let ((ref (first cmd-line)))
+               (cond ((or (not ref) (search "--" cmd-line)) ; no file given
+                      (format t "Please provide reference file with --reference-t.~%")
+                      (format t *merge-program-help*)
+                      (return-from elprep-merge-script))
+                     (t (setf *reference-fai* (setf reference-fai (pop cmd-line))))))
+          else if (string= entry "--reference-T")
+          do (let ((ref (first cmd-line)))
+               (cond ((or (not ref) (search "--" cmd-line)) ; no file given
+                      (format t "Please provide reference file with --reference-T.~%")
+                      (format t *merge-program-help*)
+                      (return-from elprep-merge-script))
+                     (t (setf *reference-fasta* (setf reference-fasta (pop cmd-line))))))
           else collect entry into io-parameters
           finally         
           (when (/= (length io-parameters) 2)
@@ -384,7 +416,11 @@
               ; print feedback
               (let ((cmd-string
                      (with-output-to-string (s nil :element-type 'base-char)
-                       (format s "~a merge ~a ~a" (first (command-line-arguments)) input-path output))))
+                       (format s "~a merge ~a ~a" (first (command-line-arguments)) input-path output)
+                       (when reference-fai
+                         (format s "--reference-t ~a" reference-fai))
+                       (when reference-fasta
+                         (format s "--reference-T ~a" reference-fasta)))))
                 (format t "Executing command:~%  ~a~%" cmd-string))
               (setq *number-of-threads* nr-of-threads)
               (let ((working-directory (get-working-directory)))
