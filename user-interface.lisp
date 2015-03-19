@@ -1,22 +1,26 @@
 (in-package :elprep)
 (in-simple-base-string-syntax)
 
-(defun run-best-practices-pipeline-intermediate-list (file-in file-out &key (sorting-order :keep) (filters '()) (filters2 '()) (gc-on 0) (timed nil))
+(defun run-best-practices-pipeline-intermediate-list (file-in file-out &key (sorting-order :keep) (filters '()) (filters2 '()) (gc-on 0) (timed nil) (split-file nil) (header nil))
   "Run the best practices pipeline. Version that uses an intermediate list so that sorting and mark-duplicates are supported."
   #+lispworks-32bit
   (declare (ignore gc-on))
-  (let ((filtered-reads (make-sam)) ; where the result of run-pipeline will be stored
-        (working-directory (get-working-directory)))
+  (let* ((filtered-reads (make-sam)) ; where the result of run-pipeline will be stored
+         (working-directory (get-working-directory))
+         (filename (merge-pathnames file-in working-directory))
+         (new-header (when header (with-open-sam (header-in header :direction :input) (parse-sam-header header-in)))))
     #+lispworks-64bit
     (unless (= gc-on 2) (system:set-blocking-gen-num 0 :do-gc nil))
     #+sbcl
     (unless (= gc-on 2) (setf (sb-ext:bytes-consed-between-gcs)
                               (sb-ext:dynamic-space-size)))
     (flet ((first-phase ()
-             (run-pipeline (merge-pathnames file-in working-directory)
-                           filtered-reads
-                           :filters filters
-                           :sorting-order sorting-order)))
+             (run-pipeline
+              filename filtered-reads
+              :filters filters
+              :sorting-order sorting-order
+              :split-file split-file
+              :header new-header)))
       (cond (timed
              (format t "Reading SAM into memory and applying filters.~%")
              (time (first-phase)))
@@ -30,15 +34,16 @@
       (unless (check-stdout file-out)
         (ensure-directories-exist file-out-name))
       (flet ((second-phase ()
-               (run-pipeline filtered-reads file-out-name
-                             :sorting-order (if (eq sorting-order :unsorted) :unsorted :keep)
-                             :filters filters2)))
+               (run-pipeline
+                filtered-reads file-out-name
+                :sorting-order (if (eq sorting-order :unsorted) :unsorted :keep)
+                :filters filters2)))
         (cond (timed
                (format t "Write to file.~%")
                (time (second-phase)))
               (t (second-phase)))))))
 
-(defun run-best-practices-pipeline (file-in file-out &key (sorting-order :keep) (filters '()) (gc-on 0) (timed nil))
+(defun run-best-practices-pipeline (file-in file-out &key (sorting-order :keep) (filters '()) (gc-on 0) (timed nil) (split-file nil) (header nil))
   "Run the best practices pipeline. Version that doesn't use an intermediate list when neither sorting nor mark-duplicates are needed."
   #+lispworks-32bit
   (declare (ignore gc-on))
@@ -48,11 +53,14 @@
   (unless (= gc-on 2) (setf (sb-ext:bytes-consed-between-gcs)
                             (sb-ext:dynamic-space-size)))
   (flet ((all-phases ()
-           (let ((working-directory (get-working-directory)))
-             (run-pipeline (merge-pathnames file-in working-directory)
-                           (merge-pathnames file-out working-directory)
+           (let* ((working-directory (get-working-directory))
+                  (file-in-name (merge-pathnames file-in working-directory))
+                  (file-out-name (merge-pathnames file-out working-directory)))
+             (run-pipeline file-in-name file-out-name
                            :filters filters
-                           :sorting-order sorting-order))))
+                           :sorting-order sorting-order
+                           :split-file split-file
+                           :header (when header (with-open-sam (header-in header :direction :input) (parse-sam-header header-in)))))))
     (cond (timed
            (format t "Running pipeline.~%")
            (time (all-phases)))
@@ -61,13 +69,13 @@
 (defvar *program-name* "elPrep"
   "Name of the elprep binary.")
 
-(defvar *program-version* "2.11"
+(defvar *program-version* "2.2"
   "Version of the elprep binary.")
 
 (defvar *program-url* "http://github.com/exascience/elprep"
   "URL for more information about elprep.")
 
-(defvar *program-help* "sam-file sam-output-file ~% [--replace-reference-sequences sam-file] ~% [--filter-unmapped-reads [strict]] ~% [--replace-read-group read-group-string]~% [--mark-duplicates [remove] [deterministic]] ~% [--sorting-order [keep | unknown | unsorted | queryname | coordinate]] ~% [--clean-sam] ~% [--nr-of-threads nr] ~% [--gc-on [0 | 1 | 2]] ~% [--timed] ~% [--reference-t fai-file] ~% [--reference-T fasta-file] ~%"
+(defvar *program-help* "sam-file sam-output-file ~% [--replace-reference-sequences sam-file] ~% [--filter-unmapped-reads [strict]] ~% [--replace-read-group read-group-string]~% [--mark-duplicates [remove] [deterministic]] ~% [--sorting-order [keep | unknown | unsorted | queryname | coordinate]] ~% [--clean-sam] ~% [--nr-of-threads nr] ~% [--gc-on [0 | 1 | 2]] ~% [--timed] ~% [--reference-t fai-file] ~% [--reference-T fasta-file] ~% [--split-file] ~% [--header sam-file] ~%"
   "Help string for the elprep-script binary.")
 
 ;;; error handling
@@ -114,7 +122,7 @@
         (sorting-order :keep)
         (nr-of-threads 1)
         (mark-duplicates-p nil)
-        (gc-on 0)
+        (gc-on nil)
         (timed nil)
         ; filters
         (replace-ref-seq-dct-filter nil)
@@ -129,7 +137,10 @@
         (clean-sam-filter nil)
         (rename-chromosomes-filter nil)
         (reference-fai nil)
-        (reference-fasta nil))
+        (reference-fasta nil)
+        (split-file nil)
+        (header nil)
+        (filter-optional-header-info nil))
     (loop with entry while cmd-line do (setq entry (pop cmd-line))
           if (string= entry "-h") do
           (format t *program-help*)
@@ -194,6 +205,15 @@
                      (t (setf *reference-fasta* (setf reference-fasta (pop cmd-line))))))
           else if (string= entry "--rename-chromosomes")
           do (setf rename-chromosomes-filter (list #'rename-chromosomes))
+          else if (string= entry "--split-file")
+          do (progn (setf split-file t)
+               (setf filter-optional-header-info (list #'filter-optional-header-info)))
+          else if (string= entry "--header")
+          do (let ((header-file (first cmd-line)))
+               (cond ((or (not header-file) (search "--" cmd-line)) ; no file given
+                      (format t "Please provide header file with --header.~%")
+                      (format t *program-help*))
+                     (t (setf header (pop cmd-line)))))
           else collect entry into conversion-parameters ; main required parameters, input and output sam files
           finally
           (when (/= (length conversion-parameters) 2)
@@ -210,6 +230,13 @@
             (format t "ERROR: Attempting to output to cram without specifying a reference file. Please add --reference-t or --reference-T to your call.~%")
             (format t *program-help*)
             (return-from elprep-filter-script))
+          ; set the default gc-settings, unless the user set them
+          (unless gc-on
+            (if (or mark-duplicates-filter 
+                    (and replace-ref-seq-dct-filter (eq sorting-order :keep)) 
+                    (eq sorting-order :coordinate) (eq sorting-order :queryname))
+                (setf gc-on 0)
+              (setf gc-on 2)))
           (let* ((cmd-string
                   (with-output-to-string (s nil :element-type 'base-char)
                     (format s "~a ~a ~a"
@@ -230,7 +257,9 @@
                     (format s " --sorting-order ~(~a~) --gc-on ~a --nr-of-threads ~a" sorting-order gc-on nr-of-threads)
                     (when timed (format s " --timed"))
                     (when reference-fai (format s " --reference-t ~a" reference-fai))
-                    (when reference-fasta (format s " --reference-T ~a" reference-fasta))))
+                    (when reference-fasta (format s " --reference-T ~a" reference-fasta))
+                    (when split-file (format s " --split-file"))
+                    (when header (format s " --header ~a" header))))
                  ; optimal order for filters
                  (filters (nconc (list (add-pg-line (format nil "~A ~A" *program-name* *program-version*)
                                                     :pn *program-name*
@@ -245,7 +274,7 @@
                                  (when (or replace-ref-seq-dct-filter mark-duplicates-filter (member sorting-order '(:coordinate :queryname))) (list #'add-refid))
                                  mark-duplicates-filter
                                  (list #'filter-optional-reads)))
-                 (filters2 remove-duplicates-filter)) ; only used in conjuction with filters that split up processing in multiple phases
+                 (filters2 (append filter-optional-header-info remove-duplicates-filter))) ; only used in conjuction with filters that split up processing in multiple phases
             (format t "Executing command:~%  ~a~%" cmd-string)
             (setq *number-of-threads* nr-of-threads
                   *reference-fasta* reference-fasta
@@ -256,21 +285,21 @@
               (let ((conversion-parameters
                      (nconc conversion-parameters
                             `(:sorting-order ,sorting-order
-                              :filters ,filters :filters2 ,filters2 :gc-on ,gc-on :timed ,timed))))
+                              :filters ,filters :filters2 ,filters2 :gc-on ,gc-on :timed ,timed :split-file ,split-file :header ,header))))
                 (apply #'run-best-practices-pipeline-intermediate-list conversion-parameters))
               (let ((conversion-parameters
                      (nconc conversion-parameters
                             `(:sorting-order ,sorting-order
-                              :filters ,filters :gc-on ,gc-on :timed ,timed))))
+                              :filters ,(append filters filter-optional-header-info) :gc-on ,gc-on :timed ,timed :split-file ,split-file :header ,header))))
                 (apply #'run-best-practices-pipeline conversion-parameters)))))))
 
-(defvar *split-program-help* "split [sam-file | /path/to/input/] /path/to/output/ ~% [--output-prefix name] ~% [--output-type [sam | bam | cram]] ~% [--nr-of-threads nr] ~%"
+(defvar *split-program-help* "split [sam-file | /path/to/input/] /path/to/output/ ~% [--output-prefix name] ~% [--output-type [sam | bam | cram]] ~% [--nr-of-threads nr] ~% [--reference-t fai-file] ~% [--reference-T fasta-file] ~%"
   "Help string for the elprep-split-script binary.")
 
 (defun elprep-split-script ()
   "Command line script for elprep split script."
   (let ((cmd-line (rest (rest (command-line-arguments)))) ; skip elprep split part of the command
-        (input nil) (output-path nil) (output-prefix nil) (output-type :sam) (output-extension nil) (nr-of-threads 1))
+        (input nil) (output-path nil) (output-prefix nil) (output-type :sam) (output-extension nil) (nr-of-threads 1) (reference-fai nil) (reference-fasta nil))
     (loop with entry while cmd-line do (setq entry (pop cmd-line))
           if (string= entry "-h") do
           (format t *split-program-help*)
@@ -295,6 +324,20 @@
                       (setf output-prefix prefix))))
           else if (string= entry "--nr-of-threads")
           do (setf nr-of-threads (parse-integer (pop cmd-line)))
+          else if (string= entry "--reference-t")
+          do (let ((ref (first cmd-line)))
+               (cond ((or (not ref) (search "--" cmd-line)) ; no file given
+                      (format t "Please provide reference file with --reference-t.~%")
+                      (format t *split-program-help*)
+                      (return-from elprep-split-script))
+                     (t (setf *reference-fai* (setf reference-fai (pop cmd-line))))))
+          else if (string= entry "--reference-T")
+          do (let ((ref (first cmd-line)))
+               (cond ((or (not ref) (search "--" cmd-line)) ; no file given
+                      (format t "Please provide reference file with --reference-T.~%")
+                      (format t *split-program-help*)
+                      (return-from elprep-split-script))
+                     (t (setf *reference-fasta* (setf reference-fasta (pop cmd-line))))))
           else collect entry into io-parameters
           finally
           (when (/= (length io-parameters) 2) ; checks on input parameters
@@ -305,6 +348,11 @@
           ; fill in defaults
           (setf input (first io-parameters))
           (setf output-path (second io-parameters))
+          ; check that output path is really a path
+          (when (or (pathname-name (pathname output-path)) (not (pathname-directory (pathname output-path))))
+            (format t "Given output path is not a path: ~a ~%" output-path)
+            (format t *split-program-help*)
+            (return-from elprep-split-script))
           (unless output-prefix (setf output-prefix (pathname-name input)))
           (unless output-extension (setf output-extension (ecase (sam-file-kind input) (:bam "bam") (:sam "sam") (:cram "cram"))))
           ; print feedback
@@ -312,26 +360,44 @@
                  (with-output-to-string (s nil :element-type 'base-char)
                    (format s "~a split ~a ~a " (first (command-line-arguments)) (first io-parameters) (second io-parameters))
                    (format s "--output-prefix ~a " output-prefix)
-                   (format s "--output-type ~(~a~)" output-type))))
+                   (format s "--output-type ~(~a~) " output-type)
+                   (when reference-fai
+                     (format s "--reference-t ~a" reference-fai))
+                   (when reference-fasta
+                     (format s "--reference-T ~a" reference-fasta)))))
             (format t "Executing command:~%  ~a~%" cmd-string))
           (setq *number-of-threads* nr-of-threads)
           (ensure-directories-exist output-path)
           (let ((working-directory (get-working-directory)))
             (split-file-per-chromosome (merge-pathnames input working-directory) (merge-pathnames output-path working-directory) output-prefix output-extension)))))
 
-(defvar *merge-program-help* "merge /path/to/input/ sam-output-file ~% [--nr-of-threads nr] ~%"
+(defvar *merge-program-help* "merge /path/to/input/ sam-output-file ~% [--nr-of-threads nr] ~% [--reference-t fai-file] ~% [--reference-T fasta-file] ~%"
   "Help string for the elprep-merge-script binary.")
 
 (defun elprep-merge-script ()
   "Command line script for elprep merge script."
   (let ((cmd-line (rest (rest (command-line-arguments)))) ; skip elprep merge part of the command
-        (input-path nil) (output nil) (nr-of-threads 1))
+        (input-path nil) (output nil) (nr-of-threads 1) (reference-fai nil) (reference-fasta nil))
     (loop with entry while cmd-line do (setq entry (pop cmd-line))
           if (string= entry "-h") do
           (format t *merge-program-help*)
           (return-from elprep-merge-script)
           else if (string= entry "--nr-of-threads")
           do (setf nr-of-threads (parse-integer (pop cmd-line)))
+          else if (string= entry "--reference-t")
+          do (let ((ref (first cmd-line)))
+               (cond ((or (not ref) (search "--" cmd-line)) ; no file given
+                      (format t "Please provide reference file with --reference-t.~%")
+                      (format t *merge-program-help*)
+                      (return-from elprep-merge-script))
+                     (t (setf *reference-fai* (setf reference-fai (pop cmd-line))))))
+          else if (string= entry "--reference-T")
+          do (let ((ref (first cmd-line)))
+               (cond ((or (not ref) (search "--" cmd-line)) ; no file given
+                      (format t "Please provide reference file with --reference-T.~%")
+                      (format t *merge-program-help*)
+                      (return-from elprep-merge-script))
+                     (t (setf *reference-fasta* (setf reference-fasta (pop cmd-line))))))
           else collect entry into io-parameters
           finally         
           (when (/= (length io-parameters) 2)
@@ -362,7 +428,11 @@
               ; print feedback
               (let ((cmd-string
                      (with-output-to-string (s nil :element-type 'base-char)
-                       (format s "~a merge ~a ~a" (first (command-line-arguments)) input-path output))))
+                       (format s "~a merge ~a ~a" (first (command-line-arguments)) input-path output)
+                       (when reference-fai
+                         (format s "--reference-t ~a" reference-fai))
+                       (when reference-fasta
+                         (format s "--reference-T ~a" reference-fasta)))))
                 (format t "Executing command:~%  ~a~%" cmd-string))
               (setq *number-of-threads* nr-of-threads)
               (let ((working-directory (get-working-directory)))

@@ -479,6 +479,7 @@
   (writestr out string))
 
 (defun sim-format-sam-string (out tag string)
+  "Write a SAM file TAG of type string."
   (declare (sim-stream out) (string tag string) #.*optimization*)
   (sim-write-tab out)
   (sim-writestr out tag)
@@ -493,6 +494,7 @@
   (format out ":~D" value))
 
 (defun sim-format-sam-integer (out tag value)
+  "Write a SAM file TAG of type integer."
   (declare (sim-stream out) (base-string tag) (integer value) #.*optimization*)
   (sim-write-tab out)
   (sim-writestr out tag)
@@ -512,6 +514,8 @@
                   do (format out "~2,'0X" byte)))))
 
 (defun sim-format-sam-byte-array (out tag byte-array)
+  "Write a SAM file TAG of type byte array.
+   See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.5, Type H."
   (declare (sim-stream out) (base-string tag) (sequence byte-array) #.*optimization*)
   (sim-write-tab out)
   (sim-writestr out tag)
@@ -535,6 +539,8 @@
             year month day hour min sec)))
 
 (defun sim-format-sam-datetime (out tag datetime)
+  "Write a SAM file TAG of type date/time.
+   See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3, Tag @RG, DT."
   (declare (sim-stream out) (base-string tag) (integer datetime) #.*optimization*)
   (sim-write-tab out)
   (sim-writestr out tag)
@@ -564,6 +570,7 @@
       (error "Unknown tag ~A in a SAM header line." tag))))
 
 (defun sim-format-sam-header-user-tag (out tag value)
+  "Write a user-defined SAM file TAG of type string."
   (declare (sim-stream out) (symbol tag) #.*optimization*)
   (let ((tag-string (symbol-name tag)))
     (if (sam-header-user-tag-p tag-string)
@@ -587,6 +594,8 @@
     (write-newline out)))
 
 (defun sim-format-sam-header-line (out list)
+  "Write an @HD line in a SAM file header section.
+   See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3."
   (declare (sim-stream out) (list list) #.*optimization*)
   (when list
     (unless (presentp :VN list)
@@ -624,6 +633,8 @@
         (write-newline out)))
 
 (defun sim-format-sam-reference-sequence-dictionary (out list)
+  "Write the @SQ lines in a SAM file header section.
+   See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3."
   (declare (sim-stream out) (list list) #.*optimization*)
   (loop for plist in list do
         (unless (presentp :SN plist)
@@ -671,6 +682,8 @@
         (write-newline out)))
 
 (defun sim-format-sam-read-groups (out list)
+  "Write the @RG lines in a SAM file header section.
+   See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3."
   (declare (sim-stream out) (list list) #.*optimization*)
   (loop for plist in list do
         (unless (presentp :ID plist)
@@ -715,6 +728,8 @@
         (write-newline out)))
 
 (defun sim-format-sam-programs (out list)
+  "Write the @PG lines in a SAM file header section.
+   See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3."
   (declare (sim-stream out) (list list) #.*optimization*)
   (loop for plist in list do
         (unless (presentp :ID plist)
@@ -743,6 +758,8 @@
         (write-newline out)))
 
 (defun sim-format-sam-comments (out list)
+  "Write the @CO lines in a SAM file header section.
+   See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3."
   (declare (sim-stream out) (list list) #.*optimization*)
   (loop for string in list do
         (sim-writestr out "@CO")
@@ -763,6 +780,8 @@
               (write-newline out))))
 
 (defun sim-format-sam-user-tags (out tags)
+  "Write the user-defined header lines.
+   See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3."
   (declare (sim-stream out) (list tags) #.*optimization*)
   (loop for (code list) of-type (symbol list) on tags by #'cddr
         for code-string = (symbol-name code) do
@@ -784,6 +803,8 @@
   (format-sam-user-tags                     out (sam-header-user-tags header)))
 
 (defun sim-format-sam-header (out header)
+  "Write a SAM file header section.
+   See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3."
   (declare (sim-stream out) (sam-header header) #.*optimization*)
   (sim-format-sam-header-line                   out (sam-header-hd header))
   (sim-format-sam-reference-sequence-dictionary out (sam-header-sq header))
@@ -889,6 +910,8 @@
                       (loop for number in value do (format out ",~D" number)))))))
 
 (defun sim-format-sam-tag (out tag value)
+  "Write a SAM file TAG, dispatching on actual type of the given value.
+   See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.5."
   (declare (sim-stream out) (symbol tag) #.*optimization*)
   (sim-write-tab out)
   (sim-writestr out (symbol-name tag))
@@ -934,6 +957,8 @@
   (write-newline out))
 
 (defun sim-format-sam-alignment (out aln)
+  "Write a SAM file read alignment line.
+   See http://samtools.github.io/hts-specs/SAMv1.pdf - Sections 1.4 and 1.5."
   (declare (sim-stream out) (sam-alignment aln) #.*optimization*)
   (sim-writestr      out (sam-alignment-qname aln)) (sim-write-tab out)
   (sim-write-integer out (sam-alignment-flag aln))  (sim-write-tab out)
@@ -966,9 +991,11 @@
   (loop for aln in (sam-alignments sam)
         do (sim-format-sam-alignment out aln)))
 
-(defglobal *stderr* #+lispworks (sys:make-stderr-stream) #+sbcl sb-sys:*stderr*)
+(defglobal *stderr* #+lispworks (sys:make-stderr-stream) #+sbcl sb-sys:*stderr*
+           "Standard error stream of the underlying Common Lisp implementation.")
 
 (defun setup-standard-streams ()
+  "Bind standard streams to standard error."
   (setq *standard-output* *stderr*
         *error-output* *stderr*
         *trace-output* *stderr*))

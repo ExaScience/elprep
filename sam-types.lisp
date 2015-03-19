@@ -139,11 +139,15 @@
       (documentation 'sam-alignment-temps 'function)
       "Access the sam-alignment temporary values of type property list.")
 
-(defvar *sam-alignment-line-output-length-factor* 1.05)
+(defvar *sam-alignment-line-output-length-factor* 1.05
+  "Default factor for increase in length of the string representing a sam-alignment instance after applying modifications.")
 
 (declaim (inline estimate-sam-alignment-output-length))
 
 (defun estimate-sam-alignment-output-length (aln)
+  "Make an estimate how much longer the string will be representing this sam-alignment instance,
+   after applying a number of modifications, compared to the original string on which this sam-alignment instance was based.
+   By default, assume it will be 5% longer."
   (declare (sam-alignment aln) #.*optimization*)
   (ceiling (* (length (sam-alignment-line aln)) *sam-alignment-line-output-length-factor*)))
 

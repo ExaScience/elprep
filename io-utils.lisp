@@ -395,19 +395,39 @@
                         (&optional (initial-size 128) &aux
                                    (string (make-array initial-size :element-type 'base-char
                                                        #+lispworks :single-thread #+lispworks t)))))
+  "A pseudo string stream to allow for more low-level efficient implementations of formatting functions speficic to elPrep.
+   The struct sim-stream has a constructor make-sim-stream that takes an optional initial size for the target string as a parameter.
+   Accessor sim-stream-string refers to the target string for output.
+   Accessor sim-stream-index refers to the current index into sim-stream-string.
+   Accessor sim-stream-%floats refers to an optional actual string-stream for floating point output."
   (string "" :type simple-base-string)
   (index   0 :type fixnum)
   (%floats nil))
 
+(setf (documentation 'make-sim-stream 'function)
+      "Constructor for struct sim-stream that takes an optional initial size for the target string as a parameter."
+      (documentation 'sim-stream-p 'function)
+      "Default predicate for struct sim-stream."
+      (documentation 'copy-sim-stream 'function)
+      "Default copier function for struct sim-stream."
+      (documentation 'sim-stream-string 'function)
+      "Access the sim-stream target string."
+      (documentation 'sim-stream-index 'function)
+      "Access the sim-stream index into sim-stream-string."
+      (documentation 'sim-stream-%floats 'function)
+      "Access the optional sim-stream string-stream for formatting floating point numbers.")
+
 (declaim (inline sim-stream-floats))
 
 (defun sim-stream-floats (s)
+  "Read the sim-stream string-stream for formatting floating point numbers, creating a new one if not already available."
   (declare (sim-stream s) #.*optimization*)
   (or (sim-stream-%floats s)
       (setf (sim-stream-%floats s)
             (make-string-output-stream :element-type 'base-char))))
 
 (defun slow-ensure-sim-space (out string index required-length)
+  "Ensure there is enough space in the target string of sim-stream out at index with a required-length of additional characters, slow path."
   (declare (sim-stream out) (simple-base-string string) (fixnum index required-length) #.*optimization*)
   (let ((new-string (make-array (the fixnum (+ (the fixnum (* 128 (the fixnum (floor required-length 128)))) 128))
                                 :element-type 'base-char #+lispworks :single-thread #+lispworks t)))
@@ -419,6 +439,7 @@
 (declaim (inline ensure-sim-space))
 
 (defun ensure-sim-space (out length)
+  "Ensure there is enough space in the target string of sim-stream out, with length additional characters required, fast path."
   (declare (sim-stream out) (fixnum length) #.*optimization*)
   (let ((string (sim-stream-string out))
         (index  (sim-stream-index out)))
@@ -431,6 +452,7 @@
 (declaim (inline sim-writec sim-write-newline sim-write-tab))
 
 (defun sim-writec (out c)
+  "Write a character c to sim-stream out."
   (declare (sim-stream out) (base-char c) #.*optimization*)
   (let ((string (ensure-sim-space out 1))
         (index  (sim-stream-index out)))
@@ -439,12 +461,15 @@
     (setf (sim-stream-index out) (the fixnum (1+ index)))))
 
 (defun sim-write-newline (out)
+  "Write a newline to sim-stream out."
   (sim-writec out #\Newline))
 
 (defun sim-write-tab (out)
+  "Write a tab to sim-stream out."
   (sim-writec out #\Tab))
 
 (defun sim-writestr (out string &aux (length (length string)))
+  "Write a string to sim-stream out."
   (declare (sim-stream out) (string string) (fixnum length) #.*optimization*)
   (multiple-value-bind (source start) (unwrap-displaced-array string)
     (declare (simple-string source) (fixnum start))
@@ -458,6 +483,7 @@
       (setf (sim-stream-index out) (the fixnum (+ index length))))))
 
 (defun sim-write-integer (out integer)
+  "Write a decimal integer to sim-stream out."
   (declare (sim-stream out) (integer integer) #.*optimization*)
   (when (< integer 0)
     (sim-writec out #\-)
@@ -492,6 +518,7 @@
 (declaim (inline sim-write-byte))
 
 (defun sim-write-byte (out byte)
+  "Write a byte in hex notation to sim-stream out."
   (declare (sim-stream out) (fixnum byte) #.*optimization*)
   (flet ((sim-write-nibble (nibble)
            (declare (fixnum nibble))
@@ -506,6 +533,7 @@
       (sim-write-nibble lo))))
 
 (defun sim-write-fixed-size-fixnum (out fixnum size)
+  "Write a positive fixnum of known maximum width to sim-stream out."
   (declare (sim-stream out) (fixnum fixnum size) #.*optimization*)
   (let* ((string (ensure-sim-space out size))
          (index  (sim-stream-index out))
@@ -519,6 +547,7 @@
     (setf (sim-stream-index out) new-index)))
 
 (defun sim-write-float (out float)
+  "Write a floating point number to sim-stream out."
   (declare (sim-stream out) (single-float float) #.*optimization*)
   (let ((stream (sim-stream-floats out)))
     (format stream "~E" float)
