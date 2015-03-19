@@ -341,6 +341,11 @@
           ; fill in defaults
           (setf input (first io-parameters))
           (setf output-path (second io-parameters))
+          ; check that output path is really a path
+          (when (or (pathname-name (pathname output-path)) (not (pathname-directory (pathname output-path))))
+            (format t "Given output path is not a path: ~a ~%" output-path)
+            (format t *split-program-help*)
+            (return-from elprep-split-script))
           (unless output-prefix (setf output-prefix (pathname-name input)))
           (unless output-extension (setf output-extension (ecase (sam-file-kind input) (:bam "bam") (:sam "sam") (:cram "cram"))))
           ; print feedback
