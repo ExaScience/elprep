@@ -122,7 +122,7 @@
         (sorting-order :keep)
         (nr-of-threads 1)
         (mark-duplicates-p nil)
-        (gc-on 0)
+        (gc-on nil)
         (timed nil)
         ; filters
         (replace-ref-seq-dct-filter nil)
@@ -230,6 +230,13 @@
             (format t "ERROR: Attempting to output to cram without specifying a reference file. Please add --reference-t or --reference-T to your call.~%")
             (format t *program-help*)
             (return-from elprep-filter-script))
+          ; set the default gc-settings, unless the user set them
+          (unless gc-on
+            (if (or mark-duplicates-filter 
+                    (and replace-ref-seq-dct-filter (eq sorting-order :keep)) 
+                    (eq sorting-order :coordinate) (eq sorting-order :queryname))
+                (setf gc-on 0)
+              (setf gc-on 2)))
           (let* ((cmd-string
                   (with-output-to-string (s nil :element-type 'base-char)
                     (format s "~a ~a ~a"

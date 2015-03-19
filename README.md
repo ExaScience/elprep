@@ -323,7 +323,7 @@ There are three options:
 * 1: elPrep performs a garbage collect after the filtering and sorting phases. This can reduce peak memory use, but slows down execution somewhat.
 * 2: elPrep performs garbage collection interleaved with the execution at regular intervals. This may reduce peak memory significantly, but may slow down execution considerably.
 
-If the option is not passed explicitly, elPrep assumes —gc-on 0 is intended.
+If the option is not passed explicitly, elPrep chooses default settings for gc-on. If elprep is asked to perform duplicate marking (--mark-duplicates) or sorting (--sorting-order or --replace-reference-sequences that triggers a sort), it assumes --gc-on 0 is intented. Otherwise the default is --gc-on 2.
 
 ### --split-file
 
