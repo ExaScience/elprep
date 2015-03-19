@@ -349,7 +349,7 @@
 (defun parse-sam-header (stream)
   "Parse a SAM file header section.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3."
-  (declare (stream stream) #.*optimization*)
+  (declare #.*optimization*)
   (let ((scanner (make-scanner))
         (code (make-array 3 :element-type 'base-char))
         hd sq rg pg co user-tags)
