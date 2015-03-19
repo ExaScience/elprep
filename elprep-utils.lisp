@@ -126,12 +126,13 @@
         ; create a directory for split files
         (ensure-directories-exist splits-path)
         ; tag the header as one created with elPrep split
-        (setf (sam-header-user-tag header :|@sr|) (list "This file was created using elprep split."))
+        (setf (sam-header-user-tag header :|@sr|) (list "co:This file was created using elprep split."))
         ; fill in a file for unmapped reads
         (setf (gethash buf-unmapped chroms-encountered)
               (multiple-value-bind
                   (file program) ; create a new headerless file
                   (open-sam (merge-pathnames splits-path (make-pathname :name (format nil "~a-unmapped" output-prefix) :type output-extension)) :direction :output)
+                (format-sam-header file header)
                 (cons file program)))
         ; fill in a minmax for unmapped reads
         (setf (gethash buf-unmapped chroms-encountered-minmax) (cons nil (cons 0 0)))
@@ -143,6 +144,7 @@
                       (multiple-value-bind
                           (file program)
                           (open-sam (merge-pathnames splits-path (make-pathname :name (format nil "~a-~a" output-prefix chrom) :type output-extension)) :direction :output)
+                        (format-sam-header file header)
                         (cons file program)))
                    ; minmax table
                 (setf (gethash buf-chrom chroms-encountered-minmax) (cons sn-form (cons nil nil)))))
