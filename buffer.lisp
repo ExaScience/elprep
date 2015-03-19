@@ -11,7 +11,7 @@
   "A buffer can be used to create simple-base-strings that can grow arbitrarily large in size.
    It is somewhat similar to adjustable strings in Common Lisp, but guarantees to allocate only as much as necessary,
    and to never copy contents when growing. Buffers are also easy to reuse, and efficiently reuse already allocated memory.
-   Buffer has a default constructor %make-buffer, and a defaul predicate.
+   The struct buffer has a default constructor %make-buffer, and a defaul predicate.
    Accessor buffer-pos refers to the current active size of the buffer.
    Accessor buffer-str refers to an array of string chunks.
    Accessor buffer-hash-value refers to the hash value of the active contents of the buffer. If -1, the hash-value hasn't been computed yet."

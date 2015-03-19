@@ -74,6 +74,9 @@ Refer to the documentation of run-pipeline as a starting point.")
    #:sam-alignment-tags
    #:sam-alignment-temps
 
+   #:*sam-alignment-line-output-length-factor*
+   #:estimate-sam-alignment-output-length
+
    #:sam-alignment-tag
    #:sam-alignment-temp
    #:sam-alignment-refid
@@ -157,9 +160,12 @@ Refer to the documentation of run-pipeline as a starting point.")
 
    #:format-sam
 
+   #:stderr*
    #:setup-standard-streams
 
    #:get-samtools
+   #:check-stdout
+   #:check-stdin
    #:sam-file-kind
    #:open-sam
    #:open-temporary-sam

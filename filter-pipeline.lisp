@@ -14,6 +14,7 @@
     - :sorting-order: One of :keep (the default), :unsorted, :unkown, :coordinate, or :queryname.
     - :chunk-size: Number of alignments to read from input at a time. Default is +default-chunk-size+.
     - :header: A header to use in place of the header found in input.
+    - :split-file: Operate on intermediate split files or not. One of false (the default), or true.
 
     A filter is a function that accepts zero or more arguments and returns zero or more values:
     - The first return value is nil or a next-level filter.
@@ -267,6 +268,8 @@
     to be used in output-filter and/or receive-chunk.
     When the (already effective) :sorting-order is :coordinate or :queryname, sort the received chunks before
     writing to output. Sorting is not supported for files, but by default only for in-memory representations.
+    The parameter original-sq should be used to query the reference sequence dictionary,
+    because the one in header may have already been filtered and modified.
 
     Specialize this generic function for new kinds of output sources."))
 

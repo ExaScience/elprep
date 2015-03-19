@@ -37,9 +37,9 @@
 
 ;;; low-level types
 
-(deftype  octet () '(unsigned-byte 8))
-(deftype uint16 () '(unsigned-byte 16))
-(deftype  int32 () '(signed-byte 32))
+(deftype  octet () "uint8"  '(unsigned-byte 8))
+(deftype uint16 () "uint16" '(unsigned-byte 16))
+(deftype  int32 ()  "int32" '(signed-byte 32))
 
 ;;; portability
 
@@ -127,20 +127,40 @@
                              (capacity &aux (semaphore
                                              #+lispworks (mp:make-semaphore :count capacity)
                                              #+sbcl (sb-thread:make-semaphore :count capacity)))))
+  "A mailbox with an upper bound on the number of objects that can be simultaneously present.
+   Adding new elements may block when that number is reached.
+   The struct bounded-mailbox has a constructor make-bounded-mailbox that takes a capacity as a parameter.
+   Read-only accessor bounded-mailbox-semaphore refers to a semaphore that controls the number of elements that are present in the mailbox.
+   Read-only accessor bounded-mailbox-mailbox is the underlying actual mailbox."
   (semaphore nil :read-only t)
   (mailbox #+lispworks (mp:make-mailbox) #+sbcl (sb-concurrency:make-mailbox) :read-only t))
 
+(setf (documentation 'make-bounded-mailbox 'function)
+      "Constructor for struct bounded-mailbox that takes a capacity as a parameter."
+      (documentation 'bounded-mailbox-p 'function)
+      "Default predicate for struct bounded-mailbox."
+      (documentation 'copy-bounded-mailbox 'function)
+      "Default copier function for struct bounded-mailbox."
+      (documentation 'bounded-mailbox-semaphore 'function)
+      "Read the bounded-mailbox semaphore that controls the number of elements that are present in the mailbox."
+      (documentation 'bounded-mailbox-mailbox 'function)
+      "Read the bounded-mailbox underlying actual mailbox.")
+
 (defun make-mailbox (&optional (capacity nil))
+  "Create a mailbox. If the optional capacity parameter is provided and is not nil, then a bounded-mailbox is created, otherwise a plain mailbox."
   (if (null capacity)
     #+lispworks (mp:make-mailbox)
     #+sbcl (sb-concurrency:make-mailbox)
     (make-bounded-mailbox capacity)))
 
 (defgeneric mailbox-send (mailbox object)
+  (:documentation "Send an object to a mailbox.")
   (:method ((mailbox mailbox) object)
+   "Send an object to a mailbox."
    #+lispworks (mp:mailbox-send mailbox object)
    #+sbcl (sb-concurrency:send-message mailbox object))
   (:method ((mailbox bounded-mailbox) object)
+   "Send an object to a bounded mailbox. May block if the maximum capacity is reached."
    #+lispworks
    (progn
      (assert (mp:semaphore-acquire (bounded-mailbox-semaphore mailbox)))
@@ -151,10 +171,13 @@
      (sb-concurrency:send-message (bounded-mailbox-mailbox mailbox) object))))
 
 (defgeneric mailbox-read (mailbox)
+  (:documentation "Read an object from a mailbox. May block if there are no objects in the mailbox.")
   (:method ((mailbox mailbox))
+   "Read an object from a mailbox. May block if there are no objects in the mailbox."
    #+lispworks (mp:mailbox-read mailbox)
    #+sbcl (sb-concurrency:receive-message mailbox))
   (:method ((mailbox bounded-mailbox))
+   "Read an object from a mailbox. May block if there are no objects in the mailbox."
    #+lispworks
    (multiple-value-prog1
        (mp:mailbox-read (bounded-mailbox-mailbox mailbox))
@@ -444,9 +467,12 @@
         (setf (svref vector i) (apply #'make-synchronized-hash-table :test test :hash-function hash-function args))
         finally (return (%make-split-hash-table hash-function vector))))
 
-(defconstant +total-bits+ #.(integer-length most-positive-fixnum))
-(defconstant +low-bits+ 15)
-(defconstant +high-bits+ (- +total-bits+ +low-bits+))
+(defconstant +total-bits+ #.(integer-length most-positive-fixnum)
+  "Number of bits that make up a fixnum in the current Common Lisp implementation.")
+(defconstant +low-bits+ 15
+  "An arbitrary number of bits in the low portion of a fixnum, used for split hash tables.")
+(defconstant +high-bits+ (- +total-bits+ +low-bits+)
+  "An arbitrary number of bits in the high portion of a fixnum, used for split hash tables.")
 
 (defconstant +lowest-bits+  (1- (ash 1 +low-bits+))
   "Bit mask for the lowest bits of a fixnum, used for split hash tables.")
@@ -474,6 +500,7 @@
 (declaim (inline unwrap-displaced-array))
 
 (defun unwrap-displaced-array (array)
+  "Unwrap a displaced array and return the underlying actual array and an offset into that array which the displaced array is referring to."
   (declare (array array) #.*fixnum-optimization*)
   (let ((displaced array) (index 0))
     (declare (array displaced) (fixnum index))
