@@ -202,10 +202,11 @@
   (let ((refid1 (check-refid-type (sam-alignment-refid aln1)))
         (refid2 (check-refid-type (sam-alignment-refid aln2))))
     (declare (int32 refid1 refid2))
-    (or (< refid1 refid2)
-        (and (= refid1 refid2)
-             (< (sam-alignment-pos aln1)
-                (sam-alignment-pos aln2))))))
+    (if (< refid1 refid2)
+      (>= refid1 0)
+      (and (= refid1 refid2)
+           (< (sam-alignment-pos aln1)
+              (sam-alignment-pos aln2))))))
 
 (defconstant +multiple+        #x1
   "Bit value for sam-alignment-flag: template having multiple segments in sequencing.
