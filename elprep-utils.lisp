@@ -222,10 +222,6 @@
             (chromosome-read-refid (make-buffer))
             (chromosome-read-pos (make-buffer))
             (common-read-refid (make-buffer)))
-        ; first merge the unmapped reads
-        (with-open-sam (unmapped-file (merge-pathnames input-path (make-pathname :name (format nil "~a-unmapped" input-prefix) :type input-extension)) :direction :input)
-          (skip-sam-header unmapped-file)
-          (copy-stream unmapped-file out))
         ; then merge the rest of the files
         (loop for sn-form in (sam-header-sq header)
               for chrom = (getf sn-form :SN)
@@ -283,7 +279,11 @@
         (when (not (buffer-emptyp spread-read))
           (write-buffer spread-read out)
           (write-newline out))
-        (copy-stream spread-reads-file out)))))
+        (copy-stream spread-reads-file out))
+        ; merge the unmapped reads
+      (with-open-sam (unmapped-file (merge-pathnames input-path (make-pathname :name (format nil "~a-unmapped" input-prefix) :type input-extension)) :direction :input)
+                     (skip-sam-header unmapped-file)
+                     (copy-stream unmapped-file out)))))
 
 (defun merge-unsorted-files-split-per-chromosome (input-path output input-prefix input-extension header)
   "A function for merging files that were split with elPrep and are unsorted"
