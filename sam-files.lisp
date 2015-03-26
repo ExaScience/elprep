@@ -214,7 +214,8 @@
                                                (list (unique (intern-key/copy tag) record) (scan-string scanner))
                                                (error "Unknown tag ~A in SAM header line ~S." tag scanner)))
                     ("VN" (list (unique :VN record) (scan-string scanner)))
-                    ("SO" (list (unique :SO record) (scan-string scanner)))))
+                    ("SO" (list (unique :SO record) (scan-string scanner)))
+                    ("GO" (list (unique :GO record) (scan-string scanner)))))
           into record finally
           (advance scanner)
           (unless (presentp :VN record)
@@ -590,6 +591,7 @@
           (case tag 
             (:VN (format-sam-string out "VN" value))
             (:SO (format-sam-string out "SO" value))
+            (:GO (format-sam-string out "GO" value))
             (t   (format-sam-header-user-tag out tag value))))
     (write-newline out)))
 
@@ -606,6 +608,7 @@
           (case tag 
             (:VN (sim-format-sam-string out "VN" value))
             (:SO (sim-format-sam-string out "SO" value))
+            (:GO (sim-format-sam-string out "GO" value))
             (t   (sim-format-sam-header-user-tag out tag value))))
     (sim-write-newline out)))
 

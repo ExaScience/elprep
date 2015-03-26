@@ -1,11 +1,16 @@
 (in-package :elprep)
 (in-simple-base-string-syntax)
 
-(defvar *sam-file-format-version* "1.4"
+(defvar *sam-file-format-version* "1.5"
   "The SAM file format version string supported by this library.
    This is entered by default in a @HD line in the header section of a SAM file, unless user code explicitly asks for a different version number.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3.
-   Default is \"1.4\".")
+   Default is \"1.5\".")
+
+(defvar *sam-file-format-date* "3 Mar 2015"
+  "The date of the SAM file format version supported by this library.
+   See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3.
+   Current date is 3 Mar 2015.")
 
 (defstruct sam-header
   "The information stored in the header section of a SAM file. 
@@ -44,14 +49,18 @@
       (documentation 'sam-header-user-tags 'function)
       "Access the sam-header user-defined header lines of type property list.")
 
-(defun sam-header-ensure-hd (hdr &key (vn *sam-file-format-version*) (so :unknown so-p))
+(defun sam-header-ensure-hd (hdr &key (vn *sam-file-format-version*) so go)
   "Ensure an @HD line is present in the given sam-header.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3, Tag @HD."
   (declare (sam-header hdr) #.*optimization*)
   (setf (getf (sam-header-hd hdr) :VN) vn)
-  (when so-p
-    (setf (getf (sam-header-hd hdr) :SO)
-          (string-downcase (string so))))
+  (assert (not (and so go)))
+  (cond (so (setf (getf (sam-header-hd hdr) :SO)
+                  (string-downcase (string so)))
+            (loop while (remf (sam-header-hd hdr) :GO)))
+        (go (setf (getf (sam-header-hd hdr) :GO)
+                  (string-downcase (string go)))
+            (loop while (remf (sam-header-hd hdr) :SO))))
   hdr)
 
 (declaim (inline sam-header-user-tag (setf sam-header-user-tag)))

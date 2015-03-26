@@ -44,7 +44,7 @@ Refer to the documentation of run-pipeline as a starting point.")
 
    #:octet #:uint16 #:int32
 
-   #:*sam-file-format-version*
+   #:*sam-file-format-version* #:*sam-file-format-date*
 
    #:sam-header #:make-sam-header #:sam-header-p
    #:sam-header-hd
