@@ -111,65 +111,81 @@
 
 (define-symbol-macro optional-data-tag "sr:i:1")
 
-(defun split-file-per-chromosome (input output-path output-prefix output-extension)
+(defun split-file-per-chromosome (input output-path output-prefix output-extension &optional (user-factor 100))
   "A function for splitting a sam file into : a file containing all unmapped reads, a file containing all pairs where reads map to different chromosomes, a file per chromosome containing all pairs where the reads map to that chromosome. There are no requirements on the input file for splitting."
   (let ((files (directory input)))
     (multiple-value-bind
         (first-in first-program)
         (open-sam (first files) :direction :input)
       (let ((header (parse-sam-header first-in))
-            (header-file (merge-pathnames output-path (make-pathname :name (format nil "~a-header" output-prefix) :type "dict")))
             (splits-path (merge-pathnames (make-pathname :directory '(:relative "splits")) output-path))
-            (chroms-encountered (make-single-thread-hash-table :test #'buffer= :hash-function #'buffer-hash))
-            (chroms-encountered-minmax (make-single-thread-hash-table :test #'buffer= :hash-function #'buffer-hash))
+            (chroms-encountered (make-single-thread-hash-table :test #'buffer= :hash-function #'buffer-hash)) ; chr -> list of file names
+            (total-ln 0)
+            (largest-ln 0)
+            (interval-factor 1)
+            (interval-length 1)
             (buf-unmapped (make-buffer "*")))
-        ; create a directory for split files
-        (ensure-directories-exist splits-path)
-        ; tag the header as one created with elPrep split
-        (setf (sam-header-user-tag header :|@sr|) (list "co:This file was created using elprep split."))
-        ; fill in a file for unmapped reads
-        (setf (gethash buf-unmapped chroms-encountered)
-              (multiple-value-bind
-                  (file program) ; create a new headerless file
-                  (open-sam (merge-pathnames splits-path (make-pathname :name (format nil "~a-unmapped" output-prefix) :type output-extension)) :direction :output)
-                (format-sam-header file header)
-                (cons file program)))
-        ; fill in a minmax for unmapped reads
-        (setf (gethash buf-unmapped chroms-encountered-minmax) (cons nil (cons 0 0)))
-        (loop for sn-form in (sam-header-sq header)
-              do (assert (not (null sn-form)))
-              (let* ((chrom (getf sn-form :SN))
-                     (buf-chrom (make-buffer chrom)))
-                (setf (gethash buf-chrom chroms-encountered)
-                      (multiple-value-bind
-                          (file program)
-                          (open-sam (merge-pathnames splits-path (make-pathname :name (format nil "~a-~a" output-prefix chrom) :type output-extension)) :direction :output)
-                        (format-sam-header file header)
-                        (cons file program)))
-                   ; minmax table
-                (setf (gethash buf-chrom chroms-encountered-minmax) (cons sn-form (cons nil nil)))))
+        (flet ((interval-index (index length) (floor index length)))
+          ; create a directory for split files
+          (ensure-directories-exist splits-path)
+          ; tag the header as one created with elPrep split
+          (setf (sam-header-user-tag header :|@sr|) (list "co:This file was created using elprep split."))
+          ; fill in a file for unmapped reads
+          (setf (gethash buf-unmapped chroms-encountered)
+                (multiple-value-bind
+                    (file program) ; create a new headerless file
+                    (open-sam (merge-pathnames splits-path (make-pathname :name (format nil "~a-unmapped" output-prefix) :type output-extension)) :direction :output)
+                  (format-sam-header file header)
+                  (list (cons file program))))
+          ; fill in the total length + biggest length
+          (loop for sn-form in (sam-header-sq header)
+                do (assert (not (null sn-form)))
+                (let ((ln (getf sn-form :LN)))
+                  (setf total-ln (+ total-ln ln))
+                  (setf largest-ln (max largest-ln ln))))
+          (setf interval-factor (/ (* largest-ln user-factor) total-ln))
+          (setf interval-length (floor largest-ln interval-factor))
+          ; create split files for each chromosome
+          (loop for sn-form in (sam-header-sq header)
+                do (assert (not (null sn-form)))
+                (let* ((chrom (getf sn-form :SN))
+                       (buf-chrom (make-buffer chrom))
+                       (ln (getf sn-form :LN))
+                       (nr-of-intervals (ceiling ln interval-length)))
+                  (setf (gethash buf-chrom chroms-encountered)
+                        (loop for i from 0 below nr-of-intervals
+                              collect
+                              (multiple-value-bind
+                                  (file program)
+                                  (open-sam (merge-pathnames splits-path (make-pathname :name (format nil "~a-~a-~a" output-prefix chrom i) :type output-extension)) :direction :output)
+                                ; add tag for interval start and end position
+                                (setf (sam-header-user-tag header :|@mm|) 
+                                      (let ((start (* i interval-length)))
+                                        (list (format nil "mi:~a" start) (format nil "ma:~a" (+ start interval-length)))))   
+                                (format-sam-header file header)
+                                (remf (sam-header-user-tags header) :|@mm|)
+                                (cons file program))))))
         (unwind-protect
             (with-open-sam (spread-reads-stream (merge-pathnames output-path (make-pathname :name (format nil "~a-spread" output-prefix) :type output-extension)) :direction :output)
               (format-sam-header spread-reads-stream header)
               (let ((buf-= (make-buffer "=")))
                 (let ((rname (make-buffer))
                       (rnext (make-buffer))
+                      (pnext (make-buffer))
                       (aln-string (make-buffer))
                       (pos (make-buffer)))
                   (flet ((process-file (in)
                            (loop do (read-line-into-buffer in aln-string)
                                  until (buffer-emptyp aln-string)
-                                 do (progn (buffer-partition aln-string #\Tab 2 rname 3 pos 6 rnext)
-                                      (let ((file (car (gethash rname chroms-encountered))))
-                                        (cond ((or (buffer= buf-= rnext) (buffer= buf-unmapped rname) (buffer= rname rnext))
+                                 do (progn (buffer-partition aln-string #\Tab 2 rname 3 pos 6 rnext 7 pnext)
+                                      (let* ((aln-pos (buffer-parse-integer pos))
+                                             (file-index (interval-index aln-pos interval-length))
+                                             (file (car (nth file-index (gethash rname chroms-encountered)))))
+                                        (cond ((or (and (or (buffer= buf-= rnext) (buffer= rname rnext)) ; read and mate map to the same chromosome; 
+                                                        (= file-index (interval-index (buffer-parse-integer pnext) interval-length))) ;  read and mate map to the same interval
+                                                   (buffer= buf-unmapped rname)) ; read unmapped                                          
                                                (write-buffer aln-string file)
-                                               (write-newline file)
-                                                 ; fill in minmax info
-                                               (let ((ppos (buffer-parse-integer pos))
-                                                     (minmax (cdr (gethash rname chroms-encountered-minmax))))
-                                                 (cond ((not (car minmax)) (setf (car minmax) ppos) (setf (cdr minmax) ppos))
-                                                       ((< ppos (car minmax)) (setf (car minmax) ppos))
-                                                       ((> ppos (cdr minmax)) (setf (cdr minmax) ppos)))))
+                                               (write-newline file))
                                               (t ; the read is part of a pair mapping to two different chromosomes
                                                (write-buffer aln-string spread-reads-stream)
                                                (write-newline spread-reads-stream)
@@ -180,6 +196,7 @@
                                                (write-newline file))))))
                            (reinitialize-buffer rname)
                            (reinitialize-buffer rnext)
+                           (reinitialize-buffer pnext)
                            (reinitialize-buffer aln-string)
                            (reinitialize-buffer pos)))
                     (process-file first-in)
@@ -188,15 +205,9 @@
                           do (with-open-sam (in in-file :direction :input)
                                (skip-sam-header in)
                                (process-file in)))))))
-          (loop for (file . program) being each hash-value of chroms-encountered
-                do (close-sam file program))
-          ; write out min/max positions in new header
-          (loop for (sn-form . minmax) being each hash-value of chroms-encountered-minmax
-                do (when sn-form
-                     (setf (cdr (last sn-form)) (list :|mn| (format nil "~D" (car minmax)) :|mx| (format nil "~D" (cdr minmax))))))
-          ; write the header file for the split files
-          (with-open-sam (header-out header-file :direction :output)
-            (format-sam-header header-out header)))))))
+          (loop for split-files being each hash-value of chroms-encountered
+                do (loop for (file . program) in split-files
+                         do (close-sam file program)))))))))
 
 (defun merge-sorted-files-split-per-chromosome (input-path output input-prefix input-extension header)
   "A function for merging files that were split with elPrep and sorted in coordinate order."

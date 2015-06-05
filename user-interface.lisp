@@ -293,13 +293,13 @@
                               :filters ,(append filters filter-optional-header-info) :gc-on ,gc-on :timed ,timed :split-file ,split-file :header ,header))))
                 (apply #'run-best-practices-pipeline conversion-parameters)))))))
 
-(defvar *split-program-help* "split [sam-file | /path/to/input/] /path/to/output/ ~% [--output-prefix name] ~% [--output-type [sam | bam | cram]] ~% [--nr-of-threads nr] ~% [--reference-t fai-file] ~% [--reference-T fasta-file] ~%"
+(defvar *split-program-help* "split [sam-file | /path/to/input/] /path/to/output/ ~% [--output-prefix name] ~% [--output-type [sam | bam | cram]] ~% [--split-factor nr] ~% [--nr-of-threads nr] ~% [--reference-t fai-file] ~% [--reference-T fasta-file] ~%"
   "Help string for the elprep-split-script binary.")
 
 (defun elprep-split-script ()
   "Command line script for elprep split script."
   (let ((cmd-line (rest (rest (command-line-arguments)))) ; skip elprep split part of the command
-        (input nil) (output-path nil) (output-prefix nil) (output-type :sam) (output-extension nil) (nr-of-threads 1) (reference-fai nil) (reference-fasta nil))
+        (input nil) (output-path nil) (output-prefix nil) (output-type :sam) (output-extension nil) (split-factor 1) (nr-of-threads 1) (reference-fai nil) (reference-fasta nil))
     (loop with entry while cmd-line do (setq entry (pop cmd-line))
           if (string= entry "-h") do
           (format t *split-program-help*)
@@ -322,6 +322,8 @@
                      (t 
                       (pop cmd-line) 
                       (setf output-prefix prefix))))
+          else if (string= entry "--split-factor")
+          do (setf split-factor (parse-integer (pop cmd-line)))
           else if (string= entry "--nr-of-threads")
           do (setf nr-of-threads (parse-integer (pop cmd-line)))
           else if (string= entry "--reference-t")
@@ -361,6 +363,7 @@
                    (format s "~a split ~a ~a " (first (command-line-arguments)) (first io-parameters) (second io-parameters))
                    (format s "--output-prefix ~a " output-prefix)
                    (format s "--output-type ~(~a~) " output-type)
+                   (format s "--split-factor ~a " split-factor)
                    (when reference-fai
                      (format s "--reference-t ~a" reference-fai))
                    (when reference-fasta
@@ -369,7 +372,7 @@
           (setq *number-of-threads* nr-of-threads)
           (ensure-directories-exist output-path)
           (let ((working-directory (get-working-directory)))
-            (split-file-per-chromosome (merge-pathnames input working-directory) (merge-pathnames output-path working-directory) output-prefix output-extension)))))
+            (split-file-per-chromosome (merge-pathnames input working-directory) (merge-pathnames output-path working-directory) output-prefix output-extension split-factor)))))
 
 (defvar *merge-program-help* "merge /path/to/input/ sam-output-file ~% [--nr-of-threads nr] ~% [--reference-t fai-file] ~% [--reference-T fasta-file] ~%"
   "Help string for the elprep-merge-script binary.")
