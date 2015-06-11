@@ -390,7 +390,7 @@
                            :pg (nreverse pg)
                            :co (nreverse co)
                            :user-tags (loop for cons on user-tags by #'cddr
-                                            do (setf (cdr cons) (nreverse (cdr cons)))
+                                            do (setf (cadr cons) (nreverse (cadr cons)))
                                             finally (return user-tags)))))))
 
 (declaim (inline skip-sam-header))
