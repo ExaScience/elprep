@@ -310,6 +310,21 @@
                     "ID tag missing in @PG line when reading ~S." scanner))
           (return record))))
 
+(defun parse-sam-user-tag (scanner)
+  "Parse a user tag line in a SAM file.
+   See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3."
+  (declare (scanner scanner) #.*optimization*)
+  (let ((tag (make-array 2 :element-type 'base-char)))
+    (declare (simple-base-string tag) (dynamic-extent tag))
+    (loop until (char= (peekc scanner) #\EOT)
+          nconc (progn
+                  (scanc scanner #\Tab)
+                  (parse-sam-tag scanner tag)
+                  (list (unique (intern-key/copy tag) record) (scan-string scanner)))
+          into record finally
+          (advance scanner)
+          (return record))))
+
 (defun parse-sam-comment (scanner)
   "Parse an @CO line in a SAM file.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3."
@@ -359,7 +374,7 @@
           (reinitialize-scanner scanner (read-line stream))
           (parse-sam-header-code scanner code)
           (string-case (code :default (if (sam-header-user-tag-p code)
-                                        (push (parse-sam-comment scanner) (getf user-tags (intern-key/copy code)))
+                                        (push (parse-sam-user-tag scanner) (getf user-tags (intern-key/copy code)))
                                         (error "Unknown SAM record type code ~A in header line ~S." code scanner)))
             ("@HD" (progn
                      (assert (null hd))
@@ -776,10 +791,10 @@
   (declare (stream out) (list tags) #.*optimization*)
   (loop for (code list) of-type (symbol list) on tags by #'cddr
         for code-string = (symbol-name code) do
-        (loop for string in list do
+        (loop for plist of-type list in list do
               (writestr out code-string)
-              (write-tab out)
-              (writestr out string)
+              (loop for (tag value) on plist by #'cddr do
+                    (format-sam-string out (symbol-name tag) value))
               (write-newline out))))
 
 (defun sim-format-sam-user-tags (out tags)
@@ -788,10 +803,10 @@
   (declare (sim-stream out) (list tags) #.*optimization*)
   (loop for (code list) of-type (symbol list) on tags by #'cddr
         for code-string = (symbol-name code) do
-        (loop for string in list do
+        (loop for plist of-type list in list do
               (sim-writestr out code-string)
-              (sim-write-tab out)
-              (sim-writestr out string)
+              (loop for (tag value) on plist by #'cddr do
+                    (sim-format-sam-string out (symbol-name tag) value))
               (sim-write-newline out))))
 
 (defun format-sam-header (out header)
