@@ -87,12 +87,14 @@
     (run-pipeline (merge-pathnames sam-file working-directory) sam)
     (let ((pos (sam-alignment-pos (first (sam-alignments sam))))
           (rname (sam-alignment-rname (first (sam-alignments sam))))
+          (qname (sam-alignment-qname (first (sam-alignments sam))))
           (ctr 1))
       (loop for aln in (rest (sam-alignments sam))
             do (let ((new-pos (sam-alignment-pos aln))
-                     (new-rname (sam-alignment-rname aln)))
+                     (new-rname (sam-alignment-rname aln))
+                     (new-qname (sam-alignment-qname aln)))
                  (cond ((and (< new-pos pos) (string= rname new-rname ))
-                        (format t "Not sorted: previous pos: ~s,~s current pos: ~s,~s. ~s reads were in the right order. ~%" rname pos new-rname new-pos ctr) 
+                        (format t "Not sorted: previous pos: ~s,~s,~s current pos: ~s,~s,~s. ~s reads were in the right order. ~%" qname rname pos new-qname new-rname new-pos ctr) 
                         (return nil))
                        (t 
                         (incf ctr)
@@ -129,7 +131,8 @@
           ; create a directory for split files
           (ensure-directories-exist splits-path)
           ; tag the header as one created with elPrep split
-          (setf (sam-header-user-tag header :|@sr|) (list "co:This file was created using elprep split."))
+          ;(setf (sam-header-user-tag header :|@sr|) (list "co:This file was created using elprep split."))
+          (setf (sam-header-user-tag header :|@sr|) (list (list :|co| "This file was created using elprep split.")))
           ; fill in a file for unmapped reads
           (setf (gethash buf-unmapped chroms-encountered)
                 (multiple-value-bind
@@ -159,9 +162,10 @@
                                   (file program)
                                   (open-sam (merge-pathnames splits-path (make-pathname :name (format nil "~a-~a-~a" output-prefix chrom i) :type output-extension)) :direction :output)
                                 ; add tag for interval start and end position
-                                (setf (sam-header-user-tag header :|@mm|) 
-                                      (let ((start (* i interval-length)))
-                                        (list (format nil "mi:~a" start) (format nil "ma:~a" (+ start interval-length)))))   
+				(let ((start (* i interval-length)))
+                                  (setf (sam-header-user-tag header :|@mm|)
+                                        (list (list :|mi| (format nil "~D"  start)
+                                                    :|ma| (format nil "~D" (+ start interval-length)))))) 
                                 (format-sam-header file header)
                                 (remf (sam-header-user-tags header) :|@mm|)
                                 (cons file program))))))
@@ -183,7 +187,7 @@
                                              (file (car (nth file-index (gethash rname chroms-encountered)))))
                                         (cond ((or (and (or (buffer= buf-= rnext) (buffer= rname rnext)) ; read and mate map to the same chromosome; 
                                                         (= file-index (interval-index (buffer-parse-integer pnext) interval-length))) ;  read and mate map to the same interval
-                                                   (buffer= buf-unmapped rname)) ; read unmapped                                          
+                                                   (buffer= buf-unmapped rname)) ; read unmapped
                                                (write-buffer aln-string file)
                                                (write-newline file))
                                               (t ; the read is part of a pair mapping to two different chromosomes
@@ -221,102 +225,117 @@
   ; is encountered on the refid position.
   ; when a file is empty, close it and remove it from the list of files to merge
   ; loop for identifying and opening the files to merge
-  (with-open-sam (spread-reads-file (merge-pathnames input-path (make-pathname :name (format nil "~a-spread" input-prefix) :type input-extension)) :direction :input)
-    (skip-sam-header spread-reads-file)
+  ; extract min/max from the header
+  (let* ((minmax (first (sam-header-user-tag header :|@mm|)))
+         (interval-length (- (parse-integer (getf minmax :|ma|)) (parse-integer (getf minmax :|mi|)))))
+    ; remove optional user tags
+    (remf (sam-header-user-tags header) :|@sr|)
+    (remf (sam-header-user-tags header) :|@mm|)
+    ; merge the files
+    (with-open-sam (spread-reads-file (merge-pathnames input-path (make-pathname :name (format nil "~a-spread" input-prefix) :type input-extension)) :direction :input)
+      (skip-sam-header spread-reads-file)
     ; merge loop
-    (with-open-sam (out output :direction :output)
-      (format-sam-header out header)
-      (let ((spread-read (make-buffer)) ; for storing entries from the spread-read file
-            (spread-read-refid (make-buffer))
-            (spread-read-pos (make-buffer))
-            (chromosome-read (make-buffer)) ; for storing reads from the chromsome file we are currently merging
-            (chromosome-read-refid (make-buffer))
-            (chromosome-read-pos (make-buffer))
-            (common-read-refid (make-buffer)))
-        ; then merge the rest of the files
-        (loop for sn-form in (sam-header-sq header)
-              for chrom = (getf sn-form :SN)
-              for file-name = (merge-pathnames input-path (make-pathname :name (format nil "~a-~a" input-prefix chrom) :type input-extension))
-              when (probe-file file-name) do
-              (reinitialize-buffer common-read-refid)
-              (buffer-extend common-read-refid chrom)
-              (block chromosome-loop
-                (with-open-sam (file file-name :direction :input)
-                  (skip-sam-header file)
-                  (read-line-into-buffer file chromosome-read)
-                  (when (buffer-emptyp chromosome-read) (return-from chromosome-loop)) 
-                  (buffer-partition chromosome-read #\Tab 2 chromosome-read-refid 3 chromosome-read-pos)
-                  (assert (buffer= chromosome-read-refid common-read-refid))
-                  (when (buffer-emptyp spread-read) ; if the buffer is not empty, the current entry is potentially an entry for this file and it should not be overwritten
-                    (read-line-into-buffer spread-reads-file spread-read)
-                    (buffer-partition spread-read #\Tab 2 spread-read-refid 3 spread-read-pos))
-                  (unless (buffer-emptyp spread-read)
-                    (when (buffer= spread-read-refid chromosome-read-refid)
-                      (let ((pos1 (buffer-parse-integer spread-read-pos))
-                            (pos2 (buffer-parse-integer chromosome-read-pos)))
-                        (loop do (cond ((< pos1 pos2)
-                                        (write-buffer spread-read out)
-                                        (write-newline out)
-                                        (read-line-into-buffer spread-reads-file spread-read)
-                                        (cond ((buffer-emptyp spread-read)
-                                               (loop-finish))
-                                              (t (buffer-partition spread-read #\Tab 2 spread-read-refid 3 spread-read-pos)
-                                                 (setq pos1 (buffer-parse-integer spread-read-pos)))))
-                                       (t (write-buffer chromosome-read out)
-                                          (write-newline out)
-                                          (read-line-into-buffer file chromosome-read)
-                                          (cond ((buffer-emptyp chromosome-read)
-                                                 (loop-finish))
-                                                (t (buffer-partition chromosome-read #\Tab 3 chromosome-read-pos)
-                                                   (setq pos2 (buffer-parse-integer chromosome-read-pos))))))
-                              while (buffer= chromosome-read-refid spread-read-refid)))))
-                  ; copy remaining reads in the file, if any
-                  (when (not (buffer-emptyp chromosome-read))
-                    (write-buffer chromosome-read out)
-                    (write-newline out))
-                  (copy-stream file out)))
-              ; copy remaining reads in the spread file, if any, that are one the same chromosome as the file was
-              (when (not (buffer-emptyp spread-read))
-                (loop while (buffer= spread-read-refid common-read-refid)
-                      do
-                      (write-buffer spread-read out)
-                      (write-newline out)
-                      (read-line-into-buffer spread-reads-file spread-read)
-                      (when (buffer-emptyp spread-read) (return))
-                      (buffer-partition spread-read #\Tab 2 spread-read-refid)
-                      finally
-                      (buffer-partition spread-read #\Tab 3 spread-read-pos))))
-        ; merge the remaining reads in the spread-reads file
-        (when (not (buffer-emptyp spread-read))
-          (write-buffer spread-read out)
-          (write-newline out))
-        (copy-stream spread-reads-file out))
+      (with-open-sam (out output :direction :output)
+        (format-sam-header out header)
+        (let ((spread-read (make-buffer)) ; for storing entries from the spread-read file
+              (spread-read-refid (make-buffer))
+              (spread-read-pos (make-buffer))
+              (chromosome-read (make-buffer)) ; for storing reads from the chromsome file we are currently merging
+              (chromosome-read-refid (make-buffer))
+              (chromosome-read-pos (make-buffer))
+              (common-read-refid (make-buffer)))
+          ; then merge the rest of the files
+          (loop for sn-form in (sam-header-sq header)
+                for chrom = (getf sn-form :SN)
+                for ln = (getf sn-form :LN)
+                for nr-of-intervals = (ceiling ln interval-length)
+                do (loop for index from 0 below nr-of-intervals
+                         for file-name = (merge-pathnames input-path (make-pathname :name (format nil "~a-~a-~a" input-prefix chrom index) :type input-extension))
+                         when (probe-file file-name) do
+                         (reinitialize-buffer common-read-refid)
+                         (buffer-extend common-read-refid chrom)
+                         (block chromosome-loop
+                           (with-open-sam (file file-name :direction :input)
+                             (skip-sam-header file)
+                             (read-line-into-buffer file chromosome-read)
+                             (when (buffer-emptyp chromosome-read) (return-from chromosome-loop)) 
+                             (buffer-partition chromosome-read #\Tab 2 chromosome-read-refid 3 chromosome-read-pos)
+                             (assert (buffer= chromosome-read-refid common-read-refid))
+                             (when (buffer-emptyp spread-read) ; if the buffer is not empty, the current entry is potentially an entry for this file and it should not be overwritten
+                               (read-line-into-buffer spread-reads-file spread-read)
+                               (buffer-partition spread-read #\Tab 2 spread-read-refid 3 spread-read-pos))
+                             (unless (buffer-emptyp spread-read)
+                               (when (buffer= spread-read-refid chromosome-read-refid)
+                                 (let ((pos1 (buffer-parse-integer spread-read-pos))
+                                       (pos2 (buffer-parse-integer chromosome-read-pos)))
+                                   (loop do (cond ((< pos1 pos2)
+                                                   (write-buffer spread-read out)
+                                                   (write-newline out)
+                                                   (read-line-into-buffer spread-reads-file spread-read)
+                                                   (cond ((buffer-emptyp spread-read)
+                                                          (loop-finish))
+                                                         (t (buffer-partition spread-read #\Tab 2 spread-read-refid 3 spread-read-pos)
+                                                            (setq pos1 (buffer-parse-integer spread-read-pos)))))
+                                                  (t (write-buffer chromosome-read out)
+                                                     (write-newline out)
+                                                     (read-line-into-buffer file chromosome-read)
+                                                     (cond ((buffer-emptyp chromosome-read)
+                                                            (loop-finish))
+                                                           (t (buffer-partition chromosome-read #\Tab 3 chromosome-read-pos)
+                                                              (setq pos2 (buffer-parse-integer chromosome-read-pos))))))
+                                         while (buffer= chromosome-read-refid spread-read-refid)))))
+                             ; copy remaining reads in the file, if any
+                             (when (not (buffer-emptyp chromosome-read))
+                               (write-buffer chromosome-read out)
+                               (write-newline out))
+                             (copy-stream file out))))
+                ; copy remaining reads in the spread file, if any, that are one the same chromosome as the file was
+                (when (not (buffer-emptyp spread-read))
+                  (loop while (buffer= spread-read-refid common-read-refid)
+                        do
+                        (write-buffer spread-read out)
+                        (write-newline out)
+                        (read-line-into-buffer spread-reads-file spread-read)
+                        (when (buffer-emptyp spread-read) (return))
+                        (buffer-partition spread-read #\Tab 2 spread-read-refid)
+                        finally
+                        (buffer-partition spread-read #\Tab 3 spread-read-pos))))
+          ; merge the remaining reads in the spread-reads file
+          (when (not (buffer-emptyp spread-read))
+            (write-buffer spread-read out)
+            (write-newline out))
+          (copy-stream spread-reads-file out))
         ; merge the unmapped reads
-      (with-open-sam (unmapped-file (merge-pathnames input-path (make-pathname :name (format nil "~a-unmapped" input-prefix) :type input-extension)) :direction :input)
-                     (skip-sam-header unmapped-file)
-                     (copy-stream unmapped-file out)))))
+        (with-open-sam (unmapped-file (merge-pathnames input-path (make-pathname :name (format nil "~a-unmapped" input-prefix) :type input-extension)) :direction :input)
+          (skip-sam-header unmapped-file)
+          (copy-stream unmapped-file out))))))
 
 (defun merge-unsorted-files-split-per-chromosome (input-path output input-prefix input-extension header)
   "A function for merging files that were split with elPrep and are unsorted"
-  ; merge loop
-  (with-open-sam (out output :direction :output)
+  (let* ((minmax (first (sam-header-user-tag header :|@mm|)))
+         (interval-length (- (parse-integer (getf minmax :|ma|)) (parse-integer (getf minmax :|mi|)))))
+    ; merge loop
+    (with-open-sam (out output :direction :output)
       (format-sam-header out header)
       ; first merge the unmapped reads
       (with-open-sam (unmapped-file (merge-pathnames input-path (make-pathname :name (format nil "~a-unmapped" input-prefix) :type input-extension)) :direction :input)
-                     (skip-sam-header unmapped-file)
-                     (copy-stream unmapped-file out))
+        (skip-sam-header unmapped-file)
+        (copy-stream unmapped-file out))
       ; merge spread reads
       (with-open-sam (spread-reads-file (merge-pathnames input-path (make-pathname :name (format nil "~a-spread" input-prefix) :type input-extension)) :direction :input)
-                     (skip-sam-header spread-reads-file)
-                     (copy-stream spread-reads-file out))
-      ; merge the rest of the files
+        (skip-sam-header spread-reads-file)
+        (copy-stream spread-reads-file out))
+      ; merge the rest of the files  
       (loop for sn-form in (sam-header-sq header)
             for chrom = (getf sn-form :SN)
-            for file-name = (merge-pathnames input-path (make-pathname :name (format nil "~a-~a" input-prefix chrom) :type input-extension))
-            when (probe-file file-name) do
-            (with-open-sam (file file-name :direction :input)
-                           (skip-sam-header file)
-                           (copy-stream file out)))))
+            for ln = (getf sn-form :LN)
+            for nr-of-intervals = (ceiling ln interval-length)
+            do (loop for index from 0 below nr-of-intervals 
+                     for file-name = (merge-pathnames input-path (make-pathname :name (format nil "~a-~a-~a" input-prefix chrom index) :type input-extension))
+                     when (probe-file file-name) do
+                     (with-open-sam (file file-name :direction :input)
+                       (skip-sam-header file)
+                       (copy-stream file out)))))))
 
 (declaim (inline parse-sam-alignment-from-stream))
 

@@ -23,8 +23,9 @@ def elprep_sfm ():
   os.mkdir(result_dir)
   # split command
   nr_of_threads_opt = elprep_io_wrapper.cmd_option("--nr-of-threads", sys.argv)
-  elprep_io_wrapper.cmd_wrap_input(["elprep", "split"], file_in, split_dir, ["--output-prefix", output_prefix, "--output-type", "sam"] + nr_of_threads_opt)
-  header_file = os.path.join(split_dir, output_prefix + "-header.dict")
+  split_factor_opt = elprep_io_wrapper.cmd_option("--split-factor", sys.argv)
+  cmd_opts = elprep_io_wrapper.remove_cmd_option(sys.argv[3:], '--split-factor')
+  elprep_io_wrapper.cmd_wrap_input(["elprep", "split"], file_in, split_dir, ["--output-prefix", output_prefix, "--output-type", "sam"] + nr_of_threads_opt + split_factor_opt)
   spread_file = os.path.join(split_dir, output_prefix + "-spread.sam")
   splits_path = os.path.join(split_dir, "splits" + os.sep)
   # run filter command for split files
@@ -34,13 +35,12 @@ def elprep_sfm ():
       if (ext == ".sam" or ext == ".bam" or ext == ".cram"):
         ffile = os.path.join(root, file)
         processed_file = os.path.join(result_dir, os.path.basename(file))
-        elprep_io_wrapper.cmd_wrap_io(["elprep"], ffile, processed_file, sys.argv[3:] + ["--split-file", "--header", header_file])
+        elprep_io_wrapper.cmd_wrap_io(["elprep"], ffile, processed_file, cmd_opts + ["--split-file"])
         os.remove(ffile)
-    os.remove(header_file)
     os.rmdir(splits_path)
   # command for spread file
   spread_out_file = os.path.join(result_dir, output_prefix + "-spread.sam")
-  elprep_io_wrapper.cmd_wrap_io(["elprep"], spread_file, spread_out_file , sys.argv[3:])
+  elprep_io_wrapper.cmd_wrap_io(["elprep"], spread_file, spread_out_file , cmd_opts)
   os.remove(spread_file)
   os.rmdir(split_dir)
   # merge command

@@ -69,7 +69,7 @@
 (defvar *program-name* "elPrep"
   "Name of the elprep binary.")
 
-(defvar *program-version* "2.3"
+(defvar *program-version* "2.31"
   "Version of the elprep binary.")
 
 (defvar *program-url* "http://github.com/exascience/elprep"
@@ -206,8 +206,8 @@
           else if (string= entry "--rename-chromosomes")
           do (setf rename-chromosomes-filter (list #'rename-chromosomes))
           else if (string= entry "--split-file")
-          do (progn (setf split-file t)
-               (setf filter-optional-header-info (list #'filter-optional-header-info)))
+          do (setf split-file t)
+          ;     (setf filter-optional-header-info (list #'filter-optional-header-info)))
           else if (string= entry "--header")
           do (let ((header-file (first cmd-line)))
                (cond ((or (not header-file) (search "--" cmd-line)) ; no file given
