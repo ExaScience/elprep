@@ -217,6 +217,24 @@
            (< (sam-alignment-pos aln1)
               (sam-alignment-pos aln2))))))
 
+(defun coordinate/qname< (aln1 aln2)
+  "Compare two alignments according to their coordinate and queryname.
+   See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3, Tag @HD, SO."
+  (declare (sam-alignment aln1 aln2) #.*optimization*)
+  (let ((refid1 (check-refid-type (sam-alignment-refid aln1)))
+        (refid2 (check-refid-type (sam-alignment-refid aln2))))
+    (declare (int32 refid1 refid2))
+    (if (< refid1 refid2)
+      (>= refid1 0)
+      (and (= refid1 refid2)
+           (let ((pos1 (sam-alignment-pos aln1))
+                 (pos2 (sam-alignment-pos aln2)))
+             (declare (int32 pos1 pos2))
+             (or (< pos1 pos2)
+                 (and (= pos1 pos2)
+                      (string< (sam-alignment-qname aln1)
+                               (sam-alignment-qname aln2)))))))))
+
 (defconstant +multiple+        #x1
   "Bit value for sam-alignment-flag: template having multiple segments in sequencing.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.2.")
