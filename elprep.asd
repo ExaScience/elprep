@@ -20,7 +20,7 @@ met:
                (:file "lisp-utils" :depends-on ("elprep-package"))
                (:file "io-utils" :depends-on ("lisp-utils"))
                (:file "buffer" :depends-on ("lisp-utils" "io-utils"))
-               (:file "sam-types" :depends-on ("lisp-utils"))
+               (:file "sam-types" :depends-on ("lisp-utils" "buffer"))
                (:file "sam-files" :depends-on ("io-utils" "sam-types"))
 	       (:file "simple-trees" :depends-on ("lisp-utils"))
                (:file "filter-pipeline" :depends-on ("sam-files" "simple-trees"))

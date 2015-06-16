@@ -298,8 +298,9 @@
                         (buffer-extend target-buf chunk start lo))))))))))
   (values))
 
-(defun buffer-string (buf)
+(defun buffer-string (buf &optional result)
   "Return a string representation of the active contents of a buffer.
+   The optional argument result can be passed a preconstructed simple-base-string into which the result is stored.
    Use this only for debugging. When writing to a stream, use write-buffer instead."
   (declare (buffer buf) #.*optimization*)
   (let ((pos (buffer-pos buf))
@@ -307,8 +308,8 @@
     (declare (fixnum pos) (simple-vector str))
     (multiple-value-bind (hi lo) (floor pos +buffer-chunk-size+)
       (declare (fixnum hi lo))
-      (let ((result (make-array pos :element-type 'base-char
-                                #+lispworks :single-thread #+lispworks t))
+      (let ((result (or result (make-array pos :element-type 'base-char
+                                           #+lispworks :single-thread #+lispworks t)))
             (target -1))
         (declare (simple-base-string result) (fixnum target))
         (loop for i of-type fixnum below hi

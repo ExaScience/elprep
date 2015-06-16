@@ -90,36 +90,41 @@
       (set-reference-flag #\X))
     (cons clipped reference)))
 
-(declaim (notinline compute-unclipped-position))
+(declaim (notinline %compute-unclipped-position))
+
+(defun %compute-unclipped-position (flag pos cigar)
+  "Compute unclipped position of a sam-alignment, based on its FLAG, POS, and CIGAR string."
+  (declare (uint16 flag) (int32 pos) (simple-vector cigar) #.*fixnum-optimization*)
+  (if (= 0 (length cigar)) pos
+    (let* ((tables (load-time-value (make-unclipped-aux-tables) t))
+           (clipped-table (car tables))
+           (reference-table (cdr tables)))
+      (declare (cons tables) ((simple-array octet) clipped-table reference-table))
+      (the int32
+           (if (/= (logand flag +reversed+) )
+             (1- (+ pos (loop for i of-type fixnum = (the fixnum (1- (length cigar))) then (the fixnum (1- i))
+                              for (key . value) of-type (base-char . fixnum) = (svref cigar i)
+                              for p of-type fixnum = (cigar-aux-pos key)
+                              for c of-type fixnum = (aref clipped-table p)
+                              for r of-type fixnum = (aref reference-table p)
+                              for clipped of-type fixnum = c then (the fixnum (* c clipped))
+                              sum (the fixnum (* (logior r clipped) value)) fixnum
+                              until (= i 0))))
+             (- pos (loop for i of-type fixnum below (length cigar)
+                          for (key . value) of-type (base-char . fixnum) = (svref cigar i)
+                          for p of-type fixnum = (cigar-aux-pos key)
+                          until (= 0 (aref clipped-table p))
+                          sum value fixnum)))))))
+
+(declaim (inline compute-unclipped-position))
 
 (defun compute-unclipped-position (aln)
-  "Compute unclipped position of a sam-alignment, based on its POS and CIGAR string."
   (declare (sam-alignment aln) #.*fixnum-optimization*)
-  (let ((cigar (scan-cigar-string 'vector (sam-alignment-cigar aln))))
-    (declare (simple-vector cigar))
-    (if (= 0 (length cigar))
-      (sam-alignment-pos aln)
-      (let* ((tables (load-time-value (make-unclipped-aux-tables) t))
-             (clipped-table (car tables))
-             (reference-table (cdr tables)))
-        (declare (cons tables) ((simple-array octet) clipped-table reference-table))
-        (the int32
-             (if (sam-alignment-reversed-p aln)
-               (1- (+ (sam-alignment-pos aln)
-                      (loop for i of-type fixnum = (the fixnum (1- (length cigar))) then (the fixnum (1- i))
-                            for (key . value) of-type (base-char . fixnum) = (svref cigar i)
-                            for p of-type fixnum = (cigar-aux-pos key)
-                            for c of-type fixnum = (aref clipped-table p)
-                            for r of-type fixnum = (aref reference-table p)
-                            for clipped of-type fixnum = c then (the fixnum (* c clipped))
-                            sum (the fixnum (* (logior r clipped) value)) fixnum
-                            until (= i 0))))
-               (- (sam-alignment-pos aln)
-                  (loop for i of-type fixnum below (length cigar)
-                        for (key . value) of-type (base-char . fixnum) = (svref cigar i)
-                        for p of-type fixnum = (cigar-aux-pos key)
-                        until (= 0 (aref clipped-table p))
-                   sum value fixnum))))))))
+  (let ((flag  (sam-alignment-flag aln))
+        (pos   (sam-alignment-pos aln))
+        (cigar (scan-cigar-string 'vector (sam-alignment-cigar aln))))
+    (declare (uint16 flag) (int32 pos) (simple-vector cigar))
+    (%compute-unclipped-position flag pos cigar)))
 
 (declaim (inline sam-alignment-adapted-pos (setf sam-alignment-adapted-pos)
                  sam-alignment-adapted-score (setf sam-alignment-adapted-score)))

@@ -527,3 +527,44 @@
     (list   `(fast-scan-cigar-string-to-list ,cigar))
     (vector `(fast-scan-cigar-string-to-vector ,cigar))
     (t form)))
+
+(declaim (inline fast-buffer-scan-cigar-string-to-list
+                 fast-buffer-scan-cigar-strong-to-vector))
+
+(defun fast-buffer-scan-cigar-string-to-list (cigar)
+  (declare (buffer cigar) #.*optimization*)
+  (let ((cigar-string (make-array (buffer-pos cigar) :element-type 'base-char)))
+    (declare (simple-base-string cigar-string) (dynamic-extent cigar-string))
+    (buffer-string cigar cigar-string)
+    (or (gethash cigar-string (the hash-table *cigar-list-cache*))
+        (let ((cigar-string (make-array (length cigar-string) :element-type 'base-char
+                                        :initial-contents cigar-string
+                                        #+lispworks :single-thread #+lispworks t)))
+          (slow-scan-cigar-string-to-list cigar-string)))))
+
+(defun fast-buffer-scan-cigar-string-to-vector (cigar)
+  (declare (buffer cigar) #.*optimization*)
+  (let ((cigar-string (make-array (buffer-pos cigar) :element-type 'base-char)))
+    (declare (simple-base-string cigar-string) (dynamic-extent cigar-string))
+    (buffer-string cigar cigar-string)
+    (or (gethash cigar-string (the hash-table *cigar-vector-cache*))
+        (let ((cigar-string (make-array (length cigar-string) :element-type 'base-char
+                                        :initial-contents cigar-string
+                                        #+lispworks :single-thread #+lispworks t)))
+          (slow-scan-cigar-string-to-vector cigar-string)))))
+
+(declaim (inline buffer-scan-cigar-string))
+
+(defun buffer-scan-cigar-string (type cigar)
+  "Convert a cigar string stored in a buffer to an assocation 'list or 'vector.
+   See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.6."
+  (declare (symbol type) (buffer cigar))
+  (ecase type
+    (list   (fast-buffer-scan-cigar-string-to-list cigar))
+    (vector (fast-buffer-scan-cigar-string-to-vector cigar))))
+
+(define-compiler-macro buffer-scan-cigar-string (&whole form type cigar)
+  (case type
+    (list   `(fast-buffer-scan-cigar-string-to-list ,cigar))
+    (vector `(fast-buffer-scan-cigar-string-to-vector 'cigar))
+    (t form)))
