@@ -606,7 +606,8 @@
         do (setf (svref result index) (make-buffer))
         finally (return result)))
 
-(defstruct (sam-alignment-buffer (:constructor make-sam-alignment-buffer))
+(defstruct (sam-alignment-buffer (:constructor make-sam-alignment-buffer ())
+                                 (:copier nil))
   (line   (make-buffer) :type buffer)
   (table  (make-buffer-vector 11))
   (itable (make-array 11 :initial-element nil #+lispworks :single-thread #+lispworks t)))
@@ -621,14 +622,27 @@
   (declare (sam-alignment-buffer buf) #.*optimization*)
   (reinitialize-buffer (sam-alignment-buffer-line buf))
   (loop with table of-type simple-vector = (sam-alignment-buffer-table buf)
-        with table-length of-type fixnum = (length table)
-        for index of-type fixnum below table-length
+        for index of-type fixnum below 11
         do (reinitialize-buffer (svref table index)))
   (loop with itable of-type simple-vector = (sam-alignment-buffer-itable buf)
-        with itable-length of-type fixnum = (length itable)
-        for index of-type fixnum below itable-length
+        for index of-type fixnum below 11
         do (setf (svref itable index) nil))
   buf)
+
+(defun copy-sam-alignment-buffer (buf &optional (copy-slots nil))
+  (declare (sam-alignment-buffer buf) #.*optimization*)
+  (let ((result (make-sam-alignment-buffer)))
+    (buffer-copy (sam-alignment-buffer-line buf) (sam-alignment-buffer-line result))
+    (when copy-slots
+      (loop with source-table of-type simple-vector = (sam-alignment-buffer-table buf)
+            with target-table of-type simple-vector = (sam-alignment-buffer-table result)
+            for index of-type fixnum below 11
+            do (buffer-copy (svref source-table index) (svref target-table index)))
+      (loop with source-itable of-type simple-vector = (sam-alignment-buffer-itable buf)
+            with target-itable of-type simple-vector = (sam-alignment-buffer-itable result)
+            for index of-type fixnum below 11
+            do (setf (svref target-itable index) (svref source-itable index))))
+    result))
 
 (declaim (inline read-line-into-sam-alignment-buffer))
 
