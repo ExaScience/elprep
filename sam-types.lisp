@@ -599,9 +599,16 @@
 (defconstant +seq+   9)
 (defconstant +qual+ 10)
 
+(defun make-buffer-vector (length)
+  (declare (fixnum length) #.*optimization*)
+  (loop with result of-type simple-vector = (make-array 11 #+lispworks :single-thread #+lispworks t)
+        for index of-type fixnum below length
+        do (setf (svref result index) (make-buffer))
+        finally (return result)))
+
 (defstruct (sam-alignment-buffer (:constructor make-sam-alignment-buffer))
   (line   (make-buffer) :type buffer)
-  (table  (make-array 11 :initial-element nil #+lispworks :single-thread #+lispworks t))
+  (table  (make-buffer-vector 11))
   (itable (make-array 11 :initial-element nil #+lispworks :single-thread #+lispworks t)))
 
 (declaim (inline sam-alignment-buffer-emptyp))
@@ -613,9 +620,14 @@
 (defun reinitialize-sam-alignment-buffer (buf)
   (declare (sam-alignment-buffer buf) #.*optimization*)
   (reinitialize-buffer (sam-alignment-buffer-line buf))
-  (loop for entry across (sam-alignment-buffer-table buf)
-        when entry do (reinitialize-buffer entry))
-  (fill (sam-alignment-buffer-itable buf) nil)
+  (loop with table of-type simple-vector = (sam-alignment-buffer-table buf)
+        with table-length of-type fixnum = (length table)
+        for index of-type fixnum below table-length
+        do (reinitialize-buffer (svref table index)))
+  (loop with itable of-type simple-vector = (sam-alignment-buffer-itable buf)
+        with itable-length of-type fixnum = (length itable)
+        for index of-type fixnum below itable-length
+        do (setf (svref itable index) nil))
   buf)
 
 (declaim (inline read-line-into-sam-alignment-buffer))
@@ -623,17 +635,14 @@
 (defun read-line-into-sam-alignment-buffer (stream buf &rest prefill)
   (declare (sam-alignment-buffer buf) (dynamic-extent prefill) #.*optimization*)
   (reinitialize-sam-alignment-buffer buf)
-  (let ((line (sam-alignment-buffer-line buf))
-        (table (sam-alignment-buffer-table buf)))
-    (declare (buffer line) (simple-vector table))
+  (let ((line (sam-alignment-buffer-line buf)))
+    (declare (buffer line))
     (read-line-into-buffer stream line)
     (unless (buffer-emptyp line)
-      (apply #'buffer-partition
-             (sam-alignment-buffer-line buf) #\Tab
-             (loop for index of-type fixnum in prefill
-                   collect index
-                   collect (or (svref table index)
-                               (setf (svref table index) (make-buffer))))))))
+      (apply #'buffer-partition line #\Tab
+             (loop with table of-type simple-vector = (sam-alignment-buffer-table buf)
+                   for index of-type fixnum in prefill
+                   collect index collect (svref table index))))))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defun sam-alignment-buffer-accessor-name (symbol)
@@ -644,31 +653,25 @@
 (defmacro define-sam-alignment-buffer-accessor (symbol)
   `(defun ,(sam-alignment-buffer-accessor-name symbol) (buf)
      (declare (sam-alignment-buffer buf) #.*optimization*)
-     (let* ((line (sam-alignment-buffer-line buf))
-            (table (sam-alignment-buffer-table buf))
-            (value (or (svref table ,symbol)
-                       (setf (svref table ,symbol) (make-buffer)))))
-       (declare (buffer line) (simple-vector table) (buffer value))
+     (let ((value (svref (sam-alignment-buffer-table buf) ,symbol)))
+       (declare (buffer value))
        (when (buffer-emptyp value)
-         (buffer-partition line #\Tab ,symbol value))
+         (buffer-partition (sam-alignment-buffer-line buf) #\Tab ,symbol value))
        value)))
 
 (defmacro define-sam-alignment-buffer-integer-accessor (symbol)
   `(defun ,(sam-alignment-buffer-accessor-name symbol) (buf)
      (declare (sam-alignment-buffer buf) #.*optimization*)
-     (let* ((line (sam-alignment-buffer-line buf))
-            (table (sam-alignment-buffer-table buf))
-            (itable (sam-alignment-buffer-itable buf)))
-       (declare (buffer line) (simple-vector table itable))
+     (let ((itable (sam-alignment-buffer-itable buf)))
+       (declare (simple-vector itable))
        (or (svref itable ,symbol)
            (setf (svref itable ,symbol)
                  (buffer-parse-integer
-                  (let ((buf (or (svref table ,symbol)
-                                 (setf (svref table ,symbol) (make-buffer)))))
-                    (declare (buffer buf))
-                    (when (buffer-emptyp buf)
-                      (buffer-partition line #\Tab ,symbol buf))
-                    buf)))))))
+                  (let ((ibuf (svref (sam-alignment-buffer-table buf) ,symbol)))
+                    (declare (buffer ibuf))
+                    (when (buffer-emptyp ibuf)
+                      (buffer-partition (sam-alignment-buffer-line buf) #\Tab ,symbol ibuf))
+                    ibuf)))))))
 
 (define-sam-alignment-buffer-accessor         +qname+)
 (define-sam-alignment-buffer-integer-accessor +flag+)
