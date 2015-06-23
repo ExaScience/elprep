@@ -217,24 +217,6 @@
            (< (sam-alignment-pos aln1)
               (sam-alignment-pos aln2))))))
 
-(defun coordinate/qname< (aln1 aln2)
-  "Compare two alignments according to their coordinate and queryname.
-   See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3, Tag @HD, SO."
-  (declare (sam-alignment aln1 aln2) #.*optimization*)
-  (let ((refid1 (check-refid-type (sam-alignment-refid aln1)))
-        (refid2 (check-refid-type (sam-alignment-refid aln2))))
-    (declare (int32 refid1 refid2))
-    (if (< refid1 refid2)
-      (>= refid1 0)
-      (and (= refid1 refid2)
-           (let ((pos1 (sam-alignment-pos aln1))
-                 (pos2 (sam-alignment-pos aln2)))
-             (declare (int32 pos1 pos2))
-             (or (< pos1 pos2)
-                 (and (= pos1 pos2)
-                      (string< (sam-alignment-qname aln1)
-                               (sam-alignment-qname aln2)))))))))
-
 (defconstant +multiple+        #x1
   "Bit value for sam-alignment-flag: template having multiple segments in sequencing.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.2.")
@@ -544,47 +526,6 @@
   (case type
     (list   `(fast-scan-cigar-string-to-list ,cigar))
     (vector `(fast-scan-cigar-string-to-vector ,cigar))
-    (t form)))
-
-(declaim (inline fast-buffer-scan-cigar-string-to-list
-                 fast-buffer-scan-cigar-strong-to-vector))
-
-(defun fast-buffer-scan-cigar-string-to-list (cigar)
-  (declare (buffer cigar) #.*optimization*)
-  (let ((cigar-string (make-array (buffer-pos cigar) :element-type 'base-char)))
-    (declare (simple-base-string cigar-string) (dynamic-extent cigar-string))
-    (buffer-string cigar cigar-string)
-    (or (gethash cigar-string (the hash-table *cigar-list-cache*))
-        (let ((cigar-string (make-array (length cigar-string) :element-type 'base-char
-                                        :initial-contents cigar-string
-                                        #+lispworks :single-thread #+lispworks t)))
-          (slow-scan-cigar-string-to-list cigar-string)))))
-
-(defun fast-buffer-scan-cigar-string-to-vector (cigar)
-  (declare (buffer cigar) #.*optimization*)
-  (let ((cigar-string (make-array (buffer-pos cigar) :element-type 'base-char)))
-    (declare (simple-base-string cigar-string) (dynamic-extent cigar-string))
-    (buffer-string cigar cigar-string)
-    (or (gethash cigar-string (the hash-table *cigar-vector-cache*))
-        (let ((cigar-string (make-array (length cigar-string) :element-type 'base-char
-                                        :initial-contents cigar-string
-                                        #+lispworks :single-thread #+lispworks t)))
-          (slow-scan-cigar-string-to-vector cigar-string)))))
-
-(declaim (inline buffer-scan-cigar-string))
-
-(defun buffer-scan-cigar-string (type cigar)
-  "Convert a cigar string stored in a buffer to an assocation 'list or 'vector.
-   See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.6."
-  (declare (symbol type) (buffer cigar))
-  (ecase type
-    (list   (fast-buffer-scan-cigar-string-to-list cigar))
-    (vector (fast-buffer-scan-cigar-string-to-vector cigar))))
-
-(define-compiler-macro buffer-scan-cigar-string (&whole form type cigar)
-  (case type
-    (list   `(fast-buffer-scan-cigar-string-to-list ,cigar))
-    (vector `(fast-buffer-scan-cigar-string-to-vector 'cigar))
     (t form)))
 
 (defconstant +qname+ 0)
