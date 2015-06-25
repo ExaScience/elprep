@@ -198,7 +198,7 @@
     (and (eq (sam-alignment-rg f1) (sam-alignment-rg f2))
          (= (the int32 (sam-alignment-refid f1)) (the int32 (sam-alignment-refid f2)))
          (= (the int32 (sam-alignment-adapted-pos f1)) (the int32 (sam-alignment-adapted-pos f2)))
-         (eq (sam-alignment-reversed-p  f1) (sam-alignment-reversed-p  f2)))))
+         (eq (sam-alignment-reversed-p f1) (sam-alignment-reversed-p f2)))))
 
 (defun fragment-hash (f)
   "Hash function that corresponds to handle-fragment=, but operates an a sam-alignment directly."
