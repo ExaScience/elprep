@@ -23,9 +23,8 @@ def elprep_sfm ():
   os.mkdir(result_dir)
   # split command
   nr_of_threads_opt = elprep_io_wrapper.cmd_option("--nr-of-threads", sys.argv)
-  split_factor_opt = elprep_io_wrapper.cmd_option("--split-factor", sys.argv)
-  cmd_opts = elprep_io_wrapper.remove_cmd_option(sys.argv[3:], '--split-factor')
-  elprep_io_wrapper.cmd_wrap_input(["elprep", "split"], file_in, split_dir, ["--output-prefix", output_prefix, "--output-type", "sam"] + nr_of_threads_opt + split_factor_opt)
+  cmd_opts = sys.argv[3:]
+  elprep_io_wrapper.cmd_wrap_input(["elprep", "split"], file_in, split_dir, ["--output-prefix", output_prefix, "--output-type", "sam"] + nr_of_threads_opt)
   spread_file = os.path.join(split_dir, output_prefix + "-spread.sam")
   splits_path = os.path.join(split_dir, "splits" + os.sep)
   # run filter command for split files
