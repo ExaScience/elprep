@@ -296,15 +296,6 @@
   "Macro version of chunk-output-loop."
   `(chunk-output-loop ,mailbox ,ordered (lambda (,chunk) ,@body)))
 
-(declaim (inline parse-int32))
-
-(defun parse-int32 (string default)
-  (if string
-    (let ((result (parse-integer string)))
-      (check-type result int32)
-      result)
-    default))
-
 (defmethod get-output-functions ((output sam) header original-sq &key (sorting-order :keep) (split-file nil))
   (ecase sorting-order
     ((:keep :unknown :unsorted)
@@ -362,7 +353,7 @@
                                                (let* ((sq (loop with sn = (getf (nth refid (sam-header-sq header)) :sn)
                                                                 for entry in original-sq
                                                                 when (string= sn (getf entry :sn)) return entry))
-                                                      (len (parse-int32 (getf sq :ln) #.(1- (expt 2 31)))))
+                                                      (len (or (getf sq :ln) #.(1- (expt 2 31)))))
                                                  (declare (int32 len))
                                                  (setq min-pos 1 bucket-size (/ len threads))))))
                                          (floor (the int32 (- (sam-alignment-pos aln) min-pos)) bucket-size)))
