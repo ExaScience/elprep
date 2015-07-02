@@ -343,9 +343,12 @@ The elprep split command requires two arguments: 1) the input file or a path to 
 
 elPrep creates the output directory denoted by the output path, unless the directory already exists, in which case elPrep may override the existing files in that directory. Please make sure elPrep has the correct permissions for writing that directory.
 
-By default, the split files will be in hte same format as the input file (.sam, .bam, or .cram), but this can be changed using the --output-type option.
+The split command outputs two types of files:
 
-To process the files created by the elprep split command, one needs to call the elprep command for each entry in the path/to/output/ directory. To take advantage of parallel sorting, the option --split-file should also be passed to the elprep command. Finally, the output files produced this way, need to be merged with the elprep merge command. For example scripts see "elprep-sfm.py" and "elprep-sfm-gnupar.py".
+1. a subdirectory "/path/to/output/splits/" containing a file per entry in the sequence dictionary of the input file that contains all reads that map to that entry.
+2. a "/path/to/output/output-prefix-spread.output-type" file containing all reads of which the mate maps to a different entry in the sequence dictionary of the input file.
+
+To process the files created by the elprep split command, one needs to call the elprep command for each entry in the path/to/output/splits/ directory as well as the /path/to/output/output-prefix-spread.output-type file. To process the files in the "split" directory one needs to pass the --split-file option to the elprep command. No special options are necessary for processing the reads in the spread reads file (/path/to/output/output-prefix-spread.output-type). Finally, the output files produced this way, need to be merged with the elprep merge command. For example scripts see "elprep-sfm.py" and "elprep-sfm-gnupar.py".
 
 ## Options
 

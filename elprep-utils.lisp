@@ -120,17 +120,18 @@
         (first-in first-program)
         (open-sam (first files) :direction :input)
       (let ((header (parse-sam-header first-in))
+            (splits-path (merge-pathnames (make-pathname :directory '(:relative "splits")) output-path))
             (chroms-encountered (make-single-thread-hash-table :test #'buffer= :hash-function #'buffer-hash)) ; chr -> file name
             (buf-unmapped (make-buffer "*")))
         ; create a directory for split files
-        (ensure-directories-exist output-path)
+        (ensure-directories-exist splits-path)
         ; tag the header as one created with elPrep split
         (setf (sam-header-user-tag header :|@sr|) (list (list :|co| "This file was created using elprep split.")))
           ; fill in a file for unmapped reads
         (setf (gethash buf-unmapped chroms-encountered)
               (multiple-value-bind
                   (file program) ; create a new headerless file
-                  (open-sam (merge-pathnames output-path (make-pathname :name (format nil "~a-unmapped" output-prefix) :type output-extension)) :direction :output)
+                  (open-sam (merge-pathnames splits-path (make-pathname :name (format nil "~a-unmapped" output-prefix) :type output-extension)) :direction :output)
                 (format-sam-header file header)
                 (cons file program)))
         ; create split files for each chromosome
@@ -141,7 +142,7 @@
                 (setf (gethash buf-chrom chroms-encountered)
                       (multiple-value-bind
                           (file program)
-                          (open-sam (merge-pathnames output-path (make-pathname :name (format nil "~a-~a" output-prefix chrom) :type output-extension)) :direction :output)
+                          (open-sam (merge-pathnames splits-path (make-pathname :name (format nil "~a-~a" output-prefix chrom) :type output-extension)) :direction :output)
                         (format-sam-header file header)
                         (cons file program)))))
         (unwind-protect
