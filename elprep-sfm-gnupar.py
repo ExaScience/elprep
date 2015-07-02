@@ -28,7 +28,6 @@ def elprep_sfm_gnupar ():
   # split command
   nr_of_threads_opt = elprep_io_wrapper.cmd_option('--nr-of-threads', sys.argv)
   elprep_io_wrapper.cmd_wrap_input(["elprep", "split"], file_in, split_dir, ["--output-prefix", output_prefix, "--output-type", "sam"] + nr_of_threads_opt)
-  spread_file = os.path.join(split_dir, output_prefix + "-spread.sam")
   # gnu parallel command
   nr_of_jobs_opt = elprep_io_wrapper.cmd_option('--nr-of-jobs', sys.argv)
   read_group_string = elprep_io_wrapper.cmd_option('--replace-read-group', sys.argv)
@@ -42,9 +41,6 @@ def elprep_sfm_gnupar ():
   elprep_cmd = '\'' + reduce(append_cmd, cmd_list + ['{}', result_dir + '{/.}.sam' ] + cmd_opts) + '\''
   gnu_cmd = 'parallel --gnu -j ' + str(nr_of_jobs_opt[1]) + ' ' + elprep_cmd + ' ::: ' + split_dir + '*.sam'
   subprocess.check_call(gnu_cmd, shell=True)
-  # command for spread file
-  spread_out_file = os.path.join(result_dir, output_prefix + "-spread.sam")
-  elprep_io_wrapper.cmd_wrap_io(["elprep"], spread_file, spread_out_file , given_cmd_opts)
   # merge command
   elprep_io_wrapper.cmd_wrap_output(["elprep", "merge"], result_dir, file_out, nr_of_threads_opt)
   # remove directories for intermediate results
@@ -52,7 +48,6 @@ def elprep_sfm_gnupar ():
     for file in files:
       ffile = os.path.join(root, file)
       os.remove(ffile)
-  os.remove(spread_file)
   os.rmdir(split_dir)
   for root, dirs, files in os.walk(result_dir):
     for file in files:
