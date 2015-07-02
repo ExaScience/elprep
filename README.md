@@ -394,7 +394,7 @@ The Python scripts have been tested with Python 2.7.3.
 
 ## Synopsis
 
-	./elprep-sfm.py $input $output --filter-unmapped-reads strict --replace-reference-sequences ucsc.hg19.dict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --sorting-order coordinate --nr-of-threads $threads
+	./elprep-sfm.py $input $output --filter-unmapped-reads strict --replace-reference-sequences ucsc.hg19.dict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --sorting-order coordinate --nr-of-threads $threads --intermediate-files-output-type [sam | bam | cram]
 
 ## Description
 
@@ -404,13 +404,19 @@ A Python script that combines the elprep split, filter, and merge commands. The 
 * It then calls the elprep filter command for processing the split files one by one.
 * Finally, it calls the elprep merge command to create the output file from the split files.
 
+## Special Options
+
+### --intermediates-files-output-type [sam | bam | cram]
+
+The output type that will be used for the intermediate split files. The default output type for intermediate files is .sam.
+
 ### Name
 
 ### elprep-sfm-gnupar.py - a Python script that illustrates the use of elprep split and merge and GNU parallel for optimal execution on a multi-socket server
 
 ## Synopsis
 
-	./elprep-sfm-gnupar.py $input $output --filter-unmapped-reads strict --replace-reference-sequences ucsc.hg19.dict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --sorting-order coordinate --nr-of-threads $threads --nr-of-jobs $jobs
+	./elprep-sfm-gnupar.py $input $output --filter-unmapped-reads strict --replace-reference-sequences ucsc.hg19.dict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --sorting-order coordinate --nr-of-threads $threads --nr-of-jobs $jobs --intermediate-files-output-type [sam | bam | cram]
 
 ## Description
 
@@ -426,6 +432,16 @@ The script is structured as follows:
 Using this script is useful when using a multi-socket server. For example, when using a server with two sockets and two 12 core processors, running up to two elprep commands in parallel with each 12 threads is optimal from a performance perspective. The command could thus look as follows:
 
 	./elprep-sfm-gnupar.py input.bam output.bam ... --nr-of-threads 12 --nr-of-jobs 2
+
+## Special Options
+
+### --nr-of-jobs number
+
+The number of elprep commands that will be executed in parallel.
+
+### --intermediates-files-output-type [sam | bam | cram]
+
+The output type that will be used for the intermediate split files. The default output type for intermediate files is .sam.
 
 ## Name
 
