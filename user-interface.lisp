@@ -1,14 +1,13 @@
 (in-package :elprep)
 (in-simple-base-string-syntax)
 
-(defun run-best-practices-pipeline-intermediate-list (file-in file-out &key (sorting-order :keep) (filters '()) (filters2 '()) (gc-on 0) (timed nil) (split-file nil) (header nil))
+(defun run-best-practices-pipeline-intermediate-list (file-in file-out &key (sorting-order :keep) (filters '()) (filters2 '()) (gc-on 0) (timed nil) (split-file nil))
   "Run the best practices pipeline. Version that uses an intermediate list so that sorting and mark-duplicates are supported."
   #+lispworks-32bit
   (declare (ignore gc-on))
   (let* ((filtered-reads (make-sam)) ; where the result of run-pipeline will be stored
          (working-directory (get-working-directory))
-         (filename (merge-pathnames file-in working-directory))
-         (new-header (when header (with-open-sam (header-in header :direction :input) (parse-sam-header header-in)))))
+         (filename (merge-pathnames file-in working-directory)))
     #+lispworks-64bit
     (unless (= gc-on 2) (system:set-blocking-gen-num 0 :do-gc nil))
     #+sbcl
@@ -19,8 +18,7 @@
               filename filtered-reads
               :filters filters
               :sorting-order sorting-order
-              :split-file split-file
-              :header new-header)))
+              :split-file split-file)))
       (cond (timed
              (format t "Reading SAM into memory and applying filters.~%")
              (time (first-phase)))
@@ -43,7 +41,7 @@
                (time (second-phase)))
               (t (second-phase)))))))
 
-(defun run-best-practices-pipeline (file-in file-out &key (sorting-order :keep) (filters '()) (gc-on 0) (timed nil) (split-file nil) (header nil))
+(defun run-best-practices-pipeline (file-in file-out &key (sorting-order :keep) (filters '()) (gc-on 0) (timed nil) (split-file nil))
   "Run the best practices pipeline. Version that doesn't use an intermediate list when neither sorting nor mark-duplicates are needed."
   #+lispworks-32bit
   (declare (ignore gc-on))
@@ -59,8 +57,7 @@
              (run-pipeline file-in-name file-out-name
                            :filters filters
                            :sorting-order sorting-order
-                           :split-file split-file
-                           :header (when header (with-open-sam (header-in header :direction :input) (parse-sam-header header-in)))))))
+                           :split-file split-file))))
     (cond (timed
            (format t "Running pipeline.~%")
            (time (all-phases)))
@@ -138,8 +135,7 @@
         (rename-chromosomes-filter nil)
         (reference-fai nil)
         (reference-fasta nil)
-        (split-file nil)
-        (filter-optional-header-info nil))
+        (split-file nil))
     (loop with entry while cmd-line do (setq entry (pop cmd-line))
           if (string= entry "-h") do
           (format t *program-help*)
@@ -227,7 +223,7 @@
             (if (or mark-duplicates-filter 
                     (and replace-ref-seq-dct-filter (eq sorting-order :keep)) 
                     (eq sorting-order :coordinate) (eq sorting-order :queryname))
-                (setf gc-on 0)
+              (setf gc-on 0)
               (setf gc-on 2)))
           (let* ((cmd-string
                   (with-output-to-string (s nil :element-type 'base-char)
@@ -265,7 +261,7 @@
                                  (when (or replace-ref-seq-dct-filter mark-duplicates-filter (member sorting-order '(:coordinate :queryname))) (list #'add-refid))
                                  mark-duplicates-filter
                                  (list #'filter-optional-reads)))
-                 (filters2 (append filter-optional-header-info remove-duplicates-filter))) ; only used in conjuction with filters that split up processing in multiple phases
+                 (filters2 remove-duplicates-filter))
             (format t "Executing command:~%  ~a~%" cmd-string)
             (setq *number-of-threads* nr-of-threads
                   *reference-fasta* reference-fasta
@@ -281,7 +277,7 @@
               (let ((conversion-parameters
                      (nconc conversion-parameters
                             `(:sorting-order ,sorting-order
-                              :filters ,(append filters filter-optional-header-info) :gc-on ,gc-on :timed ,timed :split-file ,split-file))))
+                              :filters ,filters :gc-on ,gc-on :timed ,timed :split-file ,split-file))))
                 (apply #'run-best-practices-pipeline conversion-parameters)))))))
 
 (defvar *split-program-help* "split [sam-file | /path/to/input/] /path/to/output/ ~% [--output-prefix name] ~% [--output-type [sam | bam | cram]] ~% [--nr-of-threads nr] ~% [--reference-t fai-file] ~% [--reference-T fasta-file] ~%"
