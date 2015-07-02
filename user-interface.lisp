@@ -75,7 +75,7 @@
 (defvar *program-url* "http://github.com/exascience/elprep"
   "URL for more information about elprep.")
 
-(defvar *program-help* "sam-file sam-output-file ~% [--replace-reference-sequences sam-file] ~% [--filter-unmapped-reads [strict]] ~% [--replace-read-group read-group-string]~% [--mark-duplicates [remove] [deterministic]] ~% [--sorting-order [keep | unknown | unsorted | queryname | coordinate]] ~% [--clean-sam] ~% [--nr-of-threads nr] ~% [--gc-on [0 | 1 | 2]] ~% [--timed] ~% [--reference-t fai-file] ~% [--reference-T fasta-file] ~% [--split-file] ~% [--header sam-file] ~%"
+(defvar *program-help* "sam-file sam-output-file ~% [--replace-reference-sequences sam-file] ~% [--filter-unmapped-reads [strict]] ~% [--replace-read-group read-group-string]~% [--mark-duplicates [remove] [deterministic]] ~% [--sorting-order [keep | unknown | unsorted | queryname | coordinate]] ~% [--clean-sam] ~% [--nr-of-threads nr] ~% [--gc-on [0 | 1 | 2]] ~% [--timed] ~% [--reference-t fai-file] ~% [--reference-T fasta-file] ~% [--split-file] ~%"
   "Help string for the elprep-script binary.")
 
 ;;; error handling
@@ -139,7 +139,6 @@
         (reference-fai nil)
         (reference-fasta nil)
         (split-file nil)
-        (header nil)
         (filter-optional-header-info nil))
     (loop with entry while cmd-line do (setq entry (pop cmd-line))
           if (string= entry "-h") do
@@ -207,12 +206,6 @@
           do (setf rename-chromosomes-filter (list #'rename-chromosomes))
           else if (string= entry "--split-file")
           do (setf split-file t)
-          else if (string= entry "--header")
-          do (let ((header-file (first cmd-line)))
-               (cond ((or (not header-file) (search "--" cmd-line)) ; no file given
-                      (format t "Please provide header file with --header.~%")
-                      (format t *program-help*))
-                     (t (setf header (pop cmd-line)))))
           else collect entry into conversion-parameters ; main required parameters, input and output sam files
           finally
           (when (/= (length conversion-parameters) 2)
@@ -257,8 +250,7 @@
                     (when timed (format s " --timed"))
                     (when reference-fai (format s " --reference-t ~a" reference-fai))
                     (when reference-fasta (format s " --reference-T ~a" reference-fasta))
-                    (when split-file (format s " --split-file"))
-                    (when header (format s " --header ~a" header))))
+                    (when split-file (format s " --split-file"))))
                  ; optimal order for filters
                  (filters (nconc (list (add-pg-line (format nil "~A ~A" *program-name* *program-version*)
                                                     :pn *program-name*
@@ -284,12 +276,12 @@
               (let ((conversion-parameters
                      (nconc conversion-parameters
                             `(:sorting-order ,sorting-order
-                              :filters ,filters :filters2 ,filters2 :gc-on ,gc-on :timed ,timed :split-file ,split-file :header ,header))))
+                              :filters ,filters :filters2 ,filters2 :gc-on ,gc-on :timed ,timed :split-file ,split-file))))
                 (apply #'run-best-practices-pipeline-intermediate-list conversion-parameters))
               (let ((conversion-parameters
                      (nconc conversion-parameters
                             `(:sorting-order ,sorting-order
-                              :filters ,(append filters filter-optional-header-info) :gc-on ,gc-on :timed ,timed :split-file ,split-file :header ,header))))
+                              :filters ,(append filters filter-optional-header-info) :gc-on ,gc-on :timed ,timed :split-file ,split-file))))
                 (apply #'run-best-practices-pipeline conversion-parameters)))))))
 
 (defvar *split-program-help* "split [sam-file | /path/to/input/] /path/to/output/ ~% [--output-prefix name] ~% [--output-type [sam | bam | cram]] ~% [--nr-of-threads nr] ~% [--reference-t fai-file] ~% [--reference-T fasta-file] ~%"
