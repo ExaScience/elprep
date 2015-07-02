@@ -28,7 +28,6 @@ def elprep_sfm_gnupar ():
   # split command
   nr_of_threads_opt = elprep_io_wrapper.cmd_option('--nr-of-threads', sys.argv)
   elprep_io_wrapper.cmd_wrap_input(["elprep", "split"], file_in, split_dir, ["--output-prefix", output_prefix, "--output-type", "sam"] + nr_of_threads_opt)
-  header_file = os.path.join(split_dir, output_prefix + "-header.dict")
   spread_file = os.path.join(split_dir, output_prefix + "-spread.sam")
   splits_path = os.path.join(split_dir, "splits" + os.sep)
   # gnu parallel command
@@ -39,7 +38,7 @@ def elprep_sfm_gnupar ():
   if read_group_string:
     cmd_opts = elprep_io_wrapper.remove_cmd_option(cmd_opts, '--replace-read-group') 
     cmd_opts = cmd_opts + ['--replace-read-group', '\"' + read_group_string[1] + '\"']
-  cmd_opts = cmd_opts + ['--split-file', '--header', header_file]
+  cmd_opts = cmd_opts + ['--split-file']
   cmd_list = ["elprep"]
   elprep_cmd = '\'' + reduce(append_cmd, cmd_list + ['{}', result_dir + '{/.}.sam' ] + cmd_opts) + '\''
   gnu_cmd = 'parallel --gnu -j ' + str(nr_of_jobs_opt[1]) + ' ' + elprep_cmd + ' ::: ' + splits_path + '*.sam'
@@ -56,7 +55,6 @@ def elprep_sfm_gnupar ():
       os.remove(ffile)
   os.rmdir(splits_path)
   os.remove(spread_file)
-  os.remove(header_file)
   os.rmdir(split_dir)
   for root, dirs, files in os.walk(result_dir):
     for file in files:

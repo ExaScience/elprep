@@ -93,7 +93,7 @@
 (declaim (notinline compute-unclipped-position))
 
 (defun compute-unclipped-position (aln)
-  "Compute unclipped position of a sam-alignment, based on its POS and CIGAR string."
+  "Compute unclipped position of a sam-alignment, based on its FLAG, POS, and CIGAR string."
   (declare (sam-alignment aln) #.*fixnum-optimization*)
   (let ((cigar (scan-cigar-string 'vector (sam-alignment-cigar aln))))
     (declare (simple-vector cigar))
@@ -119,7 +119,7 @@
                         for (key . value) of-type (base-char . fixnum) = (svref cigar i)
                         for p of-type fixnum = (cigar-aux-pos key)
                         until (= 0 (aref clipped-table p))
-                   sum value fixnum))))))))
+                        sum value fixnum))))))))
 
 (declaim (inline sam-alignment-adapted-pos (setf sam-alignment-adapted-pos)
                  sam-alignment-adapted-score (setf sam-alignment-adapted-score)))
@@ -198,7 +198,7 @@
     (and (eq (sam-alignment-rg f1) (sam-alignment-rg f2))
          (= (the int32 (sam-alignment-refid f1)) (the int32 (sam-alignment-refid f2)))
          (= (the int32 (sam-alignment-adapted-pos f1)) (the int32 (sam-alignment-adapted-pos f2)))
-         (eq (sam-alignment-reversed-p  f1) (sam-alignment-reversed-p  f2)))))
+         (eq (sam-alignment-reversed-p f1) (sam-alignment-reversed-p f2)))))
 
 (defun fragment-hash (f)
   "Hash function that corresponds to handle-fragment=, but operates an a sam-alignment directly."
