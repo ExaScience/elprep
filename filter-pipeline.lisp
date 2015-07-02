@@ -13,7 +13,6 @@
     - :destructive: Operate destructively on the input or not. One of :default (the default), false, or true.
     - :sorting-order: One of :keep (the default), :unsorted, :unkown, :coordinate, or :queryname.
     - :chunk-size: Number of alignments to read from input at a time. Default is +default-chunk-size+.
-    - :header: A header to use in place of the header found in input.
     - :split-file: Operate on intermediate split files or not. One of false (the default), or true.
 
     A filter is a function that accepts zero or more arguments and returns zero or more values:
@@ -521,18 +520,18 @@
 (defmacro with-prepared-header ((header original-sorting-order original-sq alns) (input destructive) &body body)
   "Prepare the header for further processing, when input is in memory."
   (let ((inputv (copy-symbol 'input)))
-    `(let ((,inputv ,input))
-       (unless ,header (setq ,header (sam-header ,inputv)))
-       (let ((,alns (sam-alignments ,inputv))
-             (,original-sorting-order (getf (sam-header-hd ,header) :so "unknown"))
-             (,original-sq (sam-header-sq ,header)))
-         (declare (ignorable ,original-sq))
-         (if ,destructive
-           (setf (sam-alignments ,inputv) '())
-           (setq ,header (copy-structure ,header)))
-         ,@body))))
+    `(let* ((,inputv ,input)
+            (,header (sam-header ,inputv))
+            (,alns (sam-alignments ,inputv))
+            (,original-sorting-order (getf (sam-header-hd ,header) :so "unknown"))
+            (,original-sq (sam-header-sq ,header)))
+       (declare (ignorable ,original-sq))
+       (if ,destructive
+         (setf (sam-alignments ,inputv) '())
+         (setq ,header (copy-structure ,header)))
+       ,@body)))
 
-(defmethod run-pipeline ((input sam) (output sam) &key header filters (sorting-order :keep) (destructive :default))
+(defmethod run-pipeline ((input sam) (output sam) &key filters (sorting-order :keep) (destructive :default))
   "Optimize when both input and output are in memory."
   (if (> *number-of-threads* 3)
     ;; enable multithreading
@@ -576,8 +575,7 @@
             (tail (cdr ,cons)))
        ,@body)))
 
-(defmethod run-pipeline ((input sam) output &rest args &key
-                         header filters (sorting-order :keep) (destructive :default) (chunk-size +default-chunk-size+))
+(defmethod run-pipeline ((input sam) output &rest args &key filters (sorting-order :keep) (destructive :default) (chunk-size +default-chunk-size+))
   (declare (dynamic-extent args))
   (with-prepared-header (header original-sorting-order original-sq alns) (input destructive)
     (with-thread-filters (thread-filters global-init global-exit) (filters header)
@@ -660,7 +658,7 @@
                               while alns)))
                    (global-exit)))))))))
 
-(defmethod run-pipeline ((input pathname) (output pathname) &rest args &key header filters (sorting-order :keep) (destructive :default))
+(defmethod run-pipeline ((input pathname) (output pathname) &rest args &key filters (sorting-order :keep) (destructive :default))
   "Optimize when both input and output are files."
   (declare (dynamic-extent args))
   (let ((input-name (truename input)))
@@ -669,7 +667,7 @@
         (when (equal input-name output-name)
           (return-from run-pipeline (apply #'run-pipeline-in-situ input :destructive t args))))))
   (when (string-equal (pathname-type input) (pathname-type output))
-    (unless (or header filters)
+    (unless filters
       (check-file-sorting-order sorting-order)
       (if (or (not destructive) (eq destructive :default))
         #+lispworks (lw:copy-file input output)
@@ -678,15 +676,13 @@
       (return-from run-pipeline output)))
   (call-next-method))
 
-(defmethod run-pipeline ((input pathname) output &rest args &key
-                         header filters (sorting-order :keep) (destructive :default) (chunk-size +default-chunk-size+))
+(defmethod run-pipeline ((input pathname) output &rest args &key filters (sorting-order :keep) (destructive :default) (chunk-size +default-chunk-size+))
   (declare (dynamic-extent args))
   (unwind-protect
       (with-open-sam (in input :direction :input)
-        (if header (skip-sam-header in)
-          (setq header (parse-sam-header in)))
-        (let ((original-sorting-order (getf (sam-header-hd header) :so "unknown"))
-              (original-sq (sam-header-sq header)))
+        (let* ((header (parse-sam-header in))
+               (original-sorting-order (getf (sam-header-hd header) :so "unknown"))
+               (original-sq (sam-header-sq header)))
           (with-thread-filters (thread-filters global-init global-exit) (filters header)
             (setq sorting-order (effective-sorting-order sorting-order header original-sorting-order))
             (when (null thread-filters)
