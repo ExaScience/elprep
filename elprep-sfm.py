@@ -26,9 +26,8 @@ def elprep_sfm ():
   cmd_opts = sys.argv[3:]
   elprep_io_wrapper.cmd_wrap_input(["elprep", "split"], file_in, split_dir, ["--output-prefix", output_prefix, "--output-type", "sam"] + nr_of_threads_opt)
   spread_file = os.path.join(split_dir, output_prefix + "-spread.sam")
-  splits_path = os.path.join(split_dir, "splits" + os.sep)
   # run filter command for split files
-  for root, dirs, files in os.walk(splits_path):
+  for root, dirs, files in os.walk(split_dir):
     for file in files:
       ext = os.path.splitext(file)[1]
       if (ext == ".sam" or ext == ".bam" or ext == ".cram"):
@@ -36,7 +35,6 @@ def elprep_sfm ():
         processed_file = os.path.join(result_dir, os.path.basename(file))
         elprep_io_wrapper.cmd_wrap_io(["elprep"], ffile, processed_file, cmd_opts + ["--split-file"])
         os.remove(ffile)
-    os.rmdir(splits_path)
   # command for spread file
   spread_out_file = os.path.join(result_dir, output_prefix + "-spread.sam")
   elprep_io_wrapper.cmd_wrap_io(["elprep"], spread_file, spread_out_file , cmd_opts)
