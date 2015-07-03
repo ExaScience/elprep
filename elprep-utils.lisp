@@ -286,7 +286,7 @@
       ; merge the rest of the files  
     (loop for sn-form in (sam-header-sq header)
           for chrom = (getf sn-form :SN)
-          for file-name = (merge-pathnames input-path (make-pathname :name (format nil "~a-~a-~a" input-prefix chrom) :type input-extension))
+          for file-name = (merge-pathnames input-path (make-pathname :name (format nil "~a-~a" input-prefix chrom) :type input-extension))
           when (probe-file file-name) do
           (with-open-sam (file file-name :direction :input)
             (skip-sam-header file)
