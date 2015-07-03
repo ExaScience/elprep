@@ -23,9 +23,15 @@ def elprep_sfm ():
   os.mkdir(result_dir)
   # split command
   nr_of_threads_opt = elprep_io_wrapper.cmd_option("--nr-of-threads", sys.argv)
-  cmd_opts = sys.argv[3:]
-  elprep_io_wrapper.cmd_wrap_input(["elprep", "split"], file_in, split_dir, ["--output-prefix", output_prefix, "--output-type", "sam"] + nr_of_threads_opt)
-  spread_file = os.path.join(split_dir, output_prefix + "-spread.sam")
+  intermediate_files_opt = elprep_io_wrapper.cmd_option("--intermediate-files-output-type", sys.argv)
+  if intermediate_files_opt:
+    intermediate_files_output_type = intermediate_files_opt[1]
+  else:
+    intermediate_files_output_type = "sam" 
+  given_cmd_opts = elprep_io_wrapper.remove_cmd_option(sys.argv[3:], "--intermediate-files-output-type")
+  cmd_opts = given_cmd_opts
+  elprep_io_wrapper.cmd_wrap_input(["elprep", "split"], file_in, split_dir, ["--output-prefix", output_prefix, "--output-type", intermediate_files_output_type] + nr_of_threads_opt)
+  spread_file = os.path.join(split_dir, output_prefix + "-spread." + intermediate_files_output_type)
   splits_path = os.path.join(split_dir, "splits" + os.sep)
   # run filter command for split files
   for root, dirs, files in os.walk(splits_path):
@@ -38,7 +44,7 @@ def elprep_sfm ():
         os.remove(ffile)
     os.rmdir(splits_path)
   # command for spread file
-  spread_out_file = os.path.join(result_dir, output_prefix + "-spread.sam")
+  spread_out_file = os.path.join(result_dir, output_prefix + "-spread." + intermediate_files_output_type)
   elprep_io_wrapper.cmd_wrap_io(["elprep"], spread_file, spread_out_file , cmd_opts)
   os.remove(spread_file)
   os.rmdir(split_dir)
