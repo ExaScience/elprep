@@ -616,13 +616,16 @@
 
   (defun process-close (program &key (wait t))
     "Close all streams of an external process, wait for the process to finish if requested, and return its exit code if available."
-    (let (#-lispworks6 (exit-code (sys:pipe-exit-status (process-stream program) :wait wait)))
-      (let ((stream (process-stream program)))
-        (when stream (close stream)))
-      (let ((error (process-error program)))
-        (when error (close error)))
+    (let ((stream (process-stream program))
+          (error  (process-error program)))
+      (when stream (close stream))
+      (when error  (close error))
       #+lispworks6 (sys:pid-exit-status (process-pid program) :wait wait)
-      #-lispworks6 exit-code)))
+      #-lispworks6
+      (let ((stream (or stream error)))
+        (cond (stream (sys:pipe-exit-status stream :wait wait))
+              (wait   (cerror "Don't wait for this program to finish."
+                              "Can't wait for missing process stream for program ~S." program)))))))
 
 #+sbcl
 (progn
