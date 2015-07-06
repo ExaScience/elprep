@@ -563,7 +563,7 @@
      Read-only accessor process-pid refers to the PID of a process."
     (stream nil :read-only t)
     (error nil :read-only t)
-    (pid nil :read-only t))
+    #+lispworks6 (pid nil :read-only t))
 
   (setf (documentation 'make-process 'function)
         "Default constructor for struct process."
@@ -575,8 +575,8 @@
         "The stream of an external process."
         (documentation 'process-error 'function)
         "The error stream of an external process."
-        (documentation 'process-pid 'function)
-        "The PID of an external process.")
+        #+lispworks6 (documentation 'process-pid 'function)
+        #+lispworks6 "The PID of an external process.")
 
   (declaim (inline process-input process-output))
 
@@ -602,7 +602,7 @@
     "A wrapper for sys:run-shell-command in LispWorks to make it behave more like SBCL's sb-ext:run-program."
     (declare (ignore external-format))
     (multiple-value-bind
-        (stream error-stream pid)
+        (stream error-stream #+lispworks6 pid)
         (sys:run-shell-command (cons command command-args)
                                :input input :output output :error-output error :wait wait
                                :if-input-does-not-exist if-input-does-not-exist
@@ -612,15 +612,20 @@
       (if wait stream
         (make-process :stream stream
                       :error error-stream
-                      :pid pid))))
+                      #+lispworks6 :pid #+lispworks6 pid))))
 
   (defun process-close (program &key (wait t))
     "Close all streams of an external process, wait for the process to finish if requested, and return its exit code if available."
-    (let ((stream (process-stream program)))
-      (when stream (close stream)))
-    (let ((error (process-error program)))
-      (when error (close error)))
-    (sys:pid-exit-status (process-pid program) :wait wait)))
+    (let ((stream (process-stream program))
+          (error  (process-error program)))
+      (when stream (close stream))
+      (when error  (close error))
+      #+lispworks6 (sys:pid-exit-status (process-pid program) :wait wait)
+      #-lispworks6
+      (let ((stream (or stream error)))
+        (cond (stream (sys:pipe-exit-status stream :wait wait))
+              (wait   (cerror "Don't wait for this program to finish."
+                              "Can't wait for missing process stream for program ~S." program)))))))
 
 #+sbcl
 (progn

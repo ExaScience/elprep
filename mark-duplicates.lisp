@@ -351,11 +351,12 @@
 
 (defun pair-hash (p)
   "Hash function that corresponds to handle-pair=, but operates on a pair directly."
-  (declare (pair p) #.*optimization*)
+  (declare (pair p) #.*optimization* #-(or (not lispworks) lispworks6) (optimize (float 0)))
   (logxor (sxhash (the base-string (pair-rg p)))
           (sxhash (the int32 (pair-refid1 p)))
           (sxhash (the int32 (pair-refid2 p)))
-          (sxhash (+ (ash (the int32 (pair-pos1 p)) 32) (the int32 (pair-pos2 p))))
+          #+(or (not lispworks) lispworks6) (sxhash (+ (ash (the int32 (pair-pos1 p)) 32) (the int32 (pair-pos2 p))))
+          #-(or (not lispworks) lispworks6) (sxhash (sys:int64-to-integer (sys:int64+ (sys:int64<< (the int32 (pair-pos1 p)) 32) (the int32 (pair-pos2 p)))))
           (sxhash (the boolean (pair-reversed1-p p)))
           (sxhash (the boolean (pair-reversed2-p p)))))
 
