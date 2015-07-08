@@ -42,7 +42,7 @@ elPrep is released as an open-source project under a BSD 3-Clause License (BSD 2
 
 ## Binaries
 
-You can download a precompiled binary of elPrep [here](https://github.com/ExaScience/elprep/releases) upon accepting the license agreement. This binary was created using the 64-bit LispWorks 6.1.1 Professional Edition for Linux.
+You can download a precompiled binary of elPrep [here](https://github.com/ExaScience/elprep/releases) upon accepting the license agreement. This binary was created using the 64-bit LispWorks 7.0 Professional Edition for Linux.
 
 ## GitHub
 
