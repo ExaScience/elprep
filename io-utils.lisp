@@ -555,6 +555,10 @@
 
 #+lispworks
 (progn
+  #-unix
+  (eval-when (:compile-toplevel :load-toplevel)
+    (error "elPrep currently doesn't work when compiled with LispWorks on non-Unix systems due to pipe-exit-status not being able to wait on closed streams."))
+
   (defstruct process
     "This struct represents the return values of sys:run-shell-command in LispWorks.
      It has default constructor, predicate, and copier.
