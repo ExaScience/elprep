@@ -373,7 +373,7 @@
    Accessor sam-header of type sam-header refers to the header.
    Accessor sam-alignments of type list of sam-alignment refers to the read alignments."
   (header (make-sam-header) :type sam-header)
-  (alignments '() :type list))
+  (alignments '() :type sequence))
 
 (setf (documentation 'make-sam 'function)
       "Default constructor for struct sam."
