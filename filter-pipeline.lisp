@@ -384,7 +384,7 @@
                                        (declare (fixnum length))
                                        (cond ((= length 0))
                                              ((= length 1)
-                                              (unless (= min 0)
+                                              (when (or split-file (> min 0))
                                                 (setf (svref table min)
                                                       (stable-sort (svref table min) #'< :key #'sam-alignment-pos))))
                                              (t (let* ((half (ash length -1))
