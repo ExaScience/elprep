@@ -211,11 +211,10 @@
   (let ((refid1 (check-refid-type (sam-alignment-refid aln1)))
         (refid2 (check-refid-type (sam-alignment-refid aln2))))
     (declare (int32 refid1 refid2))
-    (if (< refid1 refid2)
-      (>= refid1 0)
-      (and (= refid1 refid2)
-           (< (sam-alignment-pos aln1)
-              (sam-alignment-pos aln2))))))
+    (cond ((< refid1 refid2) (>= refid1 0))
+          ((< refid2 refid1) (<  refid2 0))
+          (t (< (sam-alignment-pos aln1)
+                (sam-alignment-pos aln2))))))
 
 (defconstant +multiple+        #x1
   "Bit value for sam-alignment-flag: template having multiple segments in sequencing.
@@ -371,7 +370,7 @@
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.
    The struct sam has a default constructor make-sam.
    Accessor sam-header of type sam-header refers to the header.
-   Accessor sam-alignments of type list of sam-alignment refers to the read alignments."
+   Accessor sam-alignments of type list of sam-alignment or sequence of lists of sam-alignment refers to the read alignments."
   (header (make-sam-header) :type sam-header)
   (alignments '() :type sequence))
 
@@ -385,6 +384,15 @@
       "Access the sam header of type sam-header."
       (documentation 'sam-alignments 'function)
       "Access the sam list of sam-alignment instances.")
+
+(defun map-sam-alignments (sam function)
+  (let ((alns (sam-alignments sam)))
+    (if (listp (elt alns 0))
+      (map nil (lambda (chunk) (mapc function chunk)) alns)
+      (mapc function alns))))
+
+(defmacro do-sam-alignments ((var sam) &body body)
+  `(map-sam-alignments ,sam (lambda (,var) ,@body)))
 
 ;;; mapping cigar strings to alists or avectors
 

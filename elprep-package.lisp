@@ -118,6 +118,7 @@ Refer to the documentation of run-pipeline as a starting point.")
    #:sam #:make-sam #:sam-p
    #:sam-header
    #:sam-alignments
+   #:map-sam-alignments #:do-sam-alignments
 
    #:scan-cigar-string
 

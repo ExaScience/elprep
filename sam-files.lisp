@@ -480,9 +480,8 @@
   "Parse a complete SAM file.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1."
   (make-sam :header     (parse-sam-header stream)
-            :alignments (list (loop for line = (read-line stream nil)
-                                    while line collect (parse-sam-alignment line)))))
-
+            :alignments (loop for line = (read-line stream nil)
+                              while line collect (parse-sam-alignment line))))
 
 ;;; output
 
@@ -998,22 +997,16 @@
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1."
   (declare (stream out) (sam sam) #.*optimization*)
   (format-sam-header out (sam-header sam))
-  (map nil (lambda (chunk)
-             (declare (list chunk))
-             (loop for aln in chunk do
-                   (format-sam-alignment out aln)))
-       (sam-alignments sam)))
+  (do-sam-alignments (aln (sam-alignments sam))
+    (format-sam-alignment out aln)))
 
 (defun sim-format-sam (out sam)
   "Write a complete SAM file.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1."
   (declare (sim-stream out) (sam sam) #.*optimization*)
   (sim-format-sam-header out (sam-header sam))
-  (map nil (lambda (chunk)
-             (declare (list chunk))
-             (loop for aln in chunk do
-                   (sim-format-sam-alignment out aln)))
-       (sam-alignments sam)))
+  (do-sam-alignments (aln (sam-alignments sam))
+    (sim-format-sam-alignment out aln)))
 
 (defglobal *stderr* #+lispworks (sys:make-stderr-stream) #+sbcl sb-sys:*stderr*
            "Standard error stream of the underlying Common Lisp implementation.")

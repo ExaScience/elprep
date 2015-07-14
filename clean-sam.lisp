@@ -104,6 +104,3 @@
               (let ((clip-from (+ (- ref-seq-length (sam-alignment-pos alignment)) 1)))
                 (setf (sam-alignment-cigar alignment) (soft-clip-end-of-read clip-from scanned-cigar))))))
         t))))
-
-  
-     
