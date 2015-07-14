@@ -391,7 +391,9 @@
                             (recur 0 (length table)))
                           (claws:reset-workers 1)
                           (setf (sam-alignments output)
-                                (loop for list across table nconc list))))
+                                (if split-file
+                                  (loop for list across table nconc list)
+                                  (reduce #'nconc table :from-end t :start 1 :initial-value (svref table 0))))))
                  output))))
     ((:queryname)
      (let* ((tree    (make-simple-tree 16))
