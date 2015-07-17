@@ -152,9 +152,9 @@ You can also contact [Charlotte Herzeel](https://github.com/caherzee) directly.
 
 # Citing elPrep
 
-As of today, there is no publication on elPrep yet. Please cite the ExaScience Life Lab with a link to the GitHub repository:
+Please cite the following article:
 
-		https://github.com/ExaScience/elprep
+Herzeel C, Costanza P, Decap D, Fostier J, Reumers J (2015) elPrep: High-Performance Preparation of Sequence Alignment/Map Files for Variant Calling. PLoS ONE 10(7): e0132868. doi:10.1371/journal.pone.0132868
 
 Please use the LispWorks version when running and reporting benchmarks, since the SBCL version is in general slower. If performance is below your expectations, please contact us first before reporting your results.
 
