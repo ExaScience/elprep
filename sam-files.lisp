@@ -483,7 +483,6 @@
             :alignments (loop for line = (read-line stream nil)
                               while line collect (parse-sam-alignment line))))
 
-
 ;;; output
 
 (defun format-sam-string (out tag string)
@@ -998,16 +997,16 @@
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1."
   (declare (stream out) (sam sam) #.*optimization*)
   (format-sam-header out (sam-header sam))
-  (loop for aln in (sam-alignments sam)
-        do (format-sam-alignment out aln)))
+  (do-sam-alignments (aln (sam-alignments sam))
+    (format-sam-alignment out aln)))
 
 (defun sim-format-sam (out sam)
   "Write a complete SAM file.
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1."
   (declare (sim-stream out) (sam sam) #.*optimization*)
   (sim-format-sam-header out (sam-header sam))
-  (loop for aln in (sam-alignments sam)
-        do (sim-format-sam-alignment out aln)))
+  (do-sam-alignments (aln (sam-alignments sam))
+    (sim-format-sam-alignment out aln)))
 
 (defglobal *stderr* #+lispworks (sys:make-stderr-stream) #+sbcl sb-sys:*stderr*
            "Standard error stream of the underlying Common Lisp implementation.")

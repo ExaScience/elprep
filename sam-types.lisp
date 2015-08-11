@@ -370,9 +370,9 @@
    See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.
    The struct sam has a default constructor make-sam.
    Accessor sam-header of type sam-header refers to the header.
-   Accessor sam-alignments of type list of sam-alignment refers to the read alignments."
+   Accessor sam-alignments of type list of sam-alignment or sequence of lists of sam-alignment refers to the read alignments."
   (header (make-sam-header) :type sam-header)
-  (alignments '() :type list))
+  (alignments '() :type sequence))
 
 (setf (documentation 'make-sam 'function)
       "Default constructor for struct sam."
@@ -384,6 +384,15 @@
       "Access the sam header of type sam-header."
       (documentation 'sam-alignments 'function)
       "Access the sam list of sam-alignment instances.")
+
+(defun map-sam-alignments (sam function)
+  (let ((alns (sam-alignments sam)))
+    (if (listp (elt alns 0))
+      (map nil (lambda (chunk) (mapc function chunk)) alns)
+      (mapc function alns))))
+
+(defmacro do-sam-alignments ((var sam) &body body)
+  `(map-sam-alignments ,sam (lambda (,var) ,@body)))
 
 ;;; mapping cigar strings to alists or avectors
 

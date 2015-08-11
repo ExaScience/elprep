@@ -298,7 +298,7 @@
 (defmethod get-output-functions ((output sam) header original-sq &key (sorting-order :keep) (split-file nil))
   (ecase sorting-order
     ((:keep :unknown :unsorted)
-     (let* ((head (cons nil nil))
+     (let* ((head (list nil))
             (tail head)
             (mailbox (make-mailbox *number-of-threads*))
             (thread (thread-run
@@ -317,7 +317,8 @@
                  output))))
     ((:coordinate)
      (let* ((threads *number-of-threads*)
-            (table   (make-array (if split-file threads                  ; distribute evenly across positions
+            (table   (make-array (if split-file
+                                   (if (< threads 2) 1 (* 16 threads))   ; distribute evenly across positions
                                    (1+ (length (sam-header-sq header)))) ; or distribute over reference sequences
                                  :initial-element '() #+lispworks :single-thread #+lispworks t))
             (mailbox (make-mailbox threads))
@@ -340,8 +341,8 @@
                                                         (cdr cons) (svref table index)
                                                         (svref table index) cons))))))
                             (if split-file
-                              (let ((min-pos -1) (bucket-size 1))
-                                (declare (int32 min-pos) (rational bucket-size))
+                              (let ((min-pos -1) (bucket-size 1) (split (length table)))
+                                (declare (int32 min-pos) (rational bucket-size) (fixnum split))
                                 (flet ((get-table-index (aln)
                                          (declare (sam-alignment aln) #.*optimization*)
                                          (when (< min-pos 0)
@@ -354,7 +355,7 @@
                                                                 when (string= sn (getf entry :sn)) return entry))
                                                       (len (or (getf sq :ln) #.(1- (expt 2 31)))))
                                                  (declare (int32 len))
-                                                 (setq min-pos 1 bucket-size (/ len threads))))))
+                                                 (setq min-pos 1 bucket-size (/ len split))))))
                                          (floor (the int32 (- (sam-alignment-pos aln) min-pos)) bucket-size)))
                                   (declare (inline get-table-index))
                                   (receive-chunks (the fixnum (get-table-index aln)))))
@@ -371,8 +372,11 @@
                           (when first-aln
                             (unless (< (sam-alignment-refid first-aln) 0) ; only unmapped reads => no sorting necessary
                               (setf (svref table 0)
-                                    (stable-sort (svref table 0) #'< :key #'sam-alignment-pos)))))
-                        (setf (sam-alignments output) (svref table 0)))
+                                    (stable-sort (svref table 0) #'< :key #'sam-alignment-pos))))))
+                       ((< threads 2)
+                        (loop for i from 1 below (length table)
+                              do (setf (svref table i)
+                                       (stable-sort (svref table i) #'< :key #'sam-alignment-pos))))
                        (t (claws:reset-workers threads)
                           (labels ((recur (min max)
                                      (declare (fixnum min max) #.*optimization*)
@@ -380,8 +384,9 @@
                                        (declare (fixnum length))
                                        (cond ((= length 0))
                                              ((= length 1)
-                                              (setf (svref table min)
-                                                    (stable-sort (svref table min) #'< :key #'sam-alignment-pos)))
+                                              (when (or split-file (> min 0))
+                                                (setf (svref table min)
+                                                      (stable-sort (svref table min) #'< :key #'sam-alignment-pos))))
                                              (t (let* ((half (ash length -1))
                                                        (mid (+ min half)))
                                                   (declare (fixnum half mid))
@@ -390,10 +395,13 @@
                                                   (claws:sync)))))))
                             (recur 0 (length table)))
                           (claws:reset-workers 1)
-                          (setf (sam-alignments output)
-                                (if split-file
-                                  (loop for list across table nconc list)
-                                  (reduce #'nconc table :from-end t :start 1 :initial-value (svref table 0))))))
+                          (unless split-file
+                            (locally (declare #.*optimization*)
+                              (loop with unmapped = (svref table 0)
+                                    for index of-type fixnum from 1 below (length table)
+                                    do (setf (svref table (the fixnum (1- index))) (svref table index))
+                                    finally (setf (svref table (the fixnum (1- (length table)))) unmapped))))))
+                 (setf (sam-alignments output) table)
                  output))))
     ((:queryname)
      (let* ((tree    (make-simple-tree 16))
@@ -542,15 +550,21 @@
     (with-prepared-header (header original-sorting-order original-sq alns) (input destructive)
       (with-thread-filters (thread-filters global-init global-exit) (filters header)
         (setf (sam-header output) header)
-        (if (null alns)
+        (if (every #'null alns)
           (setf (sam-alignments output) '())
           (let* ((sorting-order (effective-sorting-order sorting-order header original-sorting-order))
                  (sorting-criterion (sorting-criterion sorting-order)))
             (flet ((no-filter-case () (setf (sam-alignments output)
                                             (if sorting-criterion
-                                              (apply #'stable-sort
-                                                     (if destructive alns (copy-list alns))
-                                                     sorting-criterion)
+                                              (if (listp (elt alns 0))
+                                                (apply #'stable-sort
+                                                       (if destructive
+                                                         (reduce #'nconc alns :from-end t)
+                                                         (reduce #'nconc alns :from-end t :key #'copy-list))
+                                                       sorting-criterion)
+                                                (apply #'stable-sort
+                                                       (if destructive alns (copy-list alns))
+                                                       sorting-criterion))
                                               alns))))
               (cond ((null thread-filters) (no-filter-case))
                     (t (global-init)
@@ -559,12 +573,22 @@
                              (let ((chunk-filter (create-chunk-filter nil aln-filters nil destructive)))
                                (cond ((null chunk-filter) (no-filter-case))
                                      (t (local-init)
-                                        (unwind-protectn
-                                          (setq alns (funcall chunk-filter alns))
-                                          (setf (sam-alignments output)
-                                                (if sorting-criterion
-                                                  (apply #'stable-sort alns sorting-criterion)
-                                                  alns))
+                                        (unwind-protect
+                                            (if (listp (elt alns 0))
+                                              (let ((alns (if destructive
+                                                            (map-into alns chunk-filter alns)
+                                                            (map 'list chunk-filter alns))))
+                                                (setf (sam-alignments output)
+                                                      (if sorting-criterion
+                                                        (apply #'stable-sort
+                                                               (reduce #'nconc alns :from-end t)
+                                                               sorting-criterion)
+                                                        alns)))
+                                              (let ((alns (funcall chunk-filter alns)))
+                                                (setf (sam-alignments output)
+                                                      (if sorting-criterion
+                                                        (apply #'stable-sort alns sorting-criterion)
+                                                        alns))))
                                           (local-exit))))))
                          (global-exit))))))))
       output)))
@@ -585,15 +609,21 @@
       (with-output-functions
           (output-filter wrap-thread receive-chunk)
           (apply #'get-output-functions output header original-sq :sorting-order sorting-order args)
-        (when alns
-          (cond ((and (null thread-filters)
-                      (null output-filter))
-                 (wrap-thread
-                  (lambda ()
-                    (ecase sorting-order
-                      ((:keep :unknown :unsorted)
-                       (receive-chunk (cons 0 alns)))
-                      ((:coordinate :queryname)
+        (cond ((every #'null alns))
+              ((and (null thread-filters)
+                    (null output-filter))
+               (wrap-thread
+                (lambda ()
+                  (ecase sorting-order
+                    ((:keep :unknown :unsorted)
+                     (if (listp (elt alns 0))
+                       (let ((i -1)) (map nil (lambda (chunk) (receive-chunk (cons (incf i) chunk))) alns))
+                       (receive-chunk (cons 0 alns))))
+                    ((:coordinate :queryname)
+                     (if (listp (elt alns 0))
+                       (if destructive
+                         (map nil (lambda (chunk) (receive-chunk (cons 0 chunk))) alns)
+                         (map nil (lambda (chunk) (receive-chunk (cons 0 (copy-list chunk)))) alns))
                        (if destructive
                          (loop with chunk-size-1 = (1- chunk-size)
                                do (let ((head alns) (tail (nthcdr chunk-size-1 alns)))
@@ -606,16 +636,46 @@
                                       (head tail) (nthdiff chunk-size alns)
                                     (setq alns tail)
                                     (receive-chunk (cons 0 head)))
-                               while alns)))))))
-                (t
-                 ; source thread:
-                 ;   get chunks out of input list; send chunks with head and tail - no copies are created in source thread
-                 ; filter threads:
-                 ;   if destructive, mark last cdr as nil, modify in-situ, send to target
-                 ;   if non-destructive, copy then modify, send to target
-                 (global-init)
-                 (unwind-protect
+                               while alns))))))))
+              (t
+               (global-init)
+               (unwind-protect
+                   (if (listp (elt alns 0))
                      (call-with-threads
+                      (max 1 (- *number-of-threads* 2))
+                      "in-memory filter thread"
+                      (lambda (mailbox)
+                        (wrap-thread
+                         (lambda ()
+                           (with-alignment-filters (aln-filters local-init local-exit) (thread-filters)
+                             (let ((chunk-filter (create-chunk-filter nil aln-filters output-filter destructive)))
+                               (cond (chunk-filter
+                                      (macrolet ((chunk-filter (&rest args)
+                                                   `(locally (declare #.*optimization*)
+                                                      (funcall (the function chunk-filter) ,@args))))
+                                        (local-init)
+                                        (unwind-protect
+                                            (loop for chunk = (mailbox-read mailbox) until (eq chunk :eop) do
+                                                  (setf (cdr chunk) (chunk-filter (cdr chunk)))
+                                                  (receive-chunk chunk))
+                                          (local-exit))))
+                                     (destructive
+                                      (loop for chunk = (mailbox-read mailbox) until (eq chunk :eop) do (receive-chunk chunk)))
+                                     (t (loop for chunk = (mailbox-read mailbox) until (eq chunk :eop) do
+                                              (setf (cdr chunk) (copy-list (cdr chunk)))
+                                              (receive-chunk chunk)))))))))
+                      (lambda (mailboxes)
+                        (let ((i -1) (mailbox-ring mailboxes))
+                          (map nil (lambda (chunk)
+                                     (mailbox-send (car mailbox-ring) (cons (incf i) chunk))
+                                     (setq mailbox-ring (or (cdr mailbox-ring) mailboxes)))
+                               alns))))
+                     (call-with-threads
+                      ; source thread:
+                      ;   get chunks out of input list; send chunks with head and tail - no copies are created in source thread
+                      ; filter threads:
+                      ;   if destructive, mark last cdr as nil, modify in-situ, send to target
+                      ;   if non-destructive, copy then modify, send to target
                       (max 1 (- *number-of-threads* 2))
                       "in-memory filter thread"
                       (lambda (mailbox)
@@ -657,8 +717,8 @@
                               do (let ((head alns) (tail (nthcdr chunk-size-1 alns)))
                                    (setq alns (cdr tail))
                                    (mailbox-send (car mailbox-ring) (cons (incf serial) (cons head tail))))
-                              while alns)))
-                   (global-exit)))))))))
+                              while alns))))
+                 (global-exit))))))))
 
 (defmethod run-pipeline ((input pathname) (output pathname) &rest args &key filters (sorting-order :keep) (destructive :default))
   "Optimize when both input and output are files."
