@@ -66,7 +66,7 @@
 (defvar *program-name* "elPrep"
   "Name of the elprep binary.")
 
-(defvar *program-version* "2.33"
+(defvar *program-version* "2.34"
   "Version of the elprep binary.")
 
 (defvar *program-url* "http://github.com/exascience/elprep"
