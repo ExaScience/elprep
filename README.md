@@ -455,6 +455,12 @@ A Python script that implements the .bam/.cram conversion through piping to SAMt
 
 A Python script that wraps the elPrep binary and loads the elprep\_io\_wrapper.py script for .bam/.cram conversion using SAMtools rather than using the internal piping of elPrep. You can use this script as a drop-in replacement for the elprep binary. 
 
+## Name
+
+### elprep\_entrypoint.py - A Python scripts that can be used as an entrypoint for Docker.
+
+A Python scripts that wraps the elprep.py, elprep-sfm.py and elprep-sfm-gnupar.py scripts. It can for example be used as an entrypoint to Docker.
+
 # Extending elPrep
 
 If you wish to extend elPrep, for example by adding your own filters, please consult our [API documentation](http://exascience.github.io/elprep/elprep-package/index.html). 
