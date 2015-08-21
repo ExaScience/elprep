@@ -16,9 +16,9 @@ def elprep_entrypoint():
   if len(sys.argv) >= 2:
     script_selector = sys.argv[1]
     if (script_selector == "sfm"):
-      elprep_sfm.elprep_sfm(sys.argv[2:])
+      elprep_sfm.elprep_sfm(sys.argv[1:])
     elif (script_selector == "sfm-gnupar"):
-      elprep_sfm_gnupar.elprep_sfm_gnupar(sys.argv[2:])
+      elprep_sfm_gnupar.elprep_sfm_gnupar(sys.argv[1:])
     else:
       elprep_im.elprep_im(sys.argv)
   else:
