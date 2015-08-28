@@ -124,6 +124,14 @@ elPrep has been developed for Linux and has not been tested for other operating 
 * Manjaro Linux
 * Red Hat Enterprise Linux 6.4 and 6.5
 
+## Docker image
+
+You can download a precompiled Docker containter for elPrep [here](https://hub.docker.com/r/caherzee/elprep/). For building the Docker image yourself, execute the following command in the directory that contains the elPrep Dockerfile:
+
+	docker build -t elprep .
+
+For information on how to use the elPrep Docker container, please consult the documentation on [the elprep page on the docker hub](https://hub.docker.com/r/caherzee/elprep/). 
+
 # Memory Requirements
 
 ## RAM
