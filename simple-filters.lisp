@@ -54,9 +54,9 @@
   (lambda ()
     (lambda (alignment)
       (declare (sam-alignment alignment) #.*optimization*)
-      (or (= 0 (logand (sam-alignment-flag alignment) +unmapped+))
-          (= (sam-alignment-pos alignment) 0)
-          (string= (sam-alignment-rname alignment) "*")))))
+      (and (= 0 (logand (sam-alignment-flag alignment) +unmapped+))
+          (/= (sam-alignment-pos alignment) 0)
+          (string/= (sam-alignment-rname alignment) "*")))))
 
 (defun filter-duplicate-reads (header)
   "A filter for removing duplicate sam-alignment instances, based on FLAG."
