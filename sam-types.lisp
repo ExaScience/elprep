@@ -385,11 +385,10 @@
       (documentation 'sam-alignments 'function)
       "Access the sam list of sam-alignment instances.")
 
-(defun map-sam-alignments (sam function)
-  (let ((alns (sam-alignments sam)))
-    (if (listp (elt alns 0))
-      (map nil (lambda (chunk) (mapc function chunk)) alns)
-      (mapc function alns))))
+(defun map-sam-alignments (alns function)
+  (if (listp (elt alns 0))
+    (map nil (lambda (chunk) (mapc function chunk)) alns)
+    (map nil function alns)))
 
 (defmacro do-sam-alignments ((var sam) &body body)
   `(map-sam-alignments ,sam (lambda (,var) ,@body)))
