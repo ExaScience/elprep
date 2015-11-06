@@ -132,6 +132,10 @@ You can download a precompiled Docker containter for elPrep [here](https://hub.d
 
 For information on how to use the elPrep Docker container, please consult the documentation on [the elprep page on the docker hub](https://hub.docker.com/r/caherzee/elprep/). 
 
+## Chef recipe
+
+Eagle Genomics provides a Chef recipe for installing elPrep [here](https://github.com/EagleGenomics-cookbooks/elPrep).
+
 # Memory Requirements
 
 ## RAM
