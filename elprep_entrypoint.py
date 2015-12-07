@@ -22,6 +22,7 @@ def elprep_entrypoint():
     else:
       elprep_im.elprep_im(sys.argv)
   else:
-    subprocess.call(["elprep"])
+    ret = subprocess.call(["elprep"])
+    if ret != 0: raise SystemExit, ret
 
 elprep_entrypoint()    

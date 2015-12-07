@@ -47,7 +47,8 @@ def elprep_sfm_gnupar (argv):
   cmd_list = ["elprep"]
   elprep_cmd = '\'' + reduce(append_cmd, cmd_list + ['{}', result_dir + '{/.}.' + intermediate_files_output_type ] + cmd_opts) + '\''
   gnu_cmd = 'parallel --gnu -j ' + str(nr_of_jobs_opt[1]) + ' ' + elprep_cmd + ' ::: ' + splits_path + '*.' + intermediate_files_output_type
-  subprocess.check_call(gnu_cmd, shell=True)
+  ret = subprocess.check_call(gnu_cmd, shell=True)
+  if ret != 0: raise SystemExit, ret
   # command for spread file
   spread_out_file = os.path.join(result_dir, output_prefix + "-spread." + intermediate_files_output_type)
   elprep_io_wrapper.cmd_wrap_io(["elprep"], spread_file, spread_out_file , given_cmd_opts)

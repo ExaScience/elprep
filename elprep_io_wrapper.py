@@ -39,8 +39,10 @@ def cmd_wrap_input (cmd_list, file_in, file_out, cmd_opts):
     p1 = subprocess.Popen(["samtools", "view", "-h", "-@", nr_of_threads, file_in], bufsize=-1, stdout=subprocess.PIPE)          
     p2 = subprocess.Popen(cmd_list + ["/dev/stdin", file_out] + cmd_opts, bufsize=-1, stdin=p1.stdout)
     p2.communicate()
+    if p2.returncode != 0: raise SystemExit, p2.returncode
   else:
-    subprocess.call(cmd_list + [file_in, file_out] + cmd_opts)
+    ret = subprocess.call(cmd_list + [file_in, file_out] + cmd_opts)
+    if ret != 0: raise SystemExit, ret
 
 def cmd_wrap_output (cmd_list, file_in, file_out, cmd_opts):
   output = os.path.basename(file_out)
@@ -51,8 +53,10 @@ def cmd_wrap_output (cmd_list, file_in, file_out, cmd_opts):
     p1 = subprocess.Popen(cmd_list + [file_in, "/dev/stdout"] + cmd_opts, bufsize=-1, stdout=subprocess.PIPE)
     p2 = subprocess.Popen(["samtools", "view", "-bS", "-@", nr_of_threads, "-o", file_out, "-"], bufsize=-1, stdin=p1.stdout) 
     p2.communicate()
+    if p2.returncode != 0: raise SystemExit, p2.returncode
   else:
-    subprocess.call(cmd_list + [file_in, file_out] + cmd_opts)
+    ret = subprocess.call(cmd_list + [file_in, file_out] + cmd_opts)
+    if ret != 0: raise SystemExit, ret
 
 def cmd_wrap_io(cmd_list, file_in, file_out, cmd_opts):
   input = os.path.basename(file_in)
@@ -67,6 +71,7 @@ def cmd_wrap_io(cmd_list, file_in, file_out, cmd_opts):
       p2 = subprocess.Popen(cmd_list + ["/dev/stdin", "/dev/stdout"] + cmd_opts, bufsize=-1, stdin=p1.stdout, stdout=subprocess.PIPE)
       p3 = subprocess.Popen(["samtools", "view", "-bS", "-@", nr_of_threads, "-o", file_out, "-"], bufsize=-1, stdin=p2.stdout) 
       p3.communicate()
+      if p3.returncode != 0: raise SystemExit, p3.returncode
     elif (output_extension == ".cram"):
       reference_t_opt = cmd_option("--reference-t", cmd_opts)
       reference_bigT_opt = cmd_option("--reference-T", cmd_opts)
@@ -76,14 +81,17 @@ def cmd_wrap_io(cmd_list, file_in, file_out, cmd_opts):
       t_opt = ["-t", reference_t_opt[1]] if reference_t_opt else ["-T", reference_bigT_opt[1]]
       p3 = subprocess.Popen(["samtools", "view", "-C", "-@", nr_of_threads] + t_opt + ["-o", file_out, "-"], bufsize=-1, stdin=p2.stdout)
       p3.communicate()
+      if p3.returncode != 0: raise SystemExit, p3.returncode
     else: # output_extension == ".sam"
       p2 = subprocess.Popen(cmd_list + ["/dev/stdin", file_out] + cmd_opts, bufsize=-1, stdin=p1.stdout)
       p2.communicate()
+      if p2.returncode != 0: raise SystemExit, p2.returncode
   elif (input_extension == ".sam"):
     if (output_extension == ".bam"):
       p1 = subprocess.Popen(cmd_list + [file_in, "/dev/stdout"] + cmd_opts, bufsize=-1, stdout=subprocess.PIPE)
       p2 = subprocess.Popen(["samtools", "view", "-bS", "-@", nr_of_threads, "-o", file_out, "-"], bufsize=-1, stdin=p1.stdout)
       p2.communicate()
+      if p2.returncode != 0: raise SystemExit, p2.returncode
     elif (output_extension == ".cram"):
       reference_t_opt = cmd_option("--reference-t", sys.argv)
       reference_bigT_opt = cmd_option("--reference-T", sys.argv)
@@ -93,5 +101,7 @@ def cmd_wrap_io(cmd_list, file_in, file_out, cmd_opts):
       t_opt = ["-t", reference_t_opt[1]] if reference_t_opt else ["-T", reference_bigT_opt[1]]
       p2 = subprocess.Popen(["samtools", "view", "-C", "-@", nr_of_threads] + t_opt + ["-o", file_out, "-"], bufsize=-1, stdin=p1.stdout)
       p2.communicate()
+      if p2.returncode != 0: raise SystemExit, p2.returncode
     else: # output_extension == ".sam"    
-      subprocess.call(cmd_list + [file_in, file_out] + cmd_opts)
+      ret = subprocess.call(cmd_list + [file_in, file_out] + cmd_opts)
+      if ret != 0: raise SystemExit, ret
