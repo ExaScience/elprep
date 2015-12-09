@@ -93,7 +93,7 @@
   (dbg:log-bug-form (format nil "An error occurred in ~A ~A: ~A" *program-name* *program-version* condition)
                     :log-file (merge-pathnames (create-log-filename) (user-homedir-pathname))
                     :message-stream t)
-  (lw:quit :status -1 :confirm nil :ignore-errors-p t))
+  (lw:quit :status 1 :ignore-errors-p t))
 
 #+sbcl
 (defun elprep-debugger-hook (condition hook)
@@ -111,7 +111,15 @@
       (terpri out)
       (sb-debug:print-backtrace :stream out :print-thread t :print-frame-source t :method-frame-style :normal))
     (format t "Wrote error log to ~A~%" log-path)
-    (sb-ext:exit :code -1 :abort t)))
+    (sb-ext:exit :abort t)))
+
+(defun exit-script (help-string &optional error-string &rest error-args)
+  (when error-string (apply #'format t error-string error-args))
+  (format t help-string)
+  #+lispworks
+  (lw:quit :status (if error-string 1 0) :ignore-errors-p t)
+  #+sbcl
+  (sb-ext:exit :abort error-string))
 
 (defun elprep-filter-script ()
   "Command line script for elprep filter script."
@@ -138,8 +146,7 @@
         (split-file nil))
     (loop with entry while cmd-line do (setq entry (pop cmd-line))
           if (string= entry "-h") do
-          (format t *program-help*)
-          (return-from elprep-filter-script)
+          (exit-script *program-help*)
           else if (string= entry "--replace-reference-sequences")
           do (setf replace-ref-seq-dct-filter (list (replace-reference-sequence-dictionary-from-sam-file (setf ref-seq-dct (pop cmd-line)))))
           else if (string= entry "--filter-unmapped-reads")
@@ -166,9 +173,7 @@
                    (pop cmd-line)
                    (setq sorting-order (intern (string-upcase so) :keyword))
                    (unless (member sorting-order '(:keep :unknown :unsorted :queryname :coordinate))
-                     (format t "Invalid sorting-order ~A.~%" so)
-                     (format t *program-help*)
-                     (return-from elprep-filter-script)))))
+                     (exit-script *program-help* "Invalid sorting-order ~A.~%" so)))))
           else if (string= entry "--clean-sam")
           do (setf clean-sam-filter (list #'clean-sam))
           else if (string= entry "--nr-of-threads")
@@ -180,24 +185,19 @@
                  (progn (setf lvl (parse-integer (pop cmd-line) :junk-allowed t))
                    (if (and lvl (or (= lvl 0) (= lvl 1) (= lvl 2)))
                      (setf gc-on lvl)
-                     (progn (format t "Invalid gc-on option ~A.~%" lvl)
-                       (format t *program-help*)
-                       (return-from elprep-filter-script))))))
+                     (exit-script *program-help* "Invalid gc-on option ~A.~%" lvl)))))
           else if (string= entry "--timed")
           do (setf timed t)
           else if (string= entry "--reference-t")
           do (let ((ref (first cmd-line)))
-               (cond ((or (not ref) (search "--" cmd-line)) ; no file given
-                      (format t "Please provide reference file with --reference-t.~%")
-                      (format t *program-help*)
-                      (return-from elprep-filter-script))
-                     (t (setf *reference-fai* (setf reference-fai (pop cmd-line))))))
+               (if (or (not ref) (search "--" cmd-line)) ; no file given
+                 (exit-script *program-help* "Please provide reference file with --reference-t.~%")
+                 (setf *reference-fai* (setf reference-fai (pop cmd-line)))))
           else if (string= entry "--reference-T")
           do (let ((ref (first cmd-line)))
-               (cond ((or (not ref) (search "--" cmd-line)) ; no file given
-                      (format t "Please provide reference file with --reference-T.~%")
-                      (format t *program-help*))
-                     (t (setf *reference-fasta* (setf reference-fasta (pop cmd-line))))))
+               (if (or (not ref) (search "--" cmd-line)) ; no file given
+                 (exit-script *program-help* "Please provide reference file with --reference-T.~%")
+                 (setf *reference-fasta* (setf reference-fasta (pop cmd-line)))))
           else if (string= entry "--rename-chromosomes")
           do (setf rename-chromosomes-filter (list #'rename-chromosomes))
           else if (string= entry "--split-file")
@@ -205,19 +205,15 @@
           else collect entry into conversion-parameters ; main required parameters, input and output sam files
           finally
           (when (/= (length conversion-parameters) 2)
-            (format t "Incorrect number of parameters: Expected 2, got ~S~@[ ~A~].~%"
-                    (length conversion-parameters) conversion-parameters)
-            (format t *program-help*)
-            (return-from elprep-filter-script))
+            (exit-script *program-help* "Incorrect number of parameters: Expected 2, got ~S~@[ ~A~].~%"
+                         (length conversion-parameters) conversion-parameters))
           ; print a warning when replacing ref seq dictionary and trying to keep the order
           (when (and replace-ref-seq-dct-filter (eq sorting-order :keep))
             (format t "WARNING: Requesting to keep the order of the input file while replacing the reference sequence dictionary may force an additional sorting phase to ensure the original sorting order is respected."))
           ; check that when cram is used, the reference dictionary is passed
           (when (and (eq (sam-file-kind (second conversion-parameters)) :cram)
                      (not reference-fai) (not reference-fasta))
-            (format t "ERROR: Attempting to output to cram without specifying a reference file. Please add --reference-t or --reference-T to your call.~%")
-            (format t *program-help*)
-            (return-from elprep-filter-script))
+            (exit-script *program-help* "ERROR: Attempting to output to cram without specifying a reference file. Please add --reference-t or --reference-T to your call.~%"))
           ; set the default gc-settings, unless the user set them
           (unless gc-on
             (if (or mark-duplicates-filter 
@@ -289,23 +285,18 @@
         (input nil) (output-path nil) (output-prefix nil) (output-type :sam) (output-extension nil) (nr-of-threads 1) (reference-fai nil) (reference-fasta nil))
     (loop with entry while cmd-line do (setq entry (pop cmd-line))
           if (string= entry "-h") do
-          (format t *split-program-help*)
-          (return-from elprep-split-script)
+          (exit-script *split-program-help*)
           else if (string= entry "--output-type")
           do (let ((output-kind (intern (string-upcase (first cmd-line)) :keyword)))
                (cond ((or (not output-kind) (search "--" cmd-line) (not (member output-kind '(:sam :bam :cram)))) ; no correct output type given
-                      (format t "Please provide a valid output type.~%")
-                      (format t *split-program-help*)
-                      (return-from elprep-split-script))
+                      (exit-script *split-program-help* "Please provide a valid output type.~%"))
                      (t (pop cmd-line)
                         (setf output-type output-kind)
                         (setf output-extension (ecase output-type (:bam "bam") (:sam "sam") (:cram "cram"))))))
           else if (string= entry "--output-prefix")
           do (let ((prefix (first cmd-line)))
                (cond ((or (not prefix) (search "--" cmd-line)) ; no prefix given
-                      (format t "Please provide a valid output prefix.~%")
-                      (format t *split-program-help*)
-                      (return-from elprep-split-script))
+                      (exit-script *split-program-help* "Please provide a valid output prefix.~%"))
                      (t 
                       (pop cmd-line) 
                       (setf output-prefix prefix))))
@@ -313,33 +304,25 @@
           do (setf nr-of-threads (parse-integer (pop cmd-line)))
           else if (string= entry "--reference-t")
           do (let ((ref (first cmd-line)))
-               (cond ((or (not ref) (search "--" cmd-line)) ; no file given
-                      (format t "Please provide reference file with --reference-t.~%")
-                      (format t *split-program-help*)
-                      (return-from elprep-split-script))
-                     (t (setf *reference-fai* (setf reference-fai (pop cmd-line))))))
+               (if (or (not ref) (search "--" cmd-line)) ; no file given
+                 (exit-script *split-program-help* "Please provide reference file with --reference-t.~%")
+                 (setf *reference-fai* (setf reference-fai (pop cmd-line)))))
           else if (string= entry "--reference-T")
           do (let ((ref (first cmd-line)))
-               (cond ((or (not ref) (search "--" cmd-line)) ; no file given
-                      (format t "Please provide reference file with --reference-T.~%")
-                      (format t *split-program-help*)
-                      (return-from elprep-split-script))
-                     (t (setf *reference-fasta* (setf reference-fasta (pop cmd-line))))))
+               (if (or (not ref) (search "--" cmd-line)) ; no file given
+                 (exit-script *split-program-help* "Please provide reference file with --reference-T.~%")
+                 (setf *reference-fasta* (setf reference-fasta (pop cmd-line)))))
           else collect entry into io-parameters
           finally
           (when (/= (length io-parameters) 2) ; checks on input parameters
-            (format t "Incorrect number of parameters: Expected 2, got ~S~@[ ~A~].~%"
-                    (length io-parameters) io-parameters)
-            (format t *split-program-help*)
-            (return-from elprep-split-script))
+            (exit-script *split-program-help* "Incorrect number of parameters: Expected 2, got ~S~@[ ~A~].~%"
+                         (length io-parameters) io-parameters))
           ; fill in defaults
           (setf input (first io-parameters))
           (setf output-path (second io-parameters))
           ; check that output path is really a path
           (when (or (pathname-name (pathname output-path)) (not (pathname-directory (pathname output-path))))
-            (format t "Given output path is not a path: ~a ~%" output-path)
-            (format t *split-program-help*)
-            (return-from elprep-split-script))
+            (exit-script *split-program-help* "Given output path is not a path: ~a ~%" output-path))
           (unless output-prefix (setf output-prefix (pathname-name input)))
           (unless output-extension (setf output-extension (ecase (sam-file-kind input) (:bam "bam") (:sam "sam") (:cram "cram"))))
           ; print feedback
@@ -367,42 +350,31 @@
         (input-path nil) (output nil) (nr-of-threads 1) (reference-fai nil) (reference-fasta nil))
     (loop with entry while cmd-line do (setq entry (pop cmd-line))
           if (string= entry "-h") do
-          (format t *merge-program-help*)
-          (return-from elprep-merge-script)
+          (exit-script *merge-program-help*)
           else if (string= entry "--nr-of-threads")
           do (setf nr-of-threads (parse-integer (pop cmd-line)))
           else if (string= entry "--reference-t")
           do (let ((ref (first cmd-line)))
-               (cond ((or (not ref) (search "--" cmd-line)) ; no file given
-                      (format t "Please provide reference file with --reference-t.~%")
-                      (format t *merge-program-help*)
-                      (return-from elprep-merge-script))
-                     (t (setf *reference-fai* (setf reference-fai (pop cmd-line))))))
+               (if (or (not ref) (search "--" cmd-line)) ; no file given
+                 (exit-script *merge-program-help* "Please provide reference file with --reference-t.~%")
+                 (setf *reference-fai* (setf reference-fai (pop cmd-line)))))
           else if (string= entry "--reference-T")
           do (let ((ref (first cmd-line)))
-               (cond ((or (not ref) (search "--" cmd-line)) ; no file given
-                      (format t "Please provide reference file with --reference-T.~%")
-                      (format t *merge-program-help*)
-                      (return-from elprep-merge-script))
-                     (t (setf *reference-fasta* (setf reference-fasta (pop cmd-line))))))
+               (if (or (not ref) (search "--" cmd-line)) ; no file given
+                 (exit-script *merge-program-help* "Please provide reference file with --reference-T.~%")
+                 (setf *reference-fasta* (setf reference-fasta (pop cmd-line)))))
           else collect entry into io-parameters
           finally         
           (when (/= (length io-parameters) 2)
-            (format t "Incorrect number of parameters: Expected 2, got ~S~@[ ~A~].~%"
-                    (length io-parameters) io-parameters)
-            (format t *merge-program-help*)
-            (return-from elprep-merge-script))
+            (exit-script *merge-program-help* "Incorrect number of parameters: Expected 2, got ~S~@[ ~A~].~%"
+                         (length io-parameters) io-parameters))
           (setf input-path (first io-parameters))
           (setf output (second io-parameters))
           (let ((files-to-merge (cl-fad:list-directory input-path)))
             (cond ((not files-to-merge)
-                   (format t "Given directory ~a does not exist. ~%" input-path)
-                   (format t *merge-program-help*)
-                   (return-from elprep-merge-script))
+                   (exit-script *merge-program-help* "Given directory ~a does not exist. ~%" input-path))
                   ((= (length files-to-merge) 1)
-                   (format t "Given directory ~a does not contain any files to merge. ~%" input-path)
-                   (format t *merge-program-help*)
-                   (return-from elprep-merge-script)))
+                   (exit-script *merge-program-help* "Given directory ~a does not contain any files to merge. ~%" input-path)))
             ; extract the input prefix
             (let* ((header (with-open-sam (in (first files-to-merge) :direction :input) (parse-sam-header in)))
                    (input-prefix
@@ -445,7 +417,7 @@
       (format t *split-program-help*)
       (format t "Merge parameters: ~%")
       (format t *merge-program-help*)
-      (return-from elprep-script))
+      (exit-script ""))
     (cond ((string= (first cmd-line) "split") (elprep-split-script))
           ((string= (first cmd-line) "merge") (elprep-merge-script))
           (t 

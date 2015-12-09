@@ -86,7 +86,7 @@ def cmd_wrap_io(cmd_list, file_in, file_out, cmd_opts):
       p2 = subprocess.Popen(cmd_list + ["/dev/stdin", file_out] + cmd_opts, bufsize=-1, stdin=p1.stdout)
       p2.communicate()
       if p2.returncode != 0: raise SystemExit, p2.returncode
-  elif (input_extension == ".sam"):
+  else: # input_extension == ".sam"
     if (output_extension == ".bam"):
       p1 = subprocess.Popen(cmd_list + [file_in, "/dev/stdout"] + cmd_opts, bufsize=-1, stdout=subprocess.PIPE)
       p2 = subprocess.Popen(["samtools", "view", "-bS", "-@", nr_of_threads, "-o", file_out, "-"], bufsize=-1, stdin=p1.stdout)
