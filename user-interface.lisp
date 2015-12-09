@@ -61,7 +61,7 @@
     (cond (timed
            (format t "Running pipeline.~%")
            (time (all-phases)))
-          (t (time (all-phases))))))
+          (t (all-phases)))))
 
 (defvar *program-name* "elPrep"
   "Name of the elprep binary.")
