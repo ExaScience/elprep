@@ -8,9 +8,9 @@ RUN apt-get -y update && apt-get install -y wget && apt-get install -y gcc && ap
 
 RUN wget https://github.com/samtools/samtools/releases/download/1.2/samtools-1.2.tar.bz2 && bunzip2 samtools-1.2.tar.bz2 && tar -xvf samtools-1.2.tar && cd samtools-1.2 && make 
 
-RUN wget https://github.com/ExaScience/elprep/releases/download/2.34/elprep-v2.34.tar.bz2 && bunzip2 elprep-v2.34.tar.bz2 && tar -xvf elprep-v2.34.tar
+RUN wget https://github.com/ExaScience/elprep/releases/download/2.4/elprep-v2.4.tar.bz2 && bunzip2 elprep-v2.4.tar.bz2 && tar -xvf elprep-v2.4.tar
 
-ENV PATH ./samtools-1.2:./elprep-v2.34:${PATH}
+ENV PATH ./samtools-1.2:./elprep-v2.4:${PATH}
 
 CMD []
 
