@@ -418,7 +418,7 @@ A Python script that combines the elprep split, filter, and merge commands. The 
 
 ## Special Options
 
-### --intermediates-files-output-type [sam | bam | cram]
+### --intermediate-files-output-type [sam | bam | cram]
 
 The output type that will be used for the intermediate split files. The default output type for intermediate files is .sam.
 
@@ -451,7 +451,7 @@ Using this script is useful when using a multi-socket server. For example, when 
 
 The number of elprep commands that will be executed in parallel.
 
-### --intermediates-files-output-type [sam | bam | cram]
+### --intermediate-files-output-type [sam | bam | cram]
 
 The output type that will be used for the intermediate split files. The default output type for intermediate files is .sam.
 
