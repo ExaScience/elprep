@@ -1,5 +1,5 @@
 (asdf:defsystem #:elprep
-  :version "2.4"
+  :version "2.5"
   :author "Charlotte Herzeel (Imec), Pascal Costanza (Intel Corporation)"
   :licence
   "Copyright (c) 2014, 2015, 2016 Imec and Intel Corporation. All rights reserved.
