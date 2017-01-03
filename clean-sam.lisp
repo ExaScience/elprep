@@ -9,7 +9,7 @@
                              :initial-element nil
                              #+lispworks :allocation #+lispworks :long-lived
                              #+lispworks :single-thread #+lispworks t)))
-      (loop for char across "mdn=x" do (setf (svref table (- (char-code char) +min-cigar-operation+)) t))
+      (loop for char across "MmDdNn=Xx" do (setf (svref table (- (char-code char) +min-cigar-operation+)) t))
       table)))
 
 (defglobal *cigar-consumes-reference-bases-table*
