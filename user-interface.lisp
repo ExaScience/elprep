@@ -276,7 +276,7 @@
                               :filters ,filters :gc-on ,gc-on :timed ,timed :split-file ,split-file))))
                 (apply #'run-best-practices-pipeline conversion-parameters)))))))
 
-(defvar *split-program-help* "split [sam-file | /path/to/input/] /path/to/output/ ~% [--output-prefix name] ~% [--output-type [sam | bam | cram]] ~% [--nr-of-threads nr] ~% [--reference-t fai-file] ~% [--reference-T fasta-file] ~%"
+(defvar *split-program-help* "split (sam-file | /path/to/input/) /path/to/output/ ~% [--output-prefix name] ~% [--output-type [sam | bam | cram]] ~% [--nr-of-threads nr] ~% [--reference-t fai-file] ~% [--reference-T fasta-file] ~%"
   "Help string for the elprep-split-script binary.")
 
 (defun elprep-split-script ()
@@ -328,13 +328,13 @@
           ; print feedback
           (let ((cmd-string
                  (with-output-to-string (s nil :element-type 'base-char)
-                   (format s "~a split ~a ~a " (first (command-line-arguments)) (first io-parameters) (second io-parameters))
-                   (format s "--output-prefix ~a " output-prefix)
-                   (format s "--output-type ~(~a~) " output-type)
+                   (format s "~a split ~a ~a" (first (command-line-arguments)) (first io-parameters) (second io-parameters))
+                   (format s " --output-prefix ~a" output-prefix)
+                   (format s " --output-type ~(~a~)" output-type)
                    (when reference-fai
-                     (format s "--reference-t ~a" reference-fai))
+                     (format s " --reference-t ~a" reference-fai))
                    (when reference-fasta
-                     (format s "--reference-T ~a" reference-fasta)))))
+                     (format s " --reference-T ~a" reference-fasta)))))
             (format t "Executing command:~%  ~a~%" cmd-string))
           (setq *number-of-threads* nr-of-threads)
           (ensure-directories-exist output-path)
@@ -376,7 +376,7 @@
                   ((= (length files-to-merge) 1)
                    (exit-script *merge-program-help* "Given directory ~a does not contain any files to merge. ~%" input-path)))
             ; extract the input prefix
-            (let* ((header (with-open-sam (in (first files-to-merge) :direction :input) (parse-sam-header in)))
+            (let* ((header (with-open-sam (in (first files-to-merge) :direction :input :header-only t) (parse-sam-header in)))
                    (input-prefix
                     (loop for file in files-to-merge
                           do (let* ((ffile (file-namestring file))
@@ -389,13 +389,13 @@
                      (with-output-to-string (s nil :element-type 'base-char)
                        (format s "~a merge ~a ~a" (first (command-line-arguments)) input-path output)
                        (when reference-fai
-                         (format s "--reference-t ~a" reference-fai))
+                         (format s " --reference-t ~a" reference-fai))
                        (when reference-fasta
-                         (format s "--reference-T ~a" reference-fasta)))))
+                         (format s " --reference-T ~a" reference-fasta)))))
                 (format t "Executing command:~%  ~a~%" cmd-string))
               (setq *number-of-threads* nr-of-threads)
               (let ((working-directory (get-working-directory)))
-                (let ((sorting-order (getf (sam-header-hd header) :so)))
+                (let ((sorting-order (getf (sam-header-hd header) :so "unknown")))
                   (if (string= sorting-order "coordinate")
                       (merge-sorted-files-split-per-chromosome (merge-pathnames input-path working-directory) 
                                                                (merge-pathnames output working-directory) input-prefix input-extension header)
