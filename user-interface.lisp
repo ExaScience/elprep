@@ -375,10 +375,8 @@
           (setf input-path (first io-parameters))
           (setf output (second io-parameters))
           (let ((files-to-merge (cl-fad:list-directory input-path)))
-            (cond ((not files-to-merge)
-                   (exit-script *merge-program-help* "Given directory ~a does not exist. ~%" input-path))
-                  ((= (length files-to-merge) 1)
-                   (exit-script *merge-program-help* "Given directory ~a does not contain any files to merge. ~%" input-path)))
+            (when (< (length files-to-merge) 2)
+              (exit-script *merge-program-help* "Given directory ~a does not contain /splits/ directory and/or spread reads file. These should have been created by an elprep split invocation.~%" input-path))
             ; extract the input prefix
             (let* ((header (with-open-sam (in (first files-to-merge) :direction :input :header-only t) (parse-sam-header in)))
                    (input-prefix
