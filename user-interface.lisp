@@ -190,12 +190,12 @@
           do (setf timed t)
           else if (string= entry "--reference-t")
           do (let ((ref (first cmd-line)))
-               (if (or (not ref) (search "--" cmd-line)) ; no file given
+               (if (or (not ref) (search "--" ref)) ; no file given
                  (exit-script *program-help* "Please provide reference file with --reference-t.~%")
                  (setf *reference-fai* (setf reference-fai (pop cmd-line)))))
           else if (string= entry "--reference-T")
           do (let ((ref (first cmd-line)))
-               (if (or (not ref) (search "--" cmd-line)) ; no file given
+               (if (or (not ref) (search "--" ref)) ; no file given
                  (exit-script *program-help* "Please provide reference file with --reference-T.~%")
                  (setf *reference-fasta* (setf reference-fasta (pop cmd-line)))))
           else if (string= entry "--rename-chromosomes")
@@ -287,15 +287,17 @@
           if (string= entry "-h") do
           (exit-script *split-program-help*)
           else if (string= entry "--output-type")
-          do (let ((output-kind (intern (string-upcase (first cmd-line)) :keyword)))
-               (cond ((or (not output-kind) (search "--" cmd-line) (not (member output-kind '(:sam :bam :cram)))) ; no correct output type given
+          do (let ((output-kind (first cmd-line)))
+               (cond ((or (not output-kind) (search "--" output-kind)
+                          (and (setf output-kind (intern (string-upcase output-kind) :keyword))
+                               (not (member output-kind '(:sam :bam :cram))))) ; no correct output type given
                       (exit-script *split-program-help* "Please provide a valid output type.~%"))
                      (t (pop cmd-line)
                         (setf output-type output-kind)
                         (setf output-extension (ecase output-type (:bam "bam") (:sam "sam") (:cram "cram"))))))
           else if (string= entry "--output-prefix")
           do (let ((prefix (first cmd-line)))
-               (cond ((or (not prefix) (search "--" cmd-line)) ; no prefix given
+               (cond ((or (not prefix) (search "--" prefix)) ; no prefix given
                       (exit-script *split-program-help* "Please provide a valid output prefix.~%"))
                      (t 
                       (pop cmd-line) 
@@ -304,12 +306,12 @@
           do (setf nr-of-threads (parse-integer (pop cmd-line)))
           else if (string= entry "--reference-t")
           do (let ((ref (first cmd-line)))
-               (if (or (not ref) (search "--" cmd-line)) ; no file given
+               (if (or (not ref) (search "--" ref)) ; no file given
                    (exit-script *split-program-help* "Please provide reference file with --reference-t.~%")
                  (setf *reference-fai* (setf reference-fai (pop cmd-line)))))
           else if (string= entry "--reference-T")
           do (let ((ref (first cmd-line)))
-               (if (or (not ref) (search "--" cmd-line)) ; no file given
+               (if (or (not ref) (search "--" ref)) ; no file given
                    (exit-script *split-program-help* "Please provide reference file with --reference-T.~%")
                  (setf *reference-fasta* (setf reference-fasta (pop cmd-line)))))
           else collect entry into io-parameters
@@ -356,12 +358,12 @@
           do (setf nr-of-threads (parse-integer (pop cmd-line)))
           else if (string= entry "--reference-t")
           do (let ((ref (first cmd-line)))
-               (if (or (not ref) (search "--" cmd-line)) ; no file given
+               (if (or (not ref) (search "--" ref)) ; no file given
                  (exit-script *merge-program-help* "Please provide reference file with --reference-t.~%")
                  (setf *reference-fai* (setf reference-fai (pop cmd-line)))))
           else if (string= entry "--reference-T")
           do (let ((ref (first cmd-line)))
-               (if (or (not ref) (search "--" cmd-line)) ; no file given
+               (if (or (not ref) (search "--" ref)) ; no file given
                  (exit-script *merge-program-help* "Please provide reference file with --reference-T.~%")
                  (setf *reference-fasta* (setf reference-fasta (pop cmd-line)))))
           else collect entry into io-parameters
