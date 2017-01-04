@@ -401,11 +401,14 @@
               (setq *number-of-threads* nr-of-threads)
               (let ((working-directory (get-working-directory)))
                 (let ((sorting-order (getf (sam-header-hd header) :so "unknown")))
-                  (if (string= sorting-order "coordinate")
-                      (merge-sorted-files-split-per-chromosome (merge-pathnames input-path working-directory) 
-                                                               (merge-pathnames output working-directory) input-prefix input-extension header)
-                    (merge-unsorted-files-split-per-chromosome (merge-pathnames input-path working-directory) 
-                                                               (merge-pathnames output working-directory) input-prefix input-extension header)))))))))
+                  (cond ((string= sorting-order "coordinate")
+                         (merge-sorted-files-split-per-chromosome (merge-pathnames input-path working-directory) 
+                                                                  (merge-pathnames output working-directory) input-prefix input-extension header))
+                        ((string= sorting-order "queryname")
+                         (error "Merging of files sorted by queryname not yet implemented."))
+                        (t
+                         (merge-unsorted-files-split-per-chromosome (merge-pathnames input-path working-directory) 
+                                                                    (merge-pathnames output working-directory) input-prefix input-extension header))))))))))
 
 (defun elprep-script ()
   "Command line script for elPrep."
