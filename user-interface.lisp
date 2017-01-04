@@ -333,6 +333,7 @@
                    (format s "~a split ~a ~a" (first (command-line-arguments)) (first io-parameters) (second io-parameters))
                    (format s " --output-prefix ~a" output-prefix)
                    (format s " --output-type ~(~a~)" output-type)
+                   (format s " --nr-of-threads ~a" nr-of-threads) 
                    (when reference-fai
                      (format s " --reference-t ~a" reference-fai))
                    (when reference-fasta
@@ -391,6 +392,7 @@
               (let ((cmd-string
                      (with-output-to-string (s nil :element-type 'base-char)
                        (format s "~a merge ~a ~a" (first (command-line-arguments)) input-path output)
+                       (format s " --nr-of-threads ~a" nr-of-threads)
                        (when reference-fai
                          (format s " --reference-t ~a" reference-fai))
                        (when reference-fasta
