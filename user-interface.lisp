@@ -305,12 +305,12 @@
           else if (string= entry "--reference-t")
           do (let ((ref (first cmd-line)))
                (if (or (not ref) (search "--" cmd-line)) ; no file given
-                 (exit-script *split-program-help* "Please provide reference file with --reference-t.~%")
+                   (exit-script *split-program-help* "Please provide reference file with --reference-t.~%")
                  (setf *reference-fai* (setf reference-fai (pop cmd-line)))))
           else if (string= entry "--reference-T")
           do (let ((ref (first cmd-line)))
                (if (or (not ref) (search "--" cmd-line)) ; no file given
-                 (exit-script *split-program-help* "Please provide reference file with --reference-T.~%")
+                   (exit-script *split-program-help* "Please provide reference file with --reference-T.~%")
                  (setf *reference-fasta* (setf reference-fasta (pop cmd-line)))))
           else collect entry into io-parameters
           finally
@@ -337,9 +337,10 @@
                      (format s " --reference-T ~a" reference-fasta)))))
             (format t "Executing command:~%  ~a~%" cmd-string))
           (setq *number-of-threads* nr-of-threads)
-          (ensure-directories-exist output-path)
-          (let ((working-directory (get-working-directory)))
-            (split-file-per-chromosome (merge-pathnames input working-directory) (merge-pathnames output-path working-directory) output-prefix output-extension)))))
+          (let* ((working-directory (get-working-directory))
+                 (out-file (merge-pathnames output-path working-directory)))
+            (ensure-directories-exist out-file)
+            (split-file-per-chromosome (merge-pathnames input working-directory) out-file output-prefix output-extension)))))
 
 (defvar *merge-program-help* "merge /path/to/input/ sam-output-file ~% [--nr-of-threads nr] ~% [--reference-t fai-file] ~% [--reference-T fasta-file] ~%"
   "Help string for the elprep-merge-script binary.")
