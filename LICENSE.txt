@@ -1,4 +1,6 @@
-Copyright (c) 2014, 2015, 2016 Imec and Intel Corporation. All rights reserved.
+Copyright (c) 2014, 2015, 2016 Imec and Intel Corporation.
+Copyright (c) 2017 Imec.
+All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are
@@ -39,24 +41,24 @@ Software License Agreement:
 (1) You may not copy the LispWorks Application Software except as
 necessary to exercise your rights under this Agreement and to make one
 (1) copy of the LispWorks Application Software in machine readable
-form for back-up or archival purposes only. You may not translate,
-reverse engineer, decompile, disassemble, modify or create derivative
-works based on the materials, except as expressly permitted by the law
-of this Agreement. This license does not permit the distribution of
-the LispWorks Application Software, or any part thereof, to any third
-party.
+form for back-up or archival purposes only. You may not rent, lease,
+loan, translate, reverse engineer, decompile, disassemble, modify or
+create derivative works based on the materials, except as expressly
+permitted by the law of this Agreement. This license does not permit
+the distribution of the LispWorks Application Software, or any part
+thereof, to any third party.
 
 (2) Ownership; Confidentiality. You acknowledge and agree that the
 LispWorks Application Software contains the confidential and
 proprietary information of LispWorks Ltd and its licensors and is
-provided solely under the terms and conditions of this Agreement.  All
+provided solely under the terms and conditions of this Agreement. All
 right, title and interest in and to the LispWorks Application
 Software, including, but not limited to, patent copyright, trade
 secret, trademark and all other intellectual property rights are and
-shall remain in LispWorks Ltd or its licensor. You shall not remove
-any product identification, copyright notices, or other legends set
-forth on the LispWorks Application Software and shall reproduce all
-such notices on any copies.  You shall have no right in LispWorks
+shall remain vested in LispWorks Ltd or its licensor. You shall not
+remove any product identification, copyright notices, or other legends
+set forth on the LispWorks Application Software and shall reproduce
+all such notices on any copies.  You shall have no right in LispWorks
 Ltd's or its third party licensors' trademarks in connection with the
 LispWorks Application Software, or with its promotion or publication,
 without LispWorks Ltd's prior written approval.
@@ -76,18 +78,44 @@ WARRANTIES OR REPRESENTATIONS, EXPRESS OR IMPLIED, INCLUDING, BUT NOT
 LIMITED TO, THE IMPLIED WARRANTIES OF QUALITY AND FITNESS FOR A
 PARTICULAR PURPOSE.
 
-(4) Limitation of Liability. EXCEPT IN RESPECT OF PERSONAL INJURY OR
+(4) Limitation of Liability.
+
+(a) If you are a business. EXCEPT IN RESPECT OF PERSONAL INJURY OR
 DEATH CAUSED BY THE NEGLIGENCE OF LISPWORKS LTD, FRAUDULANT
 MISREPRESENTATION OR ANY OTHER LIABILITY WHICH MAY NOT BE EXCLUDED BY
 LAW IN NO EVENT SHALL LISPWORKS LTD OR ITS LICENSORS HAVE ANY
 LIABILITY TO YOU WHETHER UNDER THIS AGREEMENT OR OTHERWISE.
+
+(b) If you are a consumer. YOU ACKNOWLEDGE THAT THE LISPWORKS
+APPLICATION SOFTWARE HAS NOT BEEN DEVELOPED TO MEET YOUR INDIVIDUAL
+REQUIREMENTS, AND THAT IT IS THEREFORE YOUR RESPONSIBILITY TO ENSURE
+THAT THE FACILITIES AND FUNCTIONS OF THE SOFTWARE AS DESCRIBED IN THE
+RELEVANT DOCUMENTATION MEET YOUR REQUIREMENTS. YOU AGREE NOT TO USE
+THE SOFTWARE FOR ANY COMMERCIAL OR BUSINESS PURPOSES, AND LISPWORKS
+LTD AND ITS LICENSORS HAVE NO LIABILITY TO YOU FOR ANY LOSS OF PROFIT,
+LOSS OF BUSINESS, BUSINESS INTERRUPTION, OR LOSS OF BUSINESS
+OPPORTUNITY. NOTHING IN THIS AGREEMENT SHALL LIMIT OR EXCLUDE OUR
+LIABILITY FOR: (A) DEATH OR PERSONAL INJURY RESULTING FROM OUR
+NEGLIGENCE; (B) FRAUD OR FRAUDULENT MISREPRESENTATION; (C) ANY OTHER
+LIABILITY THAT CANNOT BE EXCLUDED OR LIMITED BY ENGLISH LAW.
 
 (5) Export Control. You may not export or re-export the LispWorks
 Application Software or any underlying information or technology
 except in full compliance with all applicable laws and regulations of
 all applicable countries.
 
-(6) Termination. LispWorks Ltd reserves the right to terminate your
+(6)	Compliance with Applicable Laws. You shall be responsible for
+obtaining any import licenses or permits necessary for your use or
+distribution of the LispWorks Application Software in accordance with
+the terms of this Agreement. You will be responsible for any and all
+duties, charges, taxes and other amounts payable in connection with
+use of the Licensed Program in accordance with this Agreement.
+
+(7) Third Party Rights. A person who is not a party to this Agreement
+shall not have any rights under the Contracts (Rights of Third
+Parties) Act 1999 to enforce any of its terms.
+
+(8) Termination. LispWorks Ltd reserves the right to terminate your
 use of the LispWorks Application Software on written notice if you
 fail to comply with any of the above terms and conditions.  Upon
 termination, you shall cease using the LispWorks Application Software
