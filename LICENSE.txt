@@ -16,7 +16,7 @@ met:
  this software without specific prior written permission.
 
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+''AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
 LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
 A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
 HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
@@ -33,7 +33,7 @@ Additional license for binaries created with LispWorks.
 -------------------------------------------------------
 
 This Software contains or has been developed using software supplied
-by LispWorks Ltd ("LispWorks Application Software"). All LispWorks
+by LispWorks Ltd (''LispWorks Application Software''). All LispWorks
 Application Software supplied under this Agreement is additionally
 licensed in accordance with the following terms of the LispWorks
 Software License Agreement:
