@@ -417,6 +417,27 @@
       (documentation 'sim-stream-%floats 'function)
       "Access the optional sim-stream string-stream for formatting floating point numbers.")
 
+(declaim (inline reset-sim-stream))
+
+(defun reset-sim-stream (s)
+  "Reset the sim-stream so it can be written again from index 0, while reusing the current target string."
+  (declare (sim-stream s) #.*optimization*)
+  (setf (sim-stream-index s) 0))
+
+(declaim (inline get-sim-stream-string))
+
+(defun get-sim-stream-string (s)
+  "Return a copy of the current target string up to index."
+  (declare (sim-stream s) #.*optimization*)
+  (let* ((string (sim-stream-string s))
+         (index  (sim-stream-index s))
+         (new-string (make-array index :element-type 'base-char
+                                 #+lispworks :single-thread #+lispworks t)))
+    (declare (simple-base-string string) (fixnum index) (simple-base-string new-string))
+    (loop for i of-type fixnum below index do
+          (setf (schar new-string i) (schar string i)))
+    new-string))
+
 (declaim (inline sim-stream-floats))
 
 (defun sim-stream-floats (s)
