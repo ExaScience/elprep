@@ -451,7 +451,6 @@
                (scanc scanner #\Tab))))
       (declare (inline do-stringn do-string do-int32))
       (make-sam-alignment
-       :line  string
        :qname (do-string)
        :flag  (do-int32)
        :rname (do-string)
