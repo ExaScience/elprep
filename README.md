@@ -8,7 +8,7 @@ In our [PLOS one paper](http://journals.plos.org/plosone/article?id=10.1371/jour
 
 The main advantage of elPrep is very fast execution times on high-end backend servers, as is available for example through Amazon cloud computing services or custom server setups. We do not recommend using elPrep on laptops, desktops, or low-end servers. Please consult the system requirements below for more details. 
 
-elPrep is being developed at the [ExaScience Life Lab](http://www.exascience.com), a collaboration between Imec, Intel, and Janssen Pharmaceutica. For questions, use our mailing list (below) or contact [Charlotte Herzeel](https://github.com/caherzee) directly.
+elPrep is being developed at the [ExaScience Life Lab](http://www.exascience.com) at Imec. For questions, use our mailing list (below) or contact [Charlotte Herzeel](https://github.com/caherzee) directly.
 
 # Advantages
 
