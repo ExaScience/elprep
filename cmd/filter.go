@@ -139,7 +139,7 @@ func Filter() error {
 		markDuplicates, markDuplicatesDeterministic, removeDuplicates bool
 		sortingOrder                                                  string
 		cleanSam                                                      bool
-		nrOfThreads int
+		nrOfThreads                                                   int
 		timed                                                         bool
 		profile                                                       string
 		reference_t, reference_T                                      string

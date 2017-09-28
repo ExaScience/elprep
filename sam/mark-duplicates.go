@@ -57,7 +57,7 @@ func (aln *Alignment) ComputeUnclippedPosition() (result int32) {
 	}
 
 	result = aln.POS
-	
+
 	if len(cigar) == 0 {
 		return result
 	}
@@ -82,7 +82,7 @@ func (aln *Alignment) ComputeUnclippedPosition() (result int32) {
 			result -= op.Length
 		}
 	}
-	
+
 	return result
 }
 

@@ -130,7 +130,7 @@ func ComposeFilters(header *Header, hdrFilters []Filter) (receiver pipeline.Rece
 					if !alnFilter(aln) {
 						n := len(alns)
 					jLoop:
-						for j := i+1; j < n; j++ {
+						for j := i + 1; j < n; j++ {
 							aln := alns[j]
 							for _, alnFilter := range alnFilters {
 								if !alnFilter(aln) {

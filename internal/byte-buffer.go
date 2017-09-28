@@ -6,7 +6,7 @@ var bufPool = sync.Pool{New: func() interface{} {
 	return []byte(nil)
 }}
 
-func ReserveByteBuffer() []byte    {
+func ReserveByteBuffer() []byte {
 	return bufPool.Get().([]byte)[:0]
 }
 
