@@ -124,10 +124,7 @@ var (
 )
 
 func (aln *Alignment) RG() interface{} {
-	rg, ok := aln.TAGS.Get(RG)
-	if !ok {
-		log.Fatal("RG in SAM alignment ", aln.QNAME, " not set (use the AddOrReplaceReadGroup filter to fix this)")
-	}
+	rg, _ := aln.TAGS.Get(RG)
 	return rg
 }
 

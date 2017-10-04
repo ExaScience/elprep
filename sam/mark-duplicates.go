@@ -116,7 +116,10 @@ func setAdaptedScore(aln *Alignment, s int32) {
 }
 
 func adaptAlignment(aln *Alignment) {
-	aln.SetRG(utils.Intern(aln.RG().(string)))
+	rg := aln.RG()
+	if rg != nil {
+		aln.SetRG(utils.Intern(rg.(string)))
+	}
 	setAdaptedPos(aln, aln.ComputeUnclippedPosition())
 	setAdaptedScore(aln, aln.ComputePhredScore())
 }
@@ -146,19 +149,22 @@ func isTruePair(aln *Alignment) bool {
 }
 
 type fragment struct {
-	rg       utils.Symbol
+	rg       interface{}
 	refid    int32
 	pos      int32
 	reversed bool
 }
 
-func (f fragment) Hash() uint64 {
-	return utils.SymbolHash(f.rg) ^ uint64(f.refid) ^ uint64(f.pos) ^ internal.BoolHash(f.reversed)
+func (f fragment) Hash() (hash uint64) {
+	if f.rg != nil {
+		hash = utils.SymbolHash(f.rg.(utils.Symbol))
+	}
+	return hash ^ uint64(f.refid) ^ uint64(f.pos) ^ internal.BoolHash(f.reversed)
 }
 
 func classifyFragment(aln *Alignment, fragments *sync.Map, deterministic bool) {
 	entry, found := fragments.LoadOrStore(fragment{
-		aln.RG().(utils.Symbol),
+		aln.RG(),
 		aln.REFID(),
 		adaptedPos(aln),
 		aln.IsReversed(),
@@ -208,23 +214,29 @@ func classifyFragment(aln *Alignment, fragments *sync.Map, deterministic bool) {
 }
 
 type pairFragment struct {
-	rg    utils.Symbol
+	rg    interface{}
 	qname string
 }
 
-func (f pairFragment) Hash() uint64 {
-	return utils.SymbolHash(f.rg) ^ internal.StringHash(f.qname)
+func (f pairFragment) Hash() (hash uint64) {
+	if f.rg != nil {
+		hash = utils.SymbolHash(f.rg.(utils.Symbol))
+	}
+	return hash ^ internal.StringHash(f.qname)
 }
 
 type pair struct {
-	rg                   utils.Symbol
+	rg                   interface{}
 	refid1, refid2       int32
 	pos                  int64
 	reversed1, reversed2 bool
 }
 
-func (p pair) Hash() uint64 {
-	return utils.SymbolHash(p.rg) ^ uint64(p.refid1) ^ uint64(p.refid2) ^ uint64(p.pos) ^ internal.BoolHash(p.reversed1) ^ internal.BoolHash(p.reversed2)
+func (p pair) Hash() (hash uint64) {
+	if p.rg != nil {
+		hash = utils.SymbolHash(p.rg.(utils.Symbol))
+	}
+	return hash ^ uint64(p.refid1) ^ uint64(p.refid2) ^ uint64(p.pos) ^ internal.BoolHash(p.reversed1) ^ internal.BoolHash(p.reversed2)
 }
 
 type samAlignmentPair struct {
@@ -251,7 +263,7 @@ func classifyPair(aln *Alignment, fragments, pairs *sync.Map, deterministic bool
 
 	aln1 := aln
 	var aln2 *Alignment
-	if entry, deleted := fragments.DeleteOrStore(pairFragment{aln.RG().(utils.Symbol), aln.QNAME}, aln); deleted {
+	if entry, deleted := fragments.DeleteOrStore(pairFragment{aln.RG(), aln.QNAME}, aln); deleted {
 		aln2 = entry.(*Alignment)
 	} else {
 		return
@@ -265,7 +277,7 @@ func classifyPair(aln *Alignment, fragments, pairs *sync.Map, deterministic bool
 		aln1Pos, aln2Pos = aln2Pos, aln1Pos
 	}
 	entry, found := pairs.LoadOrStore(pair{
-		aln1.RG().(utils.Symbol),
+		aln1.RG(),
 		aln1.REFID(),
 		aln2.REFID(),
 		(int64(aln1Pos) << 32) + int64(aln2Pos),
