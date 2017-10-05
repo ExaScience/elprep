@@ -9,6 +9,9 @@ import (
 
 var cigarConsumesReferenceBases = map[byte]int32{'M': 1, 'D': 1, 'N': 1, '=': 1, 'X': 1}
 
+/*
+Sums the lengths of all CIGAR operations that consume reference bases.
+*/
 func end(aln *Alignment, cigars []CigarOperation) int32 {
 	var length int32
 	for _, op := range cigars {
@@ -35,6 +38,9 @@ func operatorConsumesReferenceBases(operator byte) bool {
 	}
 }
 
+/*
+Sums the lengths of all CIGAR operations that consume read bases.
+*/
 func readLengthFromCigar(cigars []CigarOperation) int32 {
 	var length int32
 	for _, op := range cigars {
@@ -82,6 +88,10 @@ func softClipEndOfRead(clipFrom int32, cigars []CigarOperation) string {
 	return string(newCigar)
 }
 
+/*
+A filter for soft-clipping an alignment at the end of a reference
+sequence, and set MAPQ to 0 if unmapped.
+*/
 func CleanSam(header *Header) AlignmentFilter {
 	referenceSequenceTable := make(map[string]int32)
 	for _, sn := range header.SQ {

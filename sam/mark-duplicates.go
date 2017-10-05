@@ -12,6 +12,10 @@ import (
 	"github.com/exascience/elprep/utils"
 )
 
+/*
+Map Phred qualities to a reasonable range and an error flag indicating
+if it is outside a valid range.
+*/
 var phredScoreTable [512]byte
 
 func init() {
@@ -32,6 +36,9 @@ func init() {
 	}
 }
 
+/*
+Sum the adapted Phred qualities of an alignment.
+*/
 func (aln *Alignment) ComputePhredScore() (score int32) {
 	var error int32
 	for _, char := range aln.QUAL {
@@ -45,11 +52,19 @@ func (aln *Alignment) ComputePhredScore() (score int32) {
 	return score
 }
 
+/*
+Map CIGAR operations to flags indicating whether they are clipped
+and/or reference operations.
+*/
 var (
 	clippedTable   = map[byte]byte{'S': 1, 'H': 1}
 	referenceTable = map[byte]byte{'M': 1, 'D': 1, 'N': 1, '=': 1, 'X': 1}
 )
 
+/*
+Compute unclipped position of an alignment, based on its FLAG, POS,
+and CIGAR string.
+*/
 func (aln *Alignment) ComputeUnclippedPosition() (result int32) {
 	cigar, err := ScanCigarString(aln.CIGAR)
 	if err != nil {
@@ -115,6 +130,10 @@ func setAdaptedScore(aln *Alignment, s int32) {
 	aln.Temps.Set(score, s)
 }
 
+/*
+Adapt the sam-alignment: Make read group unique; fill in unclipped
+position; fill in Phred score.
+*/
 func adaptAlignment(aln *Alignment) {
 	rg := aln.RG()
 	if rg != nil {
@@ -124,6 +143,10 @@ func adaptAlignment(aln *Alignment) {
 	setAdaptedScore(aln, aln.ComputePhredScore())
 }
 
+/*
+A handle wraps pointers in a box to enable using
+atomic.CompareAndSwapPointer safely.
+*/
 type handle struct {
 	object unsafe.Pointer
 }
@@ -140,14 +163,20 @@ func (h *handle) compareAndSwapAlignment(old, new *Alignment) bool {
 	return atomic.CompareAndSwapPointer(&h.object, unsafe.Pointer(old), unsafe.Pointer(new))
 }
 
+// Is this alignment definitely not part of a pair?
 func isTrueFragment(aln *Alignment) bool {
 	return (aln.FLAG & (Multiple | NextUnmapped)) != Multiple
 }
 
+// Is this alignment definitely part of pair?
 func isTruePair(aln *Alignment) bool {
 	return (aln.FLAG & (Multiple | NextUnmapped)) == Multiple
 }
 
+/*
+The portion of an alignment that indicates its unclipped position and
+its direction.
+*/
 type fragment struct {
 	rg       interface{}
 	refid    int32
@@ -162,6 +191,18 @@ func (f fragment) Hash() (hash uint64) {
 	return hash ^ uint64(f.refid) ^ uint64(f.pos) ^ internal.BoolHash(f.reversed)
 }
 
+/*
+For each set of alignments with the same unclipped position and
+direction, all except the one with the highest score are marked as
+duplicates. If there are fragments in such a list that are actually
+part of pairs, all the true fragments are marked as duplicates and the
+pairs are left untouched.
+
+If multiple framents are tied for best score, and deterministic is
+true, all except the one with the lexicographically smallest QNAME are
+marked as duplicates.  If deterministic is false, the choice which of
+the tied fragments are marked as duplicates is random.
+*/
 func classifyFragment(aln *Alignment, fragments *sync.Map, deterministic bool) {
 	entry, found := fragments.LoadOrStore(fragment{
 		aln.RG(),
@@ -213,6 +254,9 @@ func classifyFragment(aln *Alignment, fragments *sync.Map, deterministic bool) {
 	}
 }
 
+/*
+The portion of an alignments that indicates the pair it belongs to.
+*/
 type pairFragment struct {
 	rg    interface{}
 	qname string
@@ -225,6 +269,10 @@ func (f pairFragment) Hash() (hash uint64) {
 	return hash ^ internal.StringHash(f.qname)
 }
 
+/*
+The portion of two alignments forming a pair that indicates their
+unclipped positions and their directions.
+*/
 type pair struct {
 	rg                   interface{}
 	refid1, refid2       int32
@@ -256,6 +304,16 @@ func (h *handle) compareAndSwapPair(old, new *samAlignmentPair) bool {
 	return atomic.CompareAndSwapPointer(&h.object, unsafe.Pointer(old), unsafe.Pointer(new))
 }
 
+/*
+For each set of pairs with the same unclipped positions and
+directions, all except the one with the highest score are marked as
+duplicates.
+
+If multiple pairs are tied for best score, and deterministic is true,
+all except the one with the lexicographically smallest QNAME are
+marked as duplicates.  If deterministic is false, the choice which of
+the tied pairs are marked as duplicates is random.
+*/
 func classifyPair(aln *Alignment, fragments, pairs *sync.Map, deterministic bool) {
 	if !isTruePair(aln) {
 		return
@@ -326,6 +384,15 @@ func classifyPair(aln *Alignment, fragments, pairs *sync.Map, deterministic bool
 	}
 }
 
+/*
+A filter for marking duplicate alignments. Depends on the AddREFID
+filter being called before to fill in the refid.
+
+Duplicate marking is based on an adapted Phred score. In case of ties,
+if deterministic is true, the QNAME is used as a tie-breaker.
+Otherwise duplicate marking is random for alignments tied for best
+score.
+*/
 func MarkDuplicates(deterministic bool) Filter {
 	return func(_ *Header) AlignmentFilter {
 		splits := 16 * runtime.GOMAXPROCS(0)

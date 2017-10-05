@@ -56,6 +56,12 @@ const DeprecatedFilterHelp = "Filter parameters: (deprecated, please use the fil
 	"[--reference-t fai-file]\n" +
 	"[--reference-T fasta-file]\n"
 
+/*
+DeprecatedFilter parses the command line for elprep filter in the
+style of previous elprep versions (1.x and 2.x), for backwards
+compatibility. This command is deprecated and will be removed at a
+later stage.
+*/
 func DeprecatedFilter() error {
 	setLogOutput()
 	log.Println("Warning: Calling elprep without a command to invoke the filter functionality is depecratead. Please use the filter command instead.")

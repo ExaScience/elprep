@@ -98,6 +98,13 @@ func (s *lineScanner) err() error {
 	return s._err
 }
 
+/*
+A function for splitting a SAM file into: a file containing all
+unmapped reads, a file containing all pairs where reads map to
+different chromosomes, and a file per chromosome containing all pairs
+where the reads map to that chromosome. There are no requirements on
+the input file for splitting.
+*/
 func SplitFilePerChromosome(input, outputPath, outputPrefix, outputExtension, fai, fasta string) (err error) {
 	files, err := internal.Directory(input)
 	if err != nil {
@@ -204,7 +211,30 @@ func SplitFilePerChromosome(input, outputPath, outputPrefix, outputExtension, fa
 	return nil
 }
 
+/*
+A function for merging files that were split with elPrep and sorted in
+coordinate order.
+*/
 func MergeSortedFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPrefix, inputExtension string, header *Header) (err error) {
+
+	// Extract the header to identify the files names.  Assume that all
+	// files are sorted per cooordinate order, i.e. first sorted on
+	// refid entry according to sequence dictionary, then sorted on
+	// position entry. There is a file per chromosome in the sequence
+	// dictionary. These contain all reads that map to that chromosome.
+	// On top of that, there is a file that contains the unmapped (or *)
+	// reads and a file that contains the reads that map to different
+	// chromosomes. Merge these files in the order of the sequence
+	// dictionary. Put the unmapped reads as the last entries. When
+	// merging a particular chromosome file into the merged file, make
+	// sure that reads that map to different chromosomes are merged in
+	// correctly. So while merging a particular chromosome file, pop
+	// and compare against reads in the file for reads that map to
+	// different chromosomes until the next chromosome is encountered on
+	// the refid position. When a file is empty, close it and remove it
+	// from the list of files to merge. Loop for identifying and
+	// opening the files to merge.
+
 	spreadReadsName := filepath.Join(inputPath, inputPrefix+"-spread."+inputExtension)
 	spreadReads, err := Open(spreadReadsName, false)
 	if err != nil {
@@ -392,6 +422,10 @@ func MergeSortedFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPref
 	return err
 }
 
+/*
+A function for merging files that were split with elPrep and are
+unsorted.
+*/
 func MergeUnsortedFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPrefix, inputExtension string, header *Header) (err error) {
 	out, err := Create(output, fai, fasta)
 	if err != nil {

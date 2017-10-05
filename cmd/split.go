@@ -21,6 +21,9 @@ const SplitHelp = "Split parameters:\n" +
 	"[--reference-t fai-file]\n" +
 	"[--reference-T fasta-file]\n"
 
+/*
+Split implements the elprep split command.
+*/
 func Split() error {
 	var (
 		outputPrefix, outputType, reference_t, reference_T string

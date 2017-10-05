@@ -34,6 +34,10 @@ func timedRun(timed bool, profile, msg string, phase int64, f func() error) erro
 	return f()
 }
 
+/*
+Run the best practices pipeline. Version that uses an intermediate
+slice so that sorting and mark-duplicates are supported.
+*/
 func runBestPracticesPipelineIntermediateSam(fileIn, fileOut, fai, fasta, sortingOrder string, filters, filters2 []sam.Filter, timed bool, profile string) error {
 	filteredReads := sam.NewSam()
 	err := timedRun(timed, profile, "Reading SAM into memory and applying filters.", 1, func() (err error) {
@@ -82,6 +86,11 @@ func runBestPracticesPipelineIntermediateSam(fileIn, fileOut, fai, fasta, sortin
 	})
 }
 
+/*
+Run the best practices pipeline. Version that doesn't use an
+intermediate slice when neither sorting nor mark-duplicates are
+needed.
+*/
 func runBestPracticesPipeline(fileIn, fileOut, fai, fasta, sortingOrder string, filters []sam.Filter, timed bool, profile string) error {
 	return timedRun(timed, profile, "Running pipeline.", 1, func() (err error) {
 		pathname, err := internal.FullPathname(fileIn)
@@ -131,6 +140,9 @@ const FilterHelp = "Filter parameters:\n" +
 	"[--reference-t fai-file]\n" +
 	"[--reference-T fasta-file]\n"
 
+/*
+Filter implements the elprep filter command.
+*/
 func Filter() error {
 	var (
 		replaceReferenceSequences                                     string
