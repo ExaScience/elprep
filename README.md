@@ -480,6 +480,9 @@ If you wish to extend elPrep, for example by adding your own filters, please con
 Many thanks for testing, bug reports, or contributions:
 
 Richard Corbett
+
 Keith James
+
 Leonor Palmeira
+
 Joke Reumers
