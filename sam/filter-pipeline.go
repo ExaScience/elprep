@@ -13,18 +13,41 @@ import (
 )
 
 type (
+	// An AlignmentFilter receives an Alignment which it can modify. It
+	// returns true if the alignment should be kept, and false if the
+	// alignment should be removed.
 	AlignmentFilter func(*Alignment) bool
-	Filter          func(*Header) AlignmentFilter
 
+	// A Filter receives a Header and returns an AlignmentFilter or nil.
+	Filter func(*Header) AlignmentFilter
+
+	// A PipelineOutput can add nodes to the given pargo
+	// pipeline. AddNodes also receives a header that should be added to
+	// the output, and a sortingOrder. AddNodes should arrange for the
+	// alignments that it receives to be sorted according to that
+	// sortingOrder if possible, or report an error if it can't perform
+	// such a sort. Any error should be reported to the pipeline by
+	// calling p.Err(err) with a non-nil error value.
 	PipelineOutput interface {
 		AddNodes(p *pipeline.Pipeline, header *Header, sortingOrder string)
 	}
 
+	// A PipelineInput arranges for a pargo pipeline to be properly
+	// initialized, arrange for the pipeline to run the given filters,
+	// call output.AddNodes(...), and eventually run the pipeline. If
+	// RunPipeline doesn't encounter an error of its own, it should
+	// return the error of its pargo pipeline, if any.
 	PipelineInput interface {
 		RunPipeline(output PipelineOutput, filters []Filter, sortingOrder string) error
 	}
 )
 
+/*
+AlignmentToString returns a pargo pipeline.Receiver that formats
+slices of Alignment pointers into slices of strings representing these
+alignments according to the SAM file format. See
+http://samtools.github.io/hts-specs/SAMv1.pdf - Sections 1.4 and 1.5.
+*/
 func AlignmentToString(p *pipeline.Pipeline, _ pipeline.NodeKind, _ *int) (receiver pipeline.Receiver, _ pipeline.Finalizer) {
 	receiver = func(_ int, data interface{}) interface{} {
 		alns := data.([]*Alignment)
@@ -45,6 +68,12 @@ func AlignmentToString(p *pipeline.Pipeline, _ pipeline.NodeKind, _ *int) (recei
 	return
 }
 
+/*
+StringToAlignment returns a pargo pipeline.Receiver that parses slices
+of strings representing alignments according to the SAM file format
+into slices of pointers to freshly allocated Alignment values. See
+http://samtools.github.io/hts-specs/SAMv1.pdf - Sections 1.4 and 1.5.
+*/
 func StringToAlignment(p *pipeline.Pipeline, _ pipeline.NodeKind, _ *int) (receiver pipeline.Receiver, _ pipeline.Finalizer) {
 	receiver = func(_ int, data interface{}) interface{} {
 		strings := data.([]string)
@@ -64,6 +93,10 @@ func StringToAlignment(p *pipeline.Pipeline, _ pipeline.NodeKind, _ *int) (recei
 	return
 }
 
+/*
+AddNodes implements the PipelineOutput interface for Sam values to
+represent complete SAM files in memory.
+*/
 func (output *Sam) AddNodes(p *pipeline.Pipeline, header *Header, sortingOrder string) {
 	output.Header = header
 	switch sortingOrder {
@@ -88,6 +121,10 @@ func (output *Sam) AddNodes(p *pipeline.Pipeline, header *Header, sortingOrder s
 	}
 }
 
+/*
+AddNodes implements the PipelineOutput interface for Writer values to
+produce output in the SAM file format.
+*/
 func (output *Writer) AddNodes(p *pipeline.Pipeline, header *Header, sortingOrder string) {
 	writer := (*bufio.Writer)(output)
 	header.Format(writer)
@@ -115,6 +152,14 @@ func (output *Writer) AddNodes(p *pipeline.Pipeline, header *Header, sortingOrde
 	)
 }
 
+/*
+ComposeFilters takes a Header and a slice of Filter functions, and
+successively calls these functions to generate the corresponding
+AlignmentFilter predicates. It then returns a pargo pipeline.Receiver
+that applies these AlignmentFilter predicates on the slices of
+Alignment pointers it receives. ComposeFilters may return nil if all
+AlignmentFilters are nil.
+*/
 func ComposeFilters(header *Header, hdrFilters []Filter) (receiver pipeline.Receiver) {
 	var alnFilters []AlignmentFilter
 	for _, f := range hdrFilters {
@@ -150,6 +195,12 @@ func ComposeFilters(header *Header, hdrFilters []Filter) (receiver pipeline.Rece
 	return
 }
 
+/*
+Determine effective sorting order: Some filters may destroy the
+sorting order recorded in the input.  If this happens, and requested
+sorting order is :keep, then we need to effectively sort the result
+according to the original sorting order.
+*/
 func effectiveSortingOrder(sortingOrder string, header *Header, originalSortingOrder string) string {
 	if sortingOrder == "keep" {
 		currentSortingOrder := header.HD_SO()
@@ -163,6 +214,10 @@ func effectiveSortingOrder(sortingOrder string, header *Header, originalSortingO
 	return sortingOrder
 }
 
+/*
+RunPipeline implements the PipelineInput interface for Sam values that
+represent complete SAM files in memory
+*/
 func (input *Sam) RunPipeline(output PipelineOutput, hdrFilters []Filter, sortingOrder string) error {
 	header := input.Header
 	alns := input.Alignments
@@ -198,6 +253,10 @@ func (input *Sam) RunPipeline(output PipelineOutput, hdrFilters []Filter, sortin
 	return p.Err(nil)
 }
 
+/*
+RunPipeline implements the PipelineInput interface for Reader values
+that produce input in the SAM file format.
+*/
 func (input *Reader) RunPipeline(output PipelineOutput, hdrFilters []Filter, sortingOrder string) error {
 	reader := (*bufio.Reader)(input)
 	header, _, err := ParseHeader(reader)

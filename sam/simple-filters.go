@@ -8,6 +8,9 @@ import (
 	"github.com/exascience/elprep/utils"
 )
 
+/*
+A filter for replacing the reference sequence dictionary in a Header.
+*/
 func ReplaceReferenceSequenceDictionary(dict []utils.StringMap) Filter {
 	return func(header *Header) AlignmentFilter {
 		if sortingOrder := header.HD["SO"]; sortingOrder == "coordinate" {
@@ -35,6 +38,10 @@ func ReplaceReferenceSequenceDictionary(dict []utils.StringMap) Filter {
 	}
 }
 
+/*
+A filter for replacing the reference sequence dictionary in a Header
+with one parsed from the given SAM/DICT file.
+*/
 func ReplaceReferenceSequenceDictionaryFromSamFile(samFile string) (f Filter, err error) {
 	input, err := Open(samFile, true)
 	if err != nil {
@@ -53,10 +60,17 @@ func ReplaceReferenceSequenceDictionaryFromSamFile(samFile string) (f Filter, er
 	return ReplaceReferenceSequenceDictionary(header.SQ), nil
 }
 
+/*
+A filter for removing unmapped sam-alignment instances, based on FLAG.
+*/
 func FilterUnmappedReads(_ *Header) AlignmentFilter {
 	return func(aln *Alignment) bool { return (aln.FLAG & Unmapped) == 0 }
 }
 
+/*
+A filter for removing unmapped sam-alignment instances, based on FLAG,
+or POS=0, or RNAME=*.
+*/
 func FilterUnmappedReadsStrict(_ *Header) AlignmentFilter {
 	return func(aln *Alignment) bool {
 		return ((aln.FLAG & Unmapped) == 0) && (aln.POS != 0) && (aln.RNAME != "*")
@@ -67,12 +81,20 @@ func OutputExactMappingReads(_ *Header) AlignmentFilter {
 	return func(aln *Alignment) bool { return !strings.ContainsAny(aln.CIGAR, "IDNHPX=") }
 }
 
+/*
+A filter for removing duplicate sam-alignment instances, based on
+FLAG.
+*/
 func FilterDuplicateReads(_ *Header) AlignmentFilter {
 	return func(aln *Alignment) bool { return (aln.FLAG & Duplicate) == 0 }
 }
 
 var sr = utils.Intern("sr")
 
+/*
+A filter for removing alignments that represent optional information
+in elPrep.
+*/
 func FilterOptionalReads(header *Header) AlignmentFilter {
 	if _, found := header.UserRecords["@sr"]; found {
 		delete(header.UserRecords, "@sr")
@@ -82,6 +104,10 @@ func FilterOptionalReads(header *Header) AlignmentFilter {
 	}
 }
 
+/*
+A filter for adding or replacing the read group both in the Header and
+each Alignment.
+*/
 func AddOrReplaceReadGroup(readGroup utils.StringMap) Filter {
 	return func(header *Header) AlignmentFilter {
 		header.RG = []utils.StringMap{readGroup}
@@ -90,6 +116,10 @@ func AddOrReplaceReadGroup(readGroup utils.StringMap) Filter {
 	}
 }
 
+/*
+A filter for adding a @PG tag to a Header, and ensuring that it is the
+first one in the chain.
+*/
 func AddPGLine(newPG utils.StringMap) Filter {
 	return func(header *Header) AlignmentFilter {
 		id := newPG["ID"]
@@ -108,6 +138,10 @@ func AddPGLine(newPG utils.StringMap) Filter {
 	}
 }
 
+/*
+A filter for prepending "chr" to the reference sequence names in a
+Header, and in RNAME and RNEXT in each Alignment.
+*/
 func RenameChromosomes(header *Header) AlignmentFilter {
 	for _, entry := range header.SQ {
 		if sn, found := entry["SN"]; found {
@@ -125,6 +159,10 @@ func RenameChromosomes(header *Header) AlignmentFilter {
 	}
 }
 
+/*
+A filter for adding the refid (index in the reference sequence
+dictionary) to alignments as temporary values.
+*/
 func AddREFID(header *Header) AlignmentFilter {
 	dictTable := make(map[string]int32)
 	for index, entry := range header.SQ {
