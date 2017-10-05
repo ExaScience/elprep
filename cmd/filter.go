@@ -130,6 +130,7 @@ const FilterHelp = "Filter parameters:\n" +
 	"[--replace-reference-sequences sam-file]\n" +
 	"[--filter-unmapped-reads]\n" +
 	"[--filter-unmapped-reads-strict]\n" +
+	"[--output-exact-mapping-reads]\n" +
 	"[--replace-read-group read-group-string]\n" +
 	"[--mark-duplicates]\n" +
 	"[--remove-duplicates]\n" +
@@ -147,6 +148,7 @@ func Filter() error {
 	var (
 		replaceReferenceSequences                                     string
 		filterUnmappedReads, filterUnmappedReadsStrict                bool
+		outputExactMappingReads					      bool
 		replaceReadGroup                                              string
 		markDuplicates, markDuplicatesDeterministic, removeDuplicates bool
 		sortingOrder                                                  string
@@ -163,6 +165,7 @@ func Filter() error {
 	flags.StringVar(&replaceReferenceSequences, "replace-reference-sequences", "", "replace the existing header by a new one")
 	flags.BoolVar(&filterUnmappedReads, "filter-unmapped-reads", false, "remove all unmapped alignments")
 	flags.BoolVar(&filterUnmappedReadsStrict, "filter-unmapped-reads-strict", false, "remove all unmapped alignments, taking also POS and RNAME into account")
+	flags.BoolVar(&outputExactMappingReads, "output-exact-mapping-reads", false, "output only exact mapping reads (soft-clipping allowed)")
 	flags.StringVar(&replaceReadGroup, "replace-read-group", "", "add or replace alignment read groups")
 	flags.BoolVar(&markDuplicates, "mark-duplicates", false, "mark duplicates")
 	flags.BoolVar(&markDuplicatesDeterministic, "mark-duplicates-deterministic", false, "mark duplicates deterministically")
@@ -245,6 +248,11 @@ func Filter() error {
 	} else if filterUnmappedReads {
 		filters = append(filters, sam.FilterUnmappedReads)
 		fmt.Fprint(&command, " --filter-unmapped-reads")
+	}
+
+	if outputExactMappingReads {
+		filters = append(filters, sam.OutputExactMappingReads)
+		fmt.Fprint(&command, " --output-exact-mapping-reads")
 	}
 
 	if renameChromosomes {

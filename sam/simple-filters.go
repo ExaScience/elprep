@@ -3,6 +3,7 @@ package sam
 import (
 	"math/rand"
 	"strconv"
+	"strings"
 
 	"github.com/exascience/elprep/utils"
 )
@@ -74,6 +75,10 @@ func FilterUnmappedReadsStrict(_ *Header) AlignmentFilter {
 	return func(aln *Alignment) bool {
 		return ((aln.FLAG & Unmapped) == 0) && (aln.POS != 0) && (aln.RNAME != "*")
 	}
+}
+
+func OutputExactMappingReads(_ *Header) AlignmentFilter {
+	return func(aln *Alignment) bool { return !strings.ContainsAny(aln.CIGAR, "IDNHPX=") }
 }
 
 /*
