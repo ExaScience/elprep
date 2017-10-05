@@ -77,8 +77,47 @@ func FilterUnmappedReadsStrict(_ *Header) AlignmentFilter {
 	}
 }
 
-func OutputExactMappingReads(_ *Header) AlignmentFilter {
+/*
+A filter that removes all reads that are not exact matches with the reference (soft-clipping ok),
+based on CIGAR string (only M and S allowed).
+*/
+func FilterNonExactMappingReads(_ *Header) AlignmentFilter {
 	return func(aln *Alignment) bool { return !strings.ContainsAny(aln.CIGAR, "IDNHPX=") }
+}
+
+var (
+	X0 = utils.Intern("X0")
+	X1 = utils.Intern("X1")
+	XM = utils.Intern("XM")
+	XO = utils.Intern("XO")
+	XG = utils.Intern("XG")
+)
+
+/*
+A filter that removes all reads that are not exact matches with the reference,
+based on the optional fields X0=1 (unique mapping), X1=0 (no suboptimal hit),
+XM=0 (no mismatch), XO=0 (no gap opening), XG=0 (no gap extension).
+*/
+func FilterNonExactMappingReadsStrict(header *Header) AlignmentFilter {
+
+	return func(aln *Alignment) bool {
+		if x0, ok := aln.TAGS.Get(X0); !ok || x0.(int32) != 1 {
+			return false
+		}
+		if x1, ok := aln.TAGS.Get(X1); !ok || x1.(int32) != 0 {
+			return false
+		}
+		if xm, ok := aln.TAGS.Get(XM); !ok || xm.(int32) != 0 {
+			return false
+		}
+		if xo, ok := aln.TAGS.Get(XO); !ok || xo.(int32) != 0 {
+			return false
+		}
+		if xg, ok := aln.TAGS.Get(XG); !ok || xg.(int32) != 0 {
+			return false
+		}
+		return true
+	}
 }
 
 /*

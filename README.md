@@ -152,11 +152,12 @@ The elprep filter commandline tool has three types of command options: filters, 
 The order in which command options are passed is ignored. For optimal performance, elPrep always applies filters in the following order:
 
 1. filter-unmapped-reads or filter-unmapped-reads-strict
-2. clean-sam
-3. replace-reference-sequences
-4. replace-read-group
-5. mark-duplicates
-6. remove-duplicates
+2. filter-non-exact-mapping-reads or filter-non-exact-mapping-reads-strict
+3. clean-sam
+4. replace-reference-sequences
+5. replace-read-group
+6. mark-duplicates
+7. remove-duplicates
 
 Sorting is done after filtering.
 
@@ -234,6 +235,14 @@ Removes all alignments in the input file that are unmapped. An alignment is dete
 
 
 Removes all alignments in the input file that are unmapped. An alignment is determined unmapped when bit 0x4 of its FLAG is set, conforming to the SAM specification. Also removes alignments where the mapping position (POS) is 0 or where the reference sequence name (RNAME) is *. Such alignments are considered unmapped by the SAM specification, but some alignment programs may not mark the FLAG of those alignments as unmapped. This option is recommended when you are targeting older versions of GATK (cf. GATK 1.6).
+
+### --filter-non-exact-mapping-reads
+
+Removes all alignments where the mapping is not an exact match with the reference, albeit soft-clipping is allowed. This filter checks the CIGAR string and only allow occurences of M and S.
+
+### --filter-non-exact-mapping-reads-strict
+
+Removes all alignments where the mapping is not an exact match with reference or not a unique match. This filters checks for each read that the following optional fields are present with the following values: X0=1 (unique mapping), X1=0 (no suboptimal hit), XM=0 (no mismatch), XO=0 (no gap opening), XG=0 (no gap extension).
 
 ### --replace-read-group read-group-string
 
@@ -465,3 +474,12 @@ When the command invocation does not specify the --nr-of-threads option, the def
 # Extending elPrep
 
 If you wish to extend elPrep, for example by adding your own filters, please consult our [API documentation](https://godoc.org/github.com/ExaScience/elprep).
+
+# Acknowledgements
+
+Many thanks for testing, bug reports, or contributions:
+
+Richard Corbett
+Keith James
+Leonor Palmeira
+Joke Reumers
