@@ -132,12 +132,16 @@ func setAdaptedScore(aln *Alignment, s int32) {
 
 /*
 Adapt the sam-alignment: Make read group unique; fill in unclipped
-position; fill in Phred score.
+position; fill in Phred score; fill in library id.
 */
-func adaptAlignment(aln *Alignment) {
+func adaptAlignment(aln *Alignment, lbTable map[string]string) {
 	rg := aln.RG()
 	if rg != nil {
 		aln.SetRG(utils.Intern(rg.(string)))
+		lb, lb_found := lbTable[rg.(string)]
+		if lb_found {
+			aln.SetLB(lb)
+		}
 	}
 	setAdaptedPos(aln, aln.ComputeUnclippedPosition())
 	setAdaptedScore(aln, aln.ComputePhredScore())
@@ -178,15 +182,15 @@ The portion of an alignment that indicates its unclipped position and
 its direction.
 */
 type fragment struct {
-	rg       interface{}
+	lb       interface{}
 	refid    int32
 	pos      int32
 	reversed bool
 }
 
 func (f fragment) Hash() (hash uint64) {
-	if f.rg != nil {
-		hash = utils.SymbolHash(f.rg.(utils.Symbol))
+	if f.lb != nil {
+		hash = internal.StringHash(f.lb.(string))
 	}
 	return hash ^ uint64(f.refid) ^ uint64(f.pos) ^ internal.BoolHash(f.reversed)
 }
@@ -205,7 +209,7 @@ the tied fragments are marked as duplicates is random.
 */
 func classifyFragment(aln *Alignment, fragments *sync.Map, deterministic bool) {
 	entry, found := fragments.LoadOrStore(fragment{
-		aln.RG(),
+		aln.LB(),
 		aln.REFID(),
 		adaptedPos(aln),
 		aln.IsReversed(),
@@ -258,13 +262,13 @@ func classifyFragment(aln *Alignment, fragments *sync.Map, deterministic bool) {
 The portion of an alignments that indicates the pair it belongs to.
 */
 type pairFragment struct {
-	rg    interface{}
+	lb    interface{}
 	qname string
 }
 
 func (f pairFragment) Hash() (hash uint64) {
-	if f.rg != nil {
-		hash = utils.SymbolHash(f.rg.(utils.Symbol))
+	if f.lb != nil {
+		hash = internal.StringHash(f.lb.(string))
 	}
 	return hash ^ internal.StringHash(f.qname)
 }
@@ -274,15 +278,15 @@ The portion of two alignments forming a pair that indicates their
 unclipped positions and their directions.
 */
 type pair struct {
-	rg                   interface{}
+	lb                   interface{}
 	refid1, refid2       int32
 	pos                  int64
 	reversed1, reversed2 bool
 }
 
 func (p pair) Hash() (hash uint64) {
-	if p.rg != nil {
-		hash = utils.SymbolHash(p.rg.(utils.Symbol))
+	if p.lb != nil {
+		hash = internal.StringHash(p.lb.(string))
 	}
 	return hash ^ uint64(p.refid1) ^ uint64(p.refid2) ^ uint64(p.pos) ^ internal.BoolHash(p.reversed1) ^ internal.BoolHash(p.reversed2)
 }
@@ -321,7 +325,7 @@ func classifyPair(aln *Alignment, fragments, pairs *sync.Map, deterministic bool
 
 	aln1 := aln
 	var aln2 *Alignment
-	if entry, deleted := fragments.DeleteOrStore(pairFragment{aln.RG(), aln.QNAME}, aln); deleted {
+	if entry, deleted := fragments.DeleteOrStore(pairFragment{aln.LB(), aln.QNAME}, aln); deleted {
 		aln2 = entry.(*Alignment)
 	} else {
 		return
@@ -335,7 +339,7 @@ func classifyPair(aln *Alignment, fragments, pairs *sync.Map, deterministic bool
 		aln1Pos, aln2Pos = aln2Pos, aln1Pos
 	}
 	entry, found := pairs.LoadOrStore(pair{
-		aln1.RG(),
+		aln1.LB(),
 		aln1.REFID(),
 		aln2.REFID(),
 		(int64(aln1Pos) << 32) + int64(aln2Pos),
@@ -394,14 +398,23 @@ Otherwise duplicate marking is random for alignments tied for best
 score.
 */
 func MarkDuplicates(deterministic bool) Filter {
-	return func(_ *Header) AlignmentFilter {
+	return func(header *Header) AlignmentFilter {
 		splits := 16 * runtime.GOMAXPROCS(0)
 		fragments := sync.NewMap(splits)
 		pairsFragments := sync.NewMap(splits)
 		pairs := sync.NewMap(splits)
+		// map read groups to library ids
+		lbTable := make(map[string]string)
+		for _, rg_entry := range header.RG {
+			lb, found := rg_entry["LB"]
+			if found {
+				id, _ := rg_entry["ID"] // mandatory entry
+				lbTable[id] = lb
+			}
+		}
 		return func(aln *Alignment) bool {
 			if aln.FlagNotAny(Unmapped | Secondary | Duplicate | Supplementary) {
-				adaptAlignment(aln)
+				adaptAlignment(aln, lbTable)
 				classifyFragment(aln, fragments, deterministic)
 				classifyPair(aln, pairsFragments, pairs, deterministic)
 			}

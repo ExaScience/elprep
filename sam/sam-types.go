@@ -250,6 +250,9 @@ var (
 
 	// A Symbol for the REFID temporary field.
 	REFID = utils.Intern("REFID")
+
+	// A Symbol for the LB temporary field
+	LB = utils.Intern("LB")
 )
 
 /*
@@ -288,6 +291,21 @@ Sets the REFID temporary field.
 */
 func (aln *Alignment) SetREFID(refid int32) {
 	aln.Temps.Set(REFID, refid)
+}
+
+/*
+Returns the LB temporary field. Returns nil when field is not set.
+*/
+func (aln *Alignment) LB() interface{} {
+	lb, _ := aln.Temps.Get(LB)
+	return lb
+}
+
+/*
+Sets the LB temporary field.
+*/
+func (aln *Alignment) SetLB(lb interface{}) {
+	aln.Temps.Set(LB, lb)
 }
 
 /*
