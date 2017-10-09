@@ -348,7 +348,7 @@ This command option sets the number of threads that elPrep uses during execution
 
 # Python Scripts
 
-The Python scripts have been tested with Python 2.7.6.
+The Python scripts have been tested with Python 2.7.6. Please add the elPrep and SAMtools binaries to your PATH for using these scripts.
 
 ## Name
 
