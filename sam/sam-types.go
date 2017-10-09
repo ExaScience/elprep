@@ -243,16 +243,20 @@ type Alignment struct {
 	Temps utils.SmallMap
 }
 
+// Symbols for some commonly used optional fields. See
+// http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.5.
 var (
-	// A Symbol for the commonly used RG optional field. See
-	// http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.5.
-	RG = utils.Intern("RG")
-
-	// A Symbol for the REFID temporary field.
-	REFID = utils.Intern("REFID")
-
-	// A Symbol for the LB temporary field
+	CC = utils.Intern("CC")
 	LB = utils.Intern("LB")
+	PG = utils.Intern("PG")
+	PU = utils.Intern("PU")
+	RG = utils.Intern("RG")
+)
+
+// Symbols for some temporary fields.
+var (
+	LIBID = utils.Intern("LIBID")
+	REFID = utils.Intern("REFID")
 )
 
 /*
@@ -294,18 +298,18 @@ func (aln *Alignment) SetREFID(refid int32) {
 }
 
 /*
-Returns the LB temporary field. Returns nil when field is not set.
+Returns the LIBID temporary field.
 */
-func (aln *Alignment) LB() interface{} {
-	lb, _ := aln.Temps.Get(LB)
+func (aln *Alignment) LIBID() interface{} {
+	lb, _ := aln.Temps.Get(LIBID)
 	return lb
 }
 
 /*
-Sets the LB temporary field.
+Sets the LIBID temporary field.
 */
-func (aln *Alignment) SetLB(lb interface{}) {
-	aln.Temps.Set(LB, lb)
+func (aln *Alignment) SetLIBID(libid interface{}) {
+	aln.Temps.Set(LIBID, libid)
 }
 
 /*

@@ -131,16 +131,15 @@ func setAdaptedScore(aln *Alignment, s int32) {
 }
 
 /*
-Adapt the sam-alignment: Make read group unique; fill in unclipped
-position; fill in Phred score; fill in library id.
+Adapt the sam-alignment: Fill in library id; fill in unclipped
+position; fill in Phred score.
 */
 func adaptAlignment(aln *Alignment, lbTable map[string]string) {
 	rg := aln.RG()
 	if rg != nil {
-		aln.SetRG(utils.Intern(rg.(string)))
 		lb, lb_found := lbTable[rg.(string)]
 		if lb_found {
-			aln.SetLB(lb)
+			aln.SetLIBID(lb)
 		}
 	}
 	setAdaptedPos(aln, aln.ComputeUnclippedPosition())
@@ -209,7 +208,7 @@ the tied fragments are marked as duplicates is random.
 */
 func classifyFragment(aln *Alignment, fragments *sync.Map, deterministic bool) {
 	entry, found := fragments.LoadOrStore(fragment{
-		aln.LB(),
+		aln.LIBID(),
 		aln.REFID(),
 		adaptedPos(aln),
 		aln.IsReversed(),
@@ -325,7 +324,7 @@ func classifyPair(aln *Alignment, fragments, pairs *sync.Map, deterministic bool
 
 	aln1 := aln
 	var aln2 *Alignment
-	if entry, deleted := fragments.DeleteOrStore(pairFragment{aln.LB(), aln.QNAME}, aln); deleted {
+	if entry, deleted := fragments.DeleteOrStore(pairFragment{aln.LIBID(), aln.QNAME}, aln); deleted {
 		aln2 = entry.(*Alignment)
 	} else {
 		return
@@ -339,7 +338,7 @@ func classifyPair(aln *Alignment, fragments, pairs *sync.Map, deterministic bool
 		aln1Pos, aln2Pos = aln2Pos, aln1Pos
 	}
 	entry, found := pairs.LoadOrStore(pair{
-		aln1.LB(),
+		aln1.LIBID(),
 		aln1.REFID(),
 		aln2.REFID(),
 		(int64(aln1Pos) << 32) + int64(aln2Pos),

@@ -85,6 +85,8 @@ func FilterNonExactMappingReads(_ *Header) AlignmentFilter {
 	return func(aln *Alignment) bool { return !strings.ContainsAny(aln.CIGAR, "IDNHPX=") }
 }
 
+// Symbols for optional fields used for determining exact matches. See
+// http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.5.
 var (
 	X0 = utils.Intern("X0")
 	X1 = utils.Intern("X1")

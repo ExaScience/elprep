@@ -192,62 +192,67 @@ func ParseHeaderLineFromString(line string) (utils.StringMap, error) {
 All parsers for optional fields in read alignment lines in SAM files
 have this signature.
 */
-type FieldParser func(*StringScanner) interface{}
+type FieldParser func(*StringScanner, utils.Symbol) (utils.Symbol, interface{})
 
 /*
 Parses a single tab-delimited character and returns it as a byte. See
 http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.5.
 */
-func (sc *StringScanner) ParseChar() interface{} {
+func (sc *StringScanner) ParseChar(tag utils.Symbol) (utils.Symbol, interface{}) {
 	if sc.err != nil {
-		return nil
+		return tag, nil
 	}
 	value, _ := sc.readByteUntil('\t')
-	return value
+	return tag, value
 }
 
 /*
 Parses a single tab-delimited integer and returns it as an int32. See
 http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.5.
 */
-func (sc *StringScanner) ParseInteger() interface{} {
+func (sc *StringScanner) ParseInteger(tag utils.Symbol) (utils.Symbol, interface{}) {
 	if sc.err != nil {
-		return nil
+		return tag, nil
 	}
 	value, _ := sc.readUntil('\t')
 	val, err := strconv.ParseInt(value, 10, 32)
 	if (err != nil) && (sc.err == nil) {
 		sc.err = err
 	}
-	return int32(val)
+	return tag, int32(val)
 }
 
 /*
 Parses a single tab-delimited float and returns it as a float32. See
 http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.5.
 */
-func (sc *StringScanner) ParseFloat() interface{} {
+func (sc *StringScanner) ParseFloat(tag utils.Symbol) (utils.Symbol, interface{}) {
 	if sc.err != nil {
-		return nil
+		return tag, nil
 	}
 	value, _ := sc.readUntil('\t')
 	val, err := strconv.ParseFloat(value, 32)
 	if (err != nil) && (sc.err == nil) {
 		sc.err = err
 	}
-	return float32(val)
+	return tag, float32(val)
 }
 
 /*
 Parses a single tab-delimited string and returns it. See
 http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.5.
 */
-func (sc *StringScanner) ParseString() interface{} {
+func (sc *StringScanner) ParseString(tag utils.Symbol) (utils.Symbol, interface{}) {
 	if sc.err != nil {
-		return nil
+		return tag, nil
 	}
 	value, _ := sc.readUntil('\t')
-	return value
+	switch tag {
+	case CC, LB, PG, PU, RG:
+		return tag, *utils.Intern(value)
+	default:
+		return tag, value
+	}
 }
 
 /*
@@ -255,9 +260,9 @@ Parses a byte array in the tab-delimited Hex format and returns it as
 a ByteArray. See http://samtools.github.io/hts-specs/SAMv1.pdf -
 Section 1.5.
 */
-func (sc *StringScanner) ParseByteArray() interface{} {
+func (sc *StringScanner) ParseByteArray(tag utils.Symbol) (utils.Symbol, interface{}) {
 	if sc.err != nil {
-		return nil
+		return tag, nil
 	}
 	value, _ := sc.readUntil('\t')
 	result := ByteArray(make([]byte, 0, len(value)>>1))
@@ -267,11 +272,11 @@ func (sc *StringScanner) ParseByteArray() interface{} {
 			if sc.err == nil {
 				sc.err = err
 			}
-			return nil
+			return tag, nil
 		}
 		result = append(result, byte(val))
 	}
-	return result
+	return tag, result
 }
 
 /*
@@ -280,16 +285,16 @@ array and returns it as a []int8, []uint8, []int16, []uint16, []int32,
 []uint32, or []float32. See
 http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.5.
 */
-func (sc *StringScanner) ParseNumericArray() interface{} {
+func (sc *StringScanner) ParseNumericArray(tag utils.Symbol) (utils.Symbol, interface{}) {
 	if sc.err != nil {
-		return nil
+		return tag, nil
 	}
 	ntype, ok := sc.readByteUntil(',')
 	if !ok {
 		if sc.err == nil {
 			sc.err = errors.New("Missing entry in numeric array")
 		}
-		return nil
+		return tag, nil
 	}
 	switch ntype {
 	case 'c':
@@ -301,14 +306,14 @@ func (sc *StringScanner) ParseNumericArray() interface{} {
 				if sc.err == nil {
 					sc.err = err
 				}
-				return nil
+				return tag, nil
 			}
 			result = append(result, int8(val))
 			if sep != ',' {
 				break
 			}
 		}
-		return result
+		return tag, result
 	case 'C':
 		var result []uint8
 		for {
@@ -318,14 +323,14 @@ func (sc *StringScanner) ParseNumericArray() interface{} {
 				if sc.err == nil {
 					sc.err = err
 				}
-				return nil
+				return tag, nil
 			}
 			result = append(result, uint8(val))
 			if sep != ',' {
 				break
 			}
 		}
-		return result
+		return tag, result
 	case 's':
 		var result []int16
 		for {
@@ -335,14 +340,14 @@ func (sc *StringScanner) ParseNumericArray() interface{} {
 				if sc.err == nil {
 					sc.err = err
 				}
-				return nil
+				return tag, nil
 			}
 			result = append(result, int16(val))
 			if sep != ',' {
 				break
 			}
 		}
-		return result
+		return tag, result
 	case 'S':
 		var result []uint16
 		for {
@@ -352,14 +357,14 @@ func (sc *StringScanner) ParseNumericArray() interface{} {
 				if sc.err == nil {
 					sc.err = err
 				}
-				return nil
+				return tag, nil
 			}
 			result = append(result, uint16(val))
 			if sep != ',' {
 				break
 			}
 		}
-		return result
+		return tag, result
 	case 'i':
 		var result []int32
 		for {
@@ -369,14 +374,14 @@ func (sc *StringScanner) ParseNumericArray() interface{} {
 				if sc.err == nil {
 					sc.err = err
 				}
-				return nil
+				return tag, nil
 			}
 			result = append(result, int32(val))
 			if sep != ',' {
 				break
 			}
 		}
-		return result
+		return tag, result
 	case 'I':
 		var result []uint32
 		for {
@@ -386,14 +391,14 @@ func (sc *StringScanner) ParseNumericArray() interface{} {
 				if sc.err == nil {
 					sc.err = err
 				}
-				return nil
+				return tag, nil
 			}
 			result = append(result, uint32(val))
 			if sep != ',' {
 				break
 			}
 		}
-		return result
+		return tag, result
 	case 'f':
 		var result []float32
 		for {
@@ -403,19 +408,19 @@ func (sc *StringScanner) ParseNumericArray() interface{} {
 				if sc.err == nil {
 					sc.err = err
 				}
-				return nil
+				return tag, nil
 			}
 			result = append(result, float32(val))
 			if sep != ',' {
 				break
 			}
 		}
-		return result
+		return tag, result
 	default:
 		if sc.err == nil {
 			sc.err = fmt.Errorf("Invalid numeric array type %v", ntype)
 		}
-		return nil
+		return tag, nil
 	}
 }
 
@@ -466,7 +471,7 @@ func (sc *StringScanner) ParseOptionalField() (tag utils.Symbol, value interface
 		}
 		return nil, nil
 	}
-	return tag, optionalFieldParseTable[typebyte](sc)
+	return optionalFieldParseTable[typebyte](sc, tag)
 }
 
 func (sc *StringScanner) doString() string {
@@ -514,11 +519,11 @@ func (sc *StringScanner) ParseAlignment() *Alignment {
 
 	aln.QNAME = sc.doString()
 	aln.FLAG = uint16(sc.doUint(16))
-	aln.RNAME = sc.doString()
+	aln.RNAME = *utils.Intern(sc.doString())
 	aln.POS = sc.doInt32()
 	aln.MAPQ = byte(sc.doUint(8))
 	aln.CIGAR = sc.doString()
-	aln.RNEXT = sc.doString()
+	aln.RNEXT = *utils.Intern(sc.doString())
 	aln.PNEXT = sc.doInt32()
 	aln.TLEN = sc.doInt32()
 	aln.SEQ = sc.doString()
@@ -600,9 +605,6 @@ Section 1.5.
 The following types are accepted: byte (A), int32 (i), float32 (f),
 string (Z), ByteArray (H), []int8 (B:c), []uint8 (B:C), []int16 (B:s),
 []uint16 (B:S), []int32 (B:i), []uint32 (B:I), and []float32 (B:f).
-
-In addition, values of type Symbol are dereferenced and formatted as
-type string (Z).
 */
 func FormatTag(out []byte, tag utils.Symbol, value interface{}) ([]byte, error) {
 	out = append(out, '\t')
@@ -617,8 +619,6 @@ func FormatTag(out []byte, tag utils.Symbol, value interface{}) ([]byte, error) 
 		out = strconv.AppendFloat(append(out, ":f:"...), float64(val), 'g', -1, 32)
 	case string:
 		out = append(append(out, ":Z:"...), val...)
-	case utils.Symbol:
-		out = append(append(out, ":Z:"...), *val...)
 	case ByteArray:
 		out = append(out, ":H:"...)
 		for _, b := range val {
