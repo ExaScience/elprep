@@ -18,8 +18,6 @@ def elprep_sfm_gnupar (argv):
   # set up directories for intermediate results
   file_in = argv[1]
   file_out = argv[2]
-  input = os.path.basename(file_in)
-  output_prefix, output_extension = os.path.splitext(input)
   stamp = str(time.time())
   split_dir = os.path.join(os.getcwd(), "temp-" + stamp + os.sep)
   result_dir = os.path.join(os.getcwd(), "temp-processed-" + stamp + os.sep)
@@ -28,19 +26,36 @@ def elprep_sfm_gnupar (argv):
   nr_of_jobs_opt = elprep_io_wrapper.cmd_option('--nr-of-jobs', argv) or ['--nr-of-jobs', 1]
   nr_of_threads_opt = elprep_io_wrapper.cmd_option('--nr-of-threads', argv) or ['--nr-of-threads', str((multiprocessing.cpu_count() / int(nr_of_jobs_opt[1])) or 1)]
   # split command
-  nr_of_split_merge_threads_opt = ['--nr-of-threads', str(int(nr_of_jobs_opt[1]) * int(nr_of_threads_opt[1]))]      
+  nr_of_split_merge_threads_opt = ['--nr-of-threads', str(int(nr_of_jobs_opt[1]) * int(nr_of_threads_opt[1]))]
+ 
+  if os.path.isdir(file_in):
+    output_prefix, output_extension = os.path.splitext(os.path.basename(os.listdir(file_in)[0]))
+  else: # file
+    output_prefix, output_extension = os.path.splitext(os.path.basename(file_in))
+  if output_extension == '': # e.g. /dev/stdin
+    output_extension = '.sam'
+
   intermediate_files_opt = elprep_io_wrapper.cmd_option('--intermediate-files-output-type', argv) 
   if intermediate_files_opt:
     intermediate_files_output_type = intermediate_files_opt[1]
   else:
-    intermediate_files_output_type = "sam"
+    intermediate_files_output_type = output_extension[1:] 
+
+  intermediate_files_op_opt = elprep_io_wrapper.cmd_option('--intermediate-files-output-prefix', argv) 
+  if intermediate_files_op_opt:
+    output_prefix = intermediate_files_op_opt[1]
+
   elprep_io_wrapper.cmd_wrap_input(["elprep", "split"], file_in, split_dir, ["--output-prefix", output_prefix, "--output-type", intermediate_files_output_type] + nr_of_split_merge_threads_opt)
+
   spread_file = os.path.join(split_dir, output_prefix + "-spread." + intermediate_files_output_type)
   splits_path = os.path.join(split_dir, "splits" + os.sep)
   # gnu parallel command
   read_group_string = elprep_io_wrapper.cmd_option('--replace-read-group', argv)
   given_cmd_opts = elprep_io_wrapper.remove_cmd_option(argv[3:], '--nr-of-jobs')
   given_cmd_opts = elprep_io_wrapper.remove_cmd_option(given_cmd_opts, '--intermediate-files-output-type')
+
+  given_cmd_opts = elprep_io_wrapper.remove_cmd_option(given_cmd_opts, '--intermediate-files-output-prefix')
+
   cmd_opts = given_cmd_opts
   cmd_opts = elprep_io_wrapper.remove_cmd_option(cmd_opts, '--nr-of-threads')
   cmd_opts = cmd_opts + nr_of_threads_opt

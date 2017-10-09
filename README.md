@@ -356,7 +356,7 @@ The Python scripts have been tested with Python 2.7.6.
 
 ## Synopsis
 
-	./elprep-sfm.py $input $output --filter-unmapped-reads --filter-unmapped-reads-strict --replace-reference-sequences ucsc.hg19.dict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --remove-duplicates --sorting-order coordinate --nr-of-threads $threads --intermediate-files-output-type [sam | bam | cram]
+	./elprep-sfm.py $input $output --filter-unmapped-reads --filter-unmapped-reads-strict --replace-reference-sequences ucsc.hg19.dict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --remove-duplicates --sorting-order coordinate --nr-of-threads $threads --intermediate-files-output-type [sam | bam | cram] --intermediate-files-output-prefix name
 
 ## Description
 
@@ -370,7 +370,11 @@ A Python script that combines the elprep split, filter, and merge commands. The 
 
 ### --intermediate-files-output-type [sam | bam | cram]
 
-The output type that will be used for the intermediate split files. The default output type for intermediate files is .sam.
+The output type that will be used for the intermediate split files. The default output type for intermediate files is the file type of the input file, .sam when the input file has no extension (e.g. for /dev/stdin), or in case the input is a directory, it is the same type as the output type of the files in the input directory.
+
+### --intermediate-files-output-prefix name
+
+The output prefix that will be default used for the intermediate split files. The default output prefix is the file name of the input file.
 
 ### Name
 
@@ -378,11 +382,11 @@ The output type that will be used for the intermediate split files. The default 
 
 ## Synopsis
 
-	./elprep-sfm-gnupar.py $input $output --filter-unmapped-reads --filter-unmapped-reads-strict --replace-reference-sequences ucsc.hg19.dict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --remove-duplicates --sorting-order coordinate --nr-of-threads $threads --nr-of-jobs $jobs --intermediate-files-output-type [sam | bam | cram]
+	./elprep-sfm-gnupar.py $input $output --filter-unmapped-reads --filter-unmapped-reads-strict --replace-reference-sequences ucsc.hg19.dict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --remove-duplicates --sorting-order coordinate --nr-of-threads $threads --nr-of-jobs $jobs --intermediate-files-output-type [sam | bam | cram] --intermediate-files-output-prefix name
 
 ## Description
 
-A Python script that combines the elprep split, filter, and merge commands with GNU parallel. The script may be used as a drop-in replacement for the elprep filter command, except that it adds a --nr-of-jobs option. This option is used to set the number of elprep calls that can be processed in parallel.
+A Python script that combines the elprep split, filter, and merge commands with GNU parallel. The script may be used as a drop-in replacement for the elprep filter command, except that it adds a --nr-of-jobs option, which is used to set the number of elprep calls that can be processed in parallel. It also supports the --intermediate-files-output-type and --intermediate-files-output-prefix options for setting the matching elprep split options.
 
 The script is structured as follows:
 
@@ -403,7 +407,12 @@ The number of elprep commands that will be executed in parallel.
 
 ### --intermediate-files-output-type [sam | bam | cram]
 
-The output type that will be used for the intermediate split files. The default output type for intermediate files is .sam.
+The output type that will be used for the intermediate split files. The default output type for intermediate files is the file type of the input file, .sam when the input file has no extension (e.g. for /dev/stdin), or in case the input is a directory, it is the same type as the output type of the files in t
+he input directory.
+
+### --intermediate-files-output-prefix name
+
+The output prefix that will be default used for the intermediate split files. The default output prefix is the file name of the input file.
 
 ## Name
 
