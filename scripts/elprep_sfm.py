@@ -50,13 +50,6 @@ def elprep_sfm (argv):
 
   single_end_opt = elprep_io_wrapper.flg_option("--single-end", argv)
 
-  print("cmd option")
-  print(single_end_opt)
-  print(nr_of_threads_opt)
-  print(nr_of_threads_opt_given)
-  print(argv)
-  print(elprep_io_wrapper.cmd_option('--mark-duplicates', argv))
-  
   elprep_io_wrapper.cmd_wrap_input(["elprep", "split"], file_in, split_dir, ["--output-prefix", output_prefix, "--output-type", intermediate_files_output_type] + nr_of_threads_opt + single_end_opt)
 
   if single_end_opt:
