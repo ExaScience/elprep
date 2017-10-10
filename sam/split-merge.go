@@ -474,3 +474,144 @@ func MergeUnsortedFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPr
 	}
 	return nil
 }
+
+/* A function for splitting SAM files containing single-end reads into a file for the unmapped reads,
+and a file per chromosome, containing all reads that map to that chromosome. There are no requirements on the input file for splitting.
+*/
+func SplitSingleEndFilePerChromosome(input, outputPath, outputPrefix, outputExtension, fai, fasta string) (err error) {
+	files, err := internal.Directory(input)
+	if err != nil {
+		return fmt.Errorf("%v, while attempting to fetch file(s) %v in SplitSingleEndFilePerChromosome", err.Error(), input)
+	}
+	inputPath := filepath.Dir(input)
+	firstFile := filepath.Join(inputPath, files[0])
+	firstIn, err := Open(firstFile, false)
+	if err != nil {
+		return err
+	}
+	header, lines, err := ParseHeader(firstIn.Reader)
+	if err != nil {
+		return fmt.Errorf("%v, while parsing header of %v in SplitSingleEndFilePerChromosome", err.Error(), firstFile)
+	}
+	chromsEncountered := make(map[string]*OutputFile)
+	header.AddUserRecord("@sr", utils.StringMap{"co": "This file was created using elprep split --single-end."})
+	out, err := Create(filepath.Join(outputPath, outputPrefix+"-unmapped."+outputExtension), fai, fasta)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if nerr := out.Close(); err == nil {
+			err = nerr
+		}
+	}()
+	header.Format(out.Writer)
+	chromsEncountered["*"] = out
+	for _, sn := range header.SQ {
+		chrom := sn["SN"]
+		out, err := Create(filepath.Join(outputPath, outputPrefix+"-"+chrom+"."+outputExtension), fai, fasta)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			if nerr := out.Close(); err == nil {
+				err = nerr
+			}
+		}()
+		header.Format(out.Writer)
+		chromsEncountered[chrom] = out
+	}
+	processFile := func(in *bufio.Reader, filename string, lines int) error {
+		s := newLineScanner(in, filename, lines)
+		for s.scan() {
+			rname := s.field(_rname)
+			out := chromsEncountered[rname]
+			out.Write(s.bytes)
+			out.WriteByte('\n')
+		}
+		return s.err()
+	}
+	if err = processFile(firstIn.Reader, firstFile, lines); err != nil {
+		return fmt.Errorf("%v, while processing file %v in SplitSingleEndFilePerChromosome", err.Error(), err)
+	}
+	if err = firstIn.Close(); err != nil {
+		return err
+	}
+	for _, name := range files[1:] {
+		inFile := filepath.Join(inputPath, name)
+		err = func() (err error) {
+			in, err := Open(inFile, false)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				if nerr := in.Close(); err == nil {
+					err = nerr
+				}
+			}()
+			if lines, err := SkipHeader(in.Reader); err != nil {
+				return fmt.Errorf("%v, while skipping header of file %v in SplitSingleEndFilePerChromosome", err.Error(), inFile)
+			} else if err = processFile(in.Reader, inFile, lines); err != nil {
+				return fmt.Errorf("%v, while processing file %v in SplitSingleEndFilePerChromosome", err.Error(), inFile)
+			}
+			return nil
+		}()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+/* A function for merging files containing single-end reads that were split with elPrep.
+*/
+func MergeSingleEndFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPrefix, inputExtension string, header *Header) (err error) {
+
+	out, err := Create(output, fai, fasta)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if nerr := out.Close(); err == nil {
+			err = nerr
+		}
+	}()
+
+	header.Format(out.Writer)
+
+	for _, sn := range header.SQ {
+		chrom := sn["SN"]
+		chromName := filepath.Join(inputPath, inputPrefix+"-"+chrom+"."+inputExtension)
+		chromFile, err := Open(chromName, false)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			if nerr := chromFile.Close(); err == nil {
+				err = nerr
+			}
+		}()
+		if _, err = SkipHeader(chromFile.Reader); err != nil {
+			return fmt.Errorf("%v, while skipping header of file %v", err, chromName)
+		}
+		_, err = chromFile.WriteTo(out)
+		if err != nil {
+			return err
+		}
+	}
+
+	unmappedName := filepath.Join(inputPath, inputPrefix+"-unmapped."+inputExtension)
+	unmappedFile, err := Open(unmappedName, false)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if nerr := unmappedFile.Close(); err == nil {
+			err = nerr
+		}
+	}()
+	if _, err = SkipHeader(unmappedFile.Reader); err != nil {
+		return fmt.Errorf("%v, while skipping header of file %v", err, unmappedName)
+	}
+	_, err = unmappedFile.WriteTo(out)
+	return err
+}

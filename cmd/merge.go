@@ -16,6 +16,7 @@ import (
 
 const MergeHelp = "Merge parameters:\n" +
 	"elprep merge /path/to/input sam-output-file\n" +
+	"[--single-end]\n" +
 	"[--nr-of-threads n]\n" +
 	"[--reference-t fai-file]\n" +
 	"[--reference-T fasta-file]\n"
@@ -27,10 +28,12 @@ func Merge() error {
 	var (
 		reference_t, reference_T string
 		nrOfThreads              int
+		singleEnd                bool
 	)
 
 	var flags flag.FlagSet
 
+	flags.BoolVar(&singleEnd, "single-end", false, "when splitting single-end data")
 	flags.IntVar(&nrOfThreads, "nr-of-threads", 0, "number of worker threads")
 	flags.StringVar(&reference_t, "reference-t", "", "specify a .fai file for cram output")
 	flags.StringVar(&reference_T, "reference-T", "", "specify a .fasta file for cram output")
@@ -71,7 +74,7 @@ func Merge() error {
 	if err != nil {
 		log.Printf("Given directory %v causes error %v.\n", input, err)
 		sanityChecksFailed = true
-	} else if len(filesToMerge) < 2 {
+	} else if len(filesToMerge) < 2 && !singleEnd {
 		log.Printf("Given directory %v does not contain /splits/ directory and/or spread reads file. These should have been created by an elprep split invocation.\n", input)
 		sanityChecksFailed = true
 	}
@@ -119,6 +122,9 @@ func Merge() error {
 
 	var command bytes.Buffer
 	fmt.Fprint(&command, os.Args[0], " merge ", input, " ", output)
+	if singleEnd {
+		fmt.Fprint(&command, " --single-end ")
+	}
 	if nrOfThreads > 0 {
 		runtime.GOMAXPROCS(nrOfThreads)
 		fmt.Fprint(&command, " --nr-of-threads ", nrOfThreads)
@@ -141,11 +147,19 @@ func Merge() error {
 
 	switch header.HD_SO() {
 	case "coordinate":
-		return sam.MergeSortedFilesSplitPerChromosome(fullInputPath, output, reference_t, reference_T, inputPrefix, inputExtension, header)
+		if singleEnd {
+			return sam.MergeSingleEndFilesSplitPerChromosome(fullInputPath, output, reference_t, reference_T, inputPrefix, inputExtension, header)
+		} else {
+			return sam.MergeSortedFilesSplitPerChromosome(fullInputPath, output, reference_t, reference_T, inputPrefix, inputExtension, header)
+		}
 	case "queryname":
 		log.Fatal("Merging of files sorted by queryname not yet implemented.")
 		panic("")
 	default:
-		return sam.MergeUnsortedFilesSplitPerChromosome(fullInputPath, output, reference_t, reference_T, inputPrefix, inputExtension, header)
+		if singleEnd {
+			return sam.MergeSingleEndFilesSplitPerChromosome(fullInputPath, output, reference_t, reference_T, inputPrefix, inputExtension, header)
+		} else {
+			return sam.MergeUnsortedFilesSplitPerChromosome(fullInputPath, output, reference_t, reference_T, inputPrefix, inputExtension, header)
+		}
 	}
 }

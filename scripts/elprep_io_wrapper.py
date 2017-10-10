@@ -13,9 +13,23 @@ def member(el,l):
     if val == el:
       return list(i)
 
+def flg_option(opt, cmdl):
+  val = member(opt, cmdl)
+  return [opt] if val else []
+
 def cmd_option(opt, cmdl):
   val = member(opt, cmdl)
   return [opt,val[0]] if val else []
+
+def remove_flg_option(cmd_l, name):
+  nl = []
+  i = iter(cmd_l)
+  val = next(i, None)
+  while(val):
+    if not(val == name):
+       nl = nl + [val]
+    val = next(i, None)
+  return nl
 
 def remove_cmd_option(cmd_l, name):
   "removes a command with its option value from a list of commands"

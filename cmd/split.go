@@ -17,6 +17,7 @@ const SplitHelp = "Split parameters:\n" +
 	"elprep split (sam-file | /path/to/input/) /path/to/output/\n" +
 	"[--output-prefix name]\n" +
 	"[--output-type [sam | bam | cram]]\n" +
+	"[--single-end]\n" +
 	"[--nr-of-threads nr]\n" +
 	"[--reference-t fai-file]\n" +
 	"[--reference-T fasta-file]\n"
@@ -28,12 +29,14 @@ func Split() error {
 	var (
 		outputPrefix, outputType, reference_t, reference_T string
 		nrOfThreads                                        int
+		singleEnd                                          bool
 	)
 
 	var flags flag.FlagSet
 
 	flags.StringVar(&outputPrefix, "output-prefix", "", "prefix for the output files")
 	flags.StringVar(&outputType, "output-type", "", "format of the output files")
+	flags.BoolVar(&singleEnd, "single-end", false, "when splitting single-end data")
 	flags.IntVar(&nrOfThreads, "nr-of-threads", 0, "number of worker threads")
 	flags.StringVar(&reference_t, "reference-t", "", "specify a .fai file for cram output")
 	flags.StringVar(&reference_T, "reference-T", "", "specify a .fasta file for cram output")
@@ -101,6 +104,9 @@ func Split() error {
 	fmt.Fprint(&command, os.Args[0], " split ", input, " ", output)
 	fmt.Fprint(&command, " --output-prefix ", outputPrefix)
 	fmt.Fprint(&command, " --output-type ", outputType)
+	if singleEnd {
+		fmt.Fprint(&command, " --single-end ")
+	}
 	if nrOfThreads > 0 {
 		runtime.GOMAXPROCS(nrOfThreads)
 		fmt.Fprint(&command, " --nr-of-threads ", nrOfThreads)
@@ -131,5 +137,9 @@ func Split() error {
 		return err
 	}
 
-	return sam.SplitFilePerChromosome(fullInput, fullOutput, outputPrefix, outputType, reference_t, reference_T)
+	if singleEnd {
+		return sam.SplitSingleEndFilePerChromosome(fullInput, fullOutput, outputPrefix, outputType, reference_t, reference_T)
+	} else {
+		return sam.SplitFilePerChromosome(fullInput, fullOutput, outputPrefix, outputType, reference_t, reference_T)
+	}
 }

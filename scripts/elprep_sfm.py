@@ -29,13 +29,13 @@ def elprep_sfm (argv):
   if output_extension == '': # e.g. /dev/stdin
     output_extension = '.sam'
 
-  intermediate_files_opt = elprep_io_wrapper.cmd_option('--intermediate-files-output-type', argv) 
+  intermediate_files_opt = elprep_io_wrapper.cmd_option("--intermediate-files-output-type", argv) 
   if intermediate_files_opt:
     intermediate_files_output_type = intermediate_files_opt[1]
   else:
     intermediate_files_output_type = output_extension[1:]
 
-  intermediate_files_op_opt = elprep_io_wrapper.cmd_option('--intermediate-files-output-prefix', argv) 
+  intermediate_files_op_opt = elprep_io_wrapper.cmd_option("--intermediate-files-output-prefix", argv) 
   if intermediate_files_op_opt:
     output_prefix = intermediate_files_op_opt[1]
 
@@ -47,9 +47,24 @@ def elprep_sfm (argv):
   nr_of_threads_opt_given = elprep_io_wrapper.cmd_option("--nr-of-threads", cmd_opts)
   if not nr_of_threads_opt_given:
     cmd_opts = cmd_opts + nr_of_threads_opt # so we pass --nr-of-threads to the elprep filter command explicitly
-  elprep_io_wrapper.cmd_wrap_input(["elprep", "split"], file_in, split_dir, ["--output-prefix", output_prefix, "--output-type", intermediate_files_output_type] + nr_of_threads_opt)
-  spread_file = os.path.join(split_dir, output_prefix + "-spread." + intermediate_files_output_type)
-  splits_path = os.path.join(split_dir, "splits" + os.sep)
+
+  single_end_opt = elprep_io_wrapper.flg_option("--single-end", argv)
+
+  print("cmd option")
+  print(single_end_opt)
+  print(nr_of_threads_opt)
+  print(nr_of_threads_opt_given)
+  print(argv)
+  print(elprep_io_wrapper.cmd_option('--mark-duplicates', argv))
+  
+  elprep_io_wrapper.cmd_wrap_input(["elprep", "split"], file_in, split_dir, ["--output-prefix", output_prefix, "--output-type", intermediate_files_output_type] + nr_of_threads_opt + single_end_opt)
+
+  if single_end_opt:
+    splits_path = split_dir
+    cmd_opts = elprep_io_wrapper.remove_flg_option(cmd_opts, "--single-end")
+  else:
+    splits_path = os.path.join(split_dir, "splits" + os.sep)
+
   # run filter command for split files
   for root, dirs, files in os.walk(splits_path):
     for file in files:
@@ -59,17 +74,23 @@ def elprep_sfm (argv):
         processed_file = os.path.join(result_dir, os.path.basename(file))
         elprep_io_wrapper.cmd_wrap_io(["elprep", "filter"], ffile, processed_file, cmd_opts)
         os.remove(ffile)
-    os.rmdir(splits_path)
+    if not single_end_opt:
+      os.rmdir(splits_path)
+
   # command for spread file
   # commands for split files and spread file are the same, but the files are stored in different folders 
   # we keep them in seperate folders for backwards compatibility with elPrep v2.61
   # in a future release this will be simplified, so all split files will be in the same folder
-  spread_out_file = os.path.join(result_dir, output_prefix + "-spread." + intermediate_files_output_type)
-  elprep_io_wrapper.cmd_wrap_io(["elprep", "filter"], spread_file, spread_out_file , cmd_opts)
-  os.remove(spread_file)
+  if not single_end_opt:
+    os.rmdir(splits_path)
+    spread_file = os.path.join(split_dir, output_prefix + "-spread." + intermediate_files_output_type)
+    spread_out_file = os.path.join(result_dir, output_prefix + "-spread." + intermediate_files_output_type)
+    elprep_io_wrapper.cmd_wrap_io(["elprep", "filter"], spread_file, spread_out_file , cmd_opts)
+    os.remove(spread_file)
   os.rmdir(split_dir)
+
   # merge command
-  elprep_io_wrapper.cmd_wrap_output(["elprep", "merge"], result_dir, file_out, nr_of_threads_opt)
+  elprep_io_wrapper.cmd_wrap_output(["elprep", "merge"], result_dir, file_out, nr_of_threads_opt + single_end_opt)
   # remove directories for intermediate results
   for root, dirs, files in os.walk(result_dir):
     for file in files:
