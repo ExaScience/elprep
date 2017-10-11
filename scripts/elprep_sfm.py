@@ -67,8 +67,6 @@ def elprep_sfm (argv):
         processed_file = os.path.join(result_dir, os.path.basename(file))
         elprep_io_wrapper.cmd_wrap_io(["elprep", "filter"], ffile, processed_file, cmd_opts)
         os.remove(ffile)
-    if not single_end_opt:
-      os.rmdir(splits_path)
 
   # command for spread file
   # commands for split files and spread file are the same, but the files are stored in different folders 

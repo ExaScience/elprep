@@ -45,20 +45,23 @@ def elprep_sfm_gnupar (argv):
   if intermediate_files_op_opt:
     output_prefix = intermediate_files_op_opt[1]
 
-  elprep_io_wrapper.cmd_wrap_input(["elprep", "split"], file_in, split_dir, ["--output-prefix", output_prefix, "--output-type", intermediate_files_output_type] + nr_of_split_merge_threads_opt)
+  single_end_opt = elprep_io_wrapper.flg_option("--single-end", argv)
 
-  spread_file = os.path.join(split_dir, output_prefix + "-spread." + intermediate_files_output_type)
-  splits_path = os.path.join(split_dir, "splits" + os.sep)
+  elprep_io_wrapper.cmd_wrap_input(["elprep", "split"], file_in, split_dir, ["--output-prefix", output_prefix, "--output-type", intermediate_files_output_type] + nr_of_split_merge_threads_opt + single_end_opt)
+
   # gnu parallel command
   read_group_string = elprep_io_wrapper.cmd_option('--replace-read-group', argv)
   given_cmd_opts = elprep_io_wrapper.remove_cmd_option(argv[3:], '--nr-of-jobs')
   given_cmd_opts = elprep_io_wrapper.remove_cmd_option(given_cmd_opts, '--intermediate-files-output-type')
-
   given_cmd_opts = elprep_io_wrapper.remove_cmd_option(given_cmd_opts, '--intermediate-files-output-prefix')
+  if single_end_opt:
+    splits_path = split_dir
+    given_cmd_opts = elprep_io_wrapper.remove_flg_option(given_cmd_opts, "--single-end")
+  else:
+    splits_path = os.path.join(split_dir, "splits" + os.sep)
 
-  cmd_opts = given_cmd_opts
-  cmd_opts = elprep_io_wrapper.remove_cmd_option(cmd_opts, '--nr-of-threads')
-  cmd_opts = cmd_opts + nr_of_threads_opt
+  given_cmd_opts = elprep_io_wrapper.remove_cmd_option(given_cmd_opts, '--nr-of-threads')
+  cmd_opts = given_cmd_opts + nr_of_threads_opt
   if read_group_string:
     cmd_opts = elprep_io_wrapper.remove_cmd_option(cmd_opts, '--replace-read-group') 
     cmd_opts = cmd_opts + ['--replace-read-group', '\"' + read_group_string[1] + '\"']
@@ -67,18 +70,24 @@ def elprep_sfm_gnupar (argv):
   gnu_cmd = 'parallel --gnu -j ' + str(nr_of_jobs_opt[1]) + ' ' + elprep_cmd + ' ::: ' + splits_path + '*.' + intermediate_files_output_type
   ret = subprocess.check_call(gnu_cmd, shell=True)
   if ret != 0: raise SystemExit, ret
+
   # command for spread file
-  spread_out_file = os.path.join(result_dir, output_prefix + "-spread." + intermediate_files_output_type)
-  elprep_io_wrapper.cmd_wrap_io(["elprep", "filter"], spread_file, spread_out_file , given_cmd_opts)
+
+  if not single_end_opt:
+    spread_file = os.path.join(split_dir, output_prefix + "-spread." + intermediate_files_output_type)
+    spread_out_file = os.path.join(result_dir, output_prefix + "-spread." + intermediate_files_output_type)
+    elprep_io_wrapper.cmd_wrap_io(["elprep", "filter"], spread_file, spread_out_file , given_cmd_opts + nr_of_split_merge_threads_opt)
+    os.remove(spread_file)
+
   # merge command
-  elprep_io_wrapper.cmd_wrap_output(["elprep", "merge"], result_dir, file_out, nr_of_split_merge_threads_opt)
+  elprep_io_wrapper.cmd_wrap_output(["elprep", "merge"], result_dir, file_out, nr_of_split_merge_threads_opt + single_end_opt)
   # remove directories for intermediate results
   for root, dirs, files in os.walk(splits_path):
     for file in files:
       ffile = os.path.join(root, file)
       os.remove(ffile)
-  os.rmdir(splits_path)
-  os.remove(spread_file)
+  if not single_end_opt:
+    os.rmdir(splits_path)
   os.rmdir(split_dir)
   for root, dirs, files in os.walk(result_dir):
     for file in files:
