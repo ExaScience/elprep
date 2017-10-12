@@ -285,7 +285,7 @@ This command option sets the number of threads that elPrep uses during execution
 
 ## Split and Merge tools
 
-The elprep split command can be used to split up .sam files into smaller files that store the reads "per chromosome". elPrep determines the "chromosomes" by analyzing the sequence dictionary in the header of the input file and generates a split file for each chromosome that stores all read pairs that map to that chromosome. Additonally, elPrep creates a file for storing the unmapped reads, as well as a file for storing the pairs where reads map to different chromosomes. elPrep also duplicates the latter pairs across chromosome files so that preparation pipelines have access to all information they need to run correctly. Once processed, use the elprep merge command to merge the split files back into a single .sam file.
+The elprep split command can be used to split up .sam files into smaller files that store the reads "per chromosome". elPrep determines the "chromosomes" by analyzing the sequence dictionary in the header of the input file and generates a split file for each chromosome that stores all read pairs that map to that chromosome. elPrep additionally creates a file for storing the unmapped reads, and in the case of paired-end data, also a file for storing the pairs where reads map to different chromosomes. elPrep also duplicates the latter pairs across chromosome files so that preparation pipelines have access to all information they need to run correctly. Once processed, use the elprep merge command to merge the split files back into a single .sam file.
 
 Splitting the .sam file into smaller files for processing "per chromosome" is useful for reducing the memory pressure as these split files are typically significantly smaller than the  input file as a whole. Splitting also makes it possible to parallelize the processing of a single .sam file by distributing the different split files across different processing nodes.
 
@@ -297,7 +297,7 @@ We provide an example python script "elprep-sfm.py" that illustrates how to use 
 
 ## Synopsis
 
-	elprep split [sam-file | /path/to/input/] /path/to/output/ --output-prefix "split-sam-file" --output-type sam --nr-of-threads $threads
+	elprep split [sam-file | /path/to/input/] /path/to/output/ --output-prefix "split-sam-file" --output-type sam --nr-of-threads $threads --single-end
 
 ## Description
 
@@ -305,12 +305,22 @@ The elprep split command requires two arguments: 1) the input file or a path to 
 
 elPrep creates the output directory denoted by the output path, unless the directory already exists, in which case elPrep may override the existing files in that directory. Please make sure elPrep has the correct permissions for writing that directory.
 
+By default, the elprep split command assumes it is processing pair-end data. The flag --single-end can be used for processing single-end data. The output will look different for paired-end and single-end data.
+
+### Paired-end data (default)
+
 The split command outputs two types of files:
 
 1. a subdirectory "/path/to/output/splits/" containing a file per entry in the sequence dictionary of the input file that contains all reads that map to that entry.
 2. a "/path/to/output/output-prefix-spread.output-type" file containing all reads of which the mate maps to a different entry in the sequence dictionary of the input file.
 
 To process the files created by the elprep split command, one needs to call the elprep filter command for each entry in the path/to/output/splits/ directory as well as the /path/to/output/output-prefix-spread.output-type file. The output files produced this way, need to be merged with the elprep merge command. For example scripts see "elprep-sfm.py" and "elprep-sfm-gnupar.py".
+
+### Single-end data (--single-end)
+
+The split command creates a file per entry in the sequence dictionary of the input file that contains all reads that map to that entry, and writes those files to the /path/to/output/ directory.
+
+To process the files created by the elprep split --single-end command, one needs to call the elprep filter command for each entry in the /path/to/output/ directory. The output files produces this way, need to be merged with the elprep merge command. For example scripts see "elprep-sfm.py" and "elprep-sfm-gnupar.py". 
 
 ## Options
 
@@ -328,13 +338,17 @@ This command option sets the format of the split files. By default, elprep uses 
 
 This command option sets the number of threads that elPrep uses during execution for converting between .bam/.sam formats. The default number of threads is equal to the number of cpu threads. This option is only useful when the input file is in .bam format or when the --output-type of the split files is chosen to be .bam.
 
+### --single-end
+
+When this command option is set, the elprep split command will treat the data as single-end data. When the option is not used, the elprep split command will treat the data as paired-end data.
+
 ## Name
 
 ### elprep merge - a commandline tool for merging .sam/.bam/.cram files created by elprep split
 
 ## Synopsis
 
-	elprep merge /path/to/input/ sam-output-file --nr-of-threads $threads
+	elprep merge /path/to/input/ sam-output-file --nr-of-threads $threads --single-end
 
 ## Description
 
@@ -346,6 +360,10 @@ The elprep merge command requires two arguments: a path to the files that need t
 
 This command option sets the number of threads that elPrep uses during execution for converting between .bam/.sam formats. The default number of threads is equal to the number of cpu threads. This option is only useful when the files to be marged are in .bam format or when the output-file is in .bam format.
 
+### --single-end
+
+This command option tells the elprep merge command to treat the data as single-end data. When this option is not used, elprep merge assumes the data is paired-end, expecting the data is merging to be generated by the elprep split command accordingly.
+
 # Python Scripts
 
 The Python scripts have been tested with Python 2.7.6. Please add the elPrep and SAMtools binaries to your PATH for using these scripts.
@@ -356,7 +374,7 @@ The Python scripts have been tested with Python 2.7.6. Please add the elPrep and
 
 ## Synopsis
 
-	./elprep-sfm.py $input $output --filter-unmapped-reads --filter-unmapped-reads-strict --replace-reference-sequences ucsc.hg19.dict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --remove-duplicates --sorting-order coordinate --nr-of-threads $threads --intermediate-files-output-type [sam | bam | cram] --intermediate-files-output-prefix name
+	./elprep-sfm.py $input $output --filter-unmapped-reads --filter-unmapped-reads-strict --replace-reference-sequences ucsc.hg19.dict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --remove-duplicates --sorting-order coordinate --nr-of-threads $threads --intermediate-files-output-type [sam | bam | cram] --intermediate-files-output-prefix name --single-end
 
 ## Description
 
@@ -376,13 +394,17 @@ The output type that will be used for the intermediate split files. The default 
 
 The output prefix that will be default used for the intermediate split files. The default output prefix is the file name of the input file.
 
+### --single-end
+
+The elprep split and merge commands will treat the data as single-end data. When this option is not used, the elprep split and merge commands will be called to treat the data as paired-end data.
+
 ### Name
 
 ### elprep-sfm-gnupar.py - a Python script that illustrates the use of elprep split and merge and GNU parallel for optimal execution on a multi-socket server
 
 ## Synopsis
 
-	./elprep-sfm-gnupar.py $input $output --filter-unmapped-reads --filter-unmapped-reads-strict --replace-reference-sequences ucsc.hg19.dict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --remove-duplicates --sorting-order coordinate --nr-of-threads $threads --nr-of-jobs $jobs --intermediate-files-output-type [sam | bam | cram] --intermediate-files-output-prefix name
+	./elprep-sfm-gnupar.py $input $output --filter-unmapped-reads --filter-unmapped-reads-strict --replace-reference-sequences ucsc.hg19.dict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --remove-duplicates --sorting-order coordinate --nr-of-threads $threads --nr-of-jobs $jobs --intermediate-files-output-type [sam | bam | cram] --intermediate-files-output-prefix name --single-end
 
 ## Description
 
@@ -413,6 +435,10 @@ he input directory.
 ### --intermediate-files-output-prefix name
 
 The output prefix that will be default used for the intermediate split files. The default output prefix is the file name of the input file.
+
+### --single-end
+
+The data will be treated as single-end data. When this option is not used, the data will be treated as paired-end data.
 
 ## Name
 
