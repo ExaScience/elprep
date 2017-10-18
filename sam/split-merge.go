@@ -563,7 +563,7 @@ func SplitSingleEndFilePerChromosome(input, outputPath, outputPrefix, outputExte
 }
 
 /* A function for merging files containing single-end reads that were split with elPrep.
-*/
+ */
 func MergeSingleEndFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPrefix, inputExtension string, header *Header) (err error) {
 
 	out, err := Create(output, fai, fasta)

@@ -12,7 +12,7 @@ import (
 
 const (
 	ProgramName    = "elprep"
-	ProgramVersion = "3.03"
+	ProgramVersion = "3.04"
 	ProgramURL     = "http://github.com/exascience/elprep"
 )
 

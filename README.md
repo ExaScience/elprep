@@ -153,11 +153,12 @@ The order in which command options are passed is ignored. For optimal performanc
 
 1. filter-unmapped-reads or filter-unmapped-reads-strict
 2. filter-non-exact-mapping-reads or filter-non-exact-mapping-reads-strict
-3. clean-sam
-4. replace-reference-sequences
-5. replace-read-group
-6. mark-duplicates
-7. remove-duplicates
+3. filter-non-overlapping-reads
+4. clean-sam
+5. replace-reference-sequences
+6. replace-read-group
+7. mark-duplicates
+8. remove-duplicates
 
 Sorting is done after filtering.
 
@@ -243,6 +244,10 @@ Removes all alignments where the mapping is not an exact match with the referenc
 ### --filter-non-exact-mapping-reads-strict
 
 Removes all alignments where the mapping is not an exact match with reference or not a unique match. This filters checks for each read that the following optional fields are present with the following values: X0=1 (unique mapping), X1=0 (no suboptimal hit), XM=0 (no mismatch), XO=0 (no gap opening), XG=0 (no gap extension).
+
+### --filter-non-overlapping-reads bed-file
+
+Removes all reads where the mapping positions do not overlap with any region specified in the bed file. Specifically, either the start or end of the read's mapping position must be contained in an interval, or the read is removed from the output.
 
 ### --replace-read-group read-group-string
 
