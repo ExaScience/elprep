@@ -154,7 +154,7 @@ func Merge() error {
 		}
 	case "queryname":
 		log.Fatal("Merging of files sorted by queryname not yet implemented.")
-		panic("")
+		panic("Unreachable code.")
 	default:
 		if singleEnd {
 			return sam.MergeSingleEndFilesSplitPerChromosome(fullInputPath, output, reference_t, reference_T, inputPrefix, inputExtension, header)

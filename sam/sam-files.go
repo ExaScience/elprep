@@ -74,11 +74,19 @@ func ParseHeader(reader *bufio.Reader) (hdr *Header, lines int, err error) {
 	for first := true; ; first = false {
 		switch data, err := reader.Peek(1); {
 		case err == io.EOF:
-			return hdr, lines, sc.err
+			if sc.err != nil {
+				return nil, 0, sc.err
+			} else {
+				return hdr, lines, nil
+			}
 		case err != nil:
-			return hdr, lines, err
+			return nil, 0, err
 		case data[0] != '@':
-			return hdr, lines, sc.err
+			if sc.err != nil {
+				return nil, 0, sc.err
+			} else {
+				return hdr, lines, nil
+			}
 		}
 		bytes, err := reader.ReadSlice('\n')
 		length := len(bytes)
@@ -86,7 +94,7 @@ func ParseHeader(reader *bufio.Reader) (hdr *Header, lines int, err error) {
 		case err == nil:
 			length--
 		case err != io.EOF:
-			return hdr, lines, err
+			return nil, 0, err
 		}
 		lines++
 		line := string(bytes[4:length])
@@ -94,7 +102,7 @@ func ParseHeader(reader *bufio.Reader) (hdr *Header, lines int, err error) {
 		switch string(bytes[0:4]) {
 		case "@HD\t":
 			if !first {
-				return hdr, lines, errors.New("@HD line not in first line when parsing a SAM header")
+				return nil, 0, errors.New("@HD line not in first line when parsing a SAM header")
 			}
 			hdr.HD = sc.ParseHeaderLine()
 		case "@SQ\t":
@@ -111,11 +119,11 @@ func ParseHeader(reader *bufio.Reader) (hdr *Header, lines int, err error) {
 				hdr.CO = append(hdr.CO, string(bytes[3:]))
 			case IsHeaderUserTag(code):
 				if bytes[3] != '\t' {
-					return hdr, lines, fmt.Errorf("Header code %v not followed by a tab when parsing a SAM header", code)
+					return nil, 0, fmt.Errorf("Header code %v not followed by a tab when parsing a SAM header", code)
 				}
 				hdr.AddUserRecord(code, sc.ParseHeaderLine())
 			default:
-				return hdr, lines, fmt.Errorf("Unknown SAM record type code %v", code)
+				return nil, 0, fmt.Errorf("Unknown SAM record type code %v", code)
 			}
 		}
 	}
@@ -180,9 +188,9 @@ func ParseHeaderLineFromString(line string) (utils.StringMap, error) {
 	for _, field := range fields {
 		switch tag, value, err := splitHeaderField(field); {
 		case err != nil:
-			return record, err
+			return nil, err
 		case !record.SetUniqueEntry(tag, value):
-			return record, fmt.Errorf("Duplicate field tag %v in a SAM header line", tag)
+			return nil, fmt.Errorf("Duplicate field tag %v in a SAM header line", tag)
 		}
 	}
 	return record, nil

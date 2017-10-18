@@ -407,7 +407,10 @@ func MarkDuplicates(deterministic bool) Filter {
 		for _, rg_entry := range header.RG {
 			lb, found := rg_entry["LB"]
 			if found {
-				id, _ := rg_entry["ID"] // mandatory entry
+				id, found := rg_entry["ID"]
+				if !found {
+					log.Fatal("Missing mandatory ID entry in an @RG line in a SAM file header.")
+				}
 				lbTable[id] = lb
 			}
 		}

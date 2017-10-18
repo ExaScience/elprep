@@ -19,7 +19,11 @@ import (
 
 func timedRun(timed bool, profile, msg string, phase int64, f func() error) error {
 	if profile != "" {
-		file, _ := os.Create(profile + strconv.FormatInt(phase, 10) + ".prof")
+		filename := profile + strconv.FormatInt(phase, 10) + ".prof"
+		file, err := os.Create(filename)
+		if err != nil {
+			return fmt.Errorf("%v, while creating file %v for a CPU profile.", err.Error(), filename)
+		}
 		pprof.StartCPUProfile(file)
 		defer pprof.StopCPUProfile()
 	}

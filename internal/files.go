@@ -41,5 +41,9 @@ func FullPathname(filename string) (string, error) {
 		return filename, nil
 	}
 	wd, err := os.Getwd()
-	return filepath.Join(wd, filename), err
+	if err != nil {
+		return "", err
+	} else {
+		return filepath.Join(wd, filename), nil
+	}
 }

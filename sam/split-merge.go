@@ -79,7 +79,8 @@ func (s *lineScanner) field(n int) string {
 			}
 		}
 	}
-	panic("Invalid index in lineScanner.field.")
+	s._err = fmt.Errorf("Invalid index %v, while scanning line %v in file %v", n, s.line, s.filename)
+	return ""
 }
 
 func (s *lineScanner) parseInt(n int) int64 {
@@ -563,7 +564,7 @@ func SplitSingleEndFilePerChromosome(input, outputPath, outputPrefix, outputExte
 }
 
 /* A function for merging files containing single-end reads that were split with elPrep.
-*/
+ */
 func MergeSingleEndFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPrefix, inputExtension string, header *Header) (err error) {
 
 	out, err := Create(output, fai, fasta)

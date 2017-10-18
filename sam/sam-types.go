@@ -79,7 +79,11 @@ func SQ_LN(record utils.StringMap) (int32, error) {
 		return 0x7FFFFFFF, errors.New("LN entry in a SQ header line missing")
 	}
 	val, err := strconv.ParseInt(ln, 10, 32)
-	return int32(val), err
+	if err != nil {
+		return 0, err
+	} else {
+		return int32(val), nil
+	}
 }
 
 /*
