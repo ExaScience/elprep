@@ -2,6 +2,7 @@ package bed
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 
 	"github.com/exascience/elprep/utils"
@@ -207,4 +208,15 @@ Add region to the bed region map.
 func AddBedRegion(bed *Bed, region *BedRegion) {
 	// append the region entry
 	bed.RegionMap[region.Chrom] = append(bed.RegionMap[region.Chrom], region)
+}
+
+/*
+A function for sorting the bed regions.
+*/
+func sortBedRegions(bed *Bed) {
+	for _, regions := range bed.RegionMap {
+		sort.Slice(regions, func(i, j int) bool {
+			return regions[i].Start <= regions[j].Start
+		})
+	}
 }

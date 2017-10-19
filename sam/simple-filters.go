@@ -257,14 +257,20 @@ func FilterNonOverlappingReads(bed *bed.Bed) Filter {
 			}
 			alnEnd := end(aln, cigar)
 			regions := bed.RegionMap[utils.Intern(aln.RNAME)]
-			for _, region := range regions {
-				regionStart := region.Start
-				regionEnd := region.End
-                               if alnStart >= regionStart && alnStart <= regionEnd {
-                                  return true
-                               } else if alnEnd >= regionStart && alnEnd <= regionEnd {
-                                  return true
-                              } 
+			left := 0
+			right := len(regions) - 1
+			for left <= right {
+				mid := (left + right) / 2
+				regionStart := regions[mid].Start
+				regionEnd := regions[mid].End
+				if regionStart > alnEnd-1 {
+					right = mid - 1
+				} else if regionEnd <= alnStart-1 {
+					left = mid + 1
+				} else {
+					return alnStart-1 >= regionStart || alnEnd-1 < regionEnd
+
+				}
 			}
 			return false
 		}

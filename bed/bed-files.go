@@ -83,6 +83,8 @@ func ParseBed(filename string) (b *Bed, err error) {
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("Error while reading bed file: %v ", err)
 	}
+	// Make sure bed regions are sorted.
+	sortBedRegions(bed)
 	return bed, nil
 }
 
