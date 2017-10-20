@@ -165,8 +165,10 @@ func AddPGLine(newPG utils.StringMap) Filter {
 	return func(header *Header) AlignmentFilter {
 		id := newPG["ID"]
 		for utils.Find(header.PG, func(entry utils.StringMap) bool { return entry["ID"] == id }) >= 0 {
+			id += " "
 			id += strconv.FormatInt(rand.Int63n(0x10000), 16)
 		}
+		newPG["ID"] = id
 		for _, PG := range header.PG {
 			nextID := PG["ID"]
 			if pos := utils.Find(header.PG, func(entry utils.StringMap) bool { return entry["PP"] == nextID }); pos < 0 {
