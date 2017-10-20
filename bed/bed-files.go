@@ -57,10 +57,7 @@ func ParseBed(filename string) (b *Bed, err error) {
 				key, val := splitTrackField(field)
 				fields[key] = val
 			}
-			track, err = NewBedTrack(fields)
-			if err != nil {
-				return nil, fmt.Errorf("Invalid bed track: %v ", err)
-			}
+			track = NewBedTrack(fields)
 		} else {
 			// parse a region entry
 			chrom := utils.Intern(data[0])

@@ -25,7 +25,7 @@ https://genome.ucsc.edu/FAQ/FAQformat.html#format1
 */
 type BedTrack struct {
 	// All track fields are optional.
-	Fields utils.SmallMap
+	Fields map[string]string
 	// The bed regions this track groups together.
 	Regions []*BedRegion
 }
@@ -143,66 +143,13 @@ func initializeBedRegionFields(fields []string) ([]interface{}, error) {
 	return brFields, nil
 }
 
-// Valid track line fields.
-var (
-	tName    = utils.Intern("name")
-	tDescr   = utils.Intern("description")
-	tPrior   = utils.Intern("priority")
-	tColor   = utils.Intern("color")
-	tUscore  = utils.Intern("useScore")
-	tItemRgb = utils.Intern("intemRgb")
-)
-
 /*
-Allocates a fresh SmallMap to initialize a BedTrack's optional fields.
+Allocates and initializes a new BedTrack.
 */
-func initializeTrackFields(fields map[string]string) (utils.SmallMap, error) {
-	trackFields := utils.SmallMap{}
-	for key, val := range fields {
-		switch key {
-		case "name":
-			trackFields.Set(tName, val)
-		case "description":
-			trackFields.Set(tDescr, val)
-		case "priority":
-			prior, err := strconv.Atoi(val)
-			if err != nil {
-				return nil, fmt.Errorf("Invalid Priority: %v", err)
-			}
-			trackFields.Set(tPrior, prior)
-		case "color":
-			trackFields.Set(tColor, val)
-		case "usescore":
-			score, err := strconv.Atoi(val)
-			if err != nil {
-				return nil, fmt.Errorf("Invalid UseScore: %v", err)
-			}
-			trackFields.Set(tUscore, score)
-		case "itemRgb":
-			rgb := false
-			if val == "on" {
-				rgb = true
-			}
-			trackFields.Set(tItemRgb, rgb)
-		default:
-			return nil, fmt.Errorf("Invalid track field: %v", val)
-		}
-	}
-	return trackFields, nil
-}
-
-/*
-Allocates and initializes a new BedTrack. Also checks that the given
-fields are valid.
-*/
-func NewBedTrack(fields map[string]string) (*BedTrack, error) {
-	trackFields, err := initializeTrackFields(fields)
-	if err != nil {
-		return nil, err
-	}
+func NewBedTrack(fields map[string]string) *BedTrack {
 	return &BedTrack{
-		Fields: trackFields,
-	}, nil
+		Fields: fields,
+	}
 }
 
 /*
