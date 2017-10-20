@@ -18,6 +18,10 @@ func splitTrackField(field string) (string, string) {
 	return split[0], split[1]
 }
 
+/*
+Parses a BED file. See
+https://genome.ucsc.edu/FAQ/FAQformat.html#format1
+*/
 func ParseBed(filename string) (b *Bed, err error) {
 
 	bed := NewBed()

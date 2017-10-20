@@ -8,6 +8,10 @@ import (
 	"github.com/exascience/elprep/utils"
 )
 
+/*
+A struct for representing the contents of a BED file. See
+https://genome.ucsc.edu/FAQ/FAQformat.html#format1
+*/
 type Bed struct {
 	// Bed tracks defined in the file.
 	Tracks []*BedTrack
@@ -15,6 +19,10 @@ type Bed struct {
 	RegionMap map[utils.Symbol][]*BedRegion
 }
 
+/*
+A struct for representing BED tracks. See
+https://genome.ucsc.edu/FAQ/FAQformat.html#format1
+*/
 type BedTrack struct {
 	// All track fields are optional.
 	Fields utils.SmallMap
@@ -22,6 +30,10 @@ type BedTrack struct {
 	Regions []*BedRegion
 }
 
+/*
+An interval as defined in a BED file. See
+https://genome.ucsc.edu/FAQ/FAQformat.html#format1
+*/
 type BedRegion struct {
 	Chrom          utils.Symbol
 	Start          int32
@@ -38,7 +50,9 @@ var (
 )
 
 /*
-Allocates and initializes a new BedRegion
+Allocates and initializes a new BedRegion. Optional fields are given
+in order. If a "later" field is entered, then the "earlier" field was
+entered as well. See https://genome.ucsc.edu/FAQ/FAQformat.html#format1
 */
 func NewBedRegion(chrom utils.Symbol, start int32, end int32, fields []string) (b *BedRegion, err error) {
 	bedRegionFields, err := initializeBedRegionFields(fields)
@@ -68,8 +82,6 @@ const (
 
 /*
 Allocates a fresh SmallMap to initialize a BedRegion's optional fields.
-Optional fields are given in order. If a "later" field is entered, then the
-"earlier" field was entered as well. See spec.
 */
 func initializeBedRegionFields(fields []string) ([]interface{}, error) {
 	brFields := make([]interface{}, len(fields))
@@ -79,12 +91,12 @@ func initializeBedRegionFields(fields []string) ([]interface{}, error) {
 			brFields[brName] = val
 		case brScore:
 			score, err := strconv.Atoi(val)
-			if err != nil || score < 0 || score > 100 {
+			if err != nil || score < 0 || score > 1000 {
 				return nil, fmt.Errorf("Invalid Score field : %v", err)
 			}
 			brFields[brScore] = score
 		case brStrand:
-			if val != "+" || val != "-" {
+			if val != "+" && val != "-" {
 				return nil, fmt.Errorf("Invalid Strand field: %v", val)
 			}
 			brFields[brStrand] = utils.Intern(val)
@@ -125,7 +137,7 @@ func initializeBedRegionFields(fields []string) ([]interface{}, error) {
 			}
 			brFields[brBlockStarts] = start
 		default:
-			return nil, fmt.Errorf("Invalid optional field: %v", val, " out of 0-8.")
+			return nil, fmt.Errorf("Invalid optional field: %v out of 0-8.", val)
 		}
 	}
 	return brFields, nil
@@ -143,7 +155,6 @@ var (
 
 /*
 Allocates a fresh SmallMap to initialize a BedTrack's optional fields.
-Also checks that the given fields are valid.
 */
 func initializeTrackFields(fields map[string]string) (utils.SmallMap, error) {
 	trackFields := utils.SmallMap{}
@@ -181,7 +192,8 @@ func initializeTrackFields(fields map[string]string) (utils.SmallMap, error) {
 }
 
 /*
-Allocates and initializes a new BedTrack.
+Allocates and initializes a new BedTrack. Also checks that the given
+fields are valid.
 */
 func NewBedTrack(fields map[string]string) (*BedTrack, error) {
 	trackFields, err := initializeTrackFields(fields)
@@ -215,8 +227,8 @@ A function for sorting the bed regions.
 */
 func sortBedRegions(bed *Bed) {
 	for _, regions := range bed.RegionMap {
-		sort.Slice(regions, func(i, j int) bool {
-			return regions[i].Start <= regions[j].Start
+		sort.SliceStable(regions, func(i, j int) bool {
+			return regions[i].Start < regions[j].Start
 		})
 	}
 }
