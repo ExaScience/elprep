@@ -220,3 +220,64 @@ func AddREFID(header *Header) AlignmentFilter {
 		return true
 	}
 }
+
+/*
+A filter for removing optional fields in an alignment.
+*/
+func RemoveOptionalFields(tags []string) Filter {
+	if len(tags) == 0 {
+		return nil
+	} else {
+		// Intern the tags once.
+		var optionals []utils.Symbol
+		for _, tag := range tags {
+			optionals = append(optionals, utils.Intern(tag))
+		}
+		return func(header *Header) AlignmentFilter {
+			return func(aln *Alignment) bool {
+				aln.TAGS, _ = aln.TAGS.DeleteIf(func(key utils.Symbol, val interface{}) bool {
+					for _, tag := range optionals {
+						if tag == key {
+							return true
+						}
+					}
+					return false
+				})
+				return true
+			}
+		}
+	}
+}
+
+/*
+A filter for removing all but a list of given optional fields in an alignment.
+*/
+func KeepOptionalFields(tags []string) Filter {
+	if len(tags) == 0 {
+		return func(header *Header) AlignmentFilter {
+			return func(aln *Alignment) bool {
+				aln.TAGS = nil
+				return true
+			}
+		}
+	} else {
+		// Intern the tags once.
+		var optionals []utils.Symbol
+		for _, tag := range tags {
+			optionals = append(optionals, utils.Intern(tag))
+		}
+		return func(header *Header) AlignmentFilter {
+			return func(aln *Alignment) bool {
+				aln.TAGS, _ = aln.TAGS.DeleteIf(func(key utils.Symbol, val interface{}) bool {
+					for _, tag := range optionals {
+						if tag == key {
+							return false
+						}
+					}
+					return true
+				})
+				return true
+			}
+		}
+	}
+}
