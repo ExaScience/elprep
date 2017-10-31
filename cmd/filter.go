@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/exascience/elprep/internal"
@@ -139,6 +140,8 @@ const FilterHelp = "Filter parameters:\n" +
 	"[--replace-read-group read-group-string]\n" +
 	"[--mark-duplicates]\n" +
 	"[--remove-duplicates]\n" +
+	"[--remove-optional-fields [all | list]]\n" +
+	"[--keep-optional-fields [none | list]]\n" +
 	"[--sorting-order [keep | unknown | unsorted | queryname | coordinate]]\n" +
 	"[--clean-sam]\n" +
 	"[--nr-of-threads nr]\n" +
@@ -157,6 +160,8 @@ func Filter() error {
 		filterNonExactMappingReadsStrict                              bool
 		replaceReadGroup                                              string
 		markDuplicates, markDuplicatesDeterministic, removeDuplicates bool
+		removeOptionalFields                                          string
+		keepOptionalFields                                            string
 		sortingOrder                                                  string
 		cleanSam                                                      bool
 		nrOfThreads                                                   int
@@ -177,6 +182,8 @@ func Filter() error {
 	flags.BoolVar(&markDuplicates, "mark-duplicates", false, "mark duplicates")
 	flags.BoolVar(&markDuplicatesDeterministic, "mark-duplicates-deterministic", false, "mark duplicates deterministically")
 	flags.BoolVar(&removeDuplicates, "remove-duplicates", false, "remove duplicates")
+	flags.StringVar(&removeOptionalFields, "remove-optional-fields", "", "remove the given optional fields")
+	flags.StringVar(&keepOptionalFields, "keep-optional-fields", "", "remove all except for the given optional fields")
 	flags.StringVar(&sortingOrder, "sorting-order", "keep", "determine output order of alignments, one of keep, unknown, unsorted, queryname, or coordinate")
 	flags.BoolVar(&cleanSam, "clean-sam", false, "clean the sam file")
 	flags.IntVar(&nrOfThreads, "nr-of-threads", 0, "number of worker threads")
@@ -222,6 +229,11 @@ func Filter() error {
 
 	if (replaceReferenceSequences != "") && (sortingOrder == "keep") {
 		log.Println("Warning: Requesting to keep the order of the input file while replacing the reference sequence dictionary may force an additional sorting phase to ensure the original sorting order is respected.")
+	}
+
+	if keepOptionalFields != "" && removeOptionalFields != "" {
+		sanityChecksFailed = true
+		log.Println("Error: Cannot use --keep-optional-fields and --remove-optional-fields in the same filter command.")
 	}
 
 	if nrOfThreads < 0 {
@@ -316,6 +328,32 @@ func Filter() error {
 		fmt.Fprint(&command, " --remove-duplicates")
 	}
 
+	if removeOptionalFields != "" {
+		if removeOptionalFields == "all" {
+			filters2 = append(filters2, sam.KeepOptionalFields(nil))
+		} else {
+			tags := strings.Split(removeOptionalFields, ",")
+			for i, tag := range tags {
+				tags[i] = strings.TrimSpace(tag)
+			}
+			filters2 = append(filters2, sam.RemoveOptionalFields(tags))
+		}
+		fmt.Fprint(&command, " --remove-optional-fields \"", removeOptionalFields, "\"")
+	}
+
+	if keepOptionalFields != "" {
+		if keepOptionalFields == "none" {
+			filters2 = append(filters2, sam.KeepOptionalFields(nil))
+		} else {
+			tags := strings.Split(keepOptionalFields, ",")
+			for i, tag := range tags {
+				tags[i] = strings.TrimSpace(tag)
+			}
+			filters2 = append(filters2, sam.KeepOptionalFields(tags))
+		}
+		fmt.Fprint(&command, " --keep-optional-fields \"", keepOptionalFields, "\"")
+	}
+
 	fmt.Fprint(&command, " --sorting-order ", sortingOrder)
 
 	if nrOfThreads > 0 {
@@ -350,6 +388,6 @@ func Filter() error {
 		((replaceReferenceSequences != "") && (sortingOrder == "keep")) {
 		return runBestPracticesPipelineIntermediateSam(input, output, reference_t, reference_T, sortingOrder, filters, filters2, timed, profile)
 	} else {
-		return runBestPracticesPipeline(input, output, reference_t, reference_T, sortingOrder, filters, timed, profile)
+		return runBestPracticesPipeline(input, output, reference_t, reference_T, sortingOrder, append(filters, filters2...), timed, profile)
 	}
 }

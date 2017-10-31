@@ -63,3 +63,21 @@ func (m SmallMap) Delete(key Symbol) (SmallMap, bool) {
 	}
 	return m, false
 }
+
+/*
+DeleteIf returns a SmallMap from which all entries have been removed
+that satisfy the given test.
+
+It also returns true if any entry was removed, and false if no entry
+was removed because no entry matched the given test.
+*/
+func (m SmallMap) DeleteIf(test func(key Symbol, val interface{}) bool) (SmallMap, bool) {
+	i := 0
+	for _, entry := range m {
+		if !test(entry.Key, entry.Value) {
+			m[i] = entry
+			i++
+		}
+	}
+	return m[:i], i < len(m)
+}

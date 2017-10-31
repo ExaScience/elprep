@@ -158,6 +158,8 @@ The order in which command options are passed is ignored. For optimal performanc
 5. replace-read-group
 6. mark-duplicates
 7. remove-duplicates
+9. remove-optional-fields
+10. keep-optional-fields
 
 Sorting is done after filtering.
 
@@ -255,6 +257,14 @@ This filter marks the duplicate reads in the input file by setting bit 0x400 of 
 ### --remove-duplicates
 
 This filter removes all reads marked as duplicates. Duplicate reads are reads where their FLAG's bit 0x400 is set conforming the SAM specification. 
+
+### --remove-optional-fields [all | list]
+
+This filter removes for each alignment either all optional fields or all optional fields specified in the given list. The list of optional fields to remove has to be of the form "tag1, tag2, ..." where tag1, tag2, etc are the tags of the optional fields that need to be deleted.
+
+### --keep-optional-fields [none | list]
+
+This filter removes for each alignment either none of its optional fields, or all optional fields except those specified in the given list. The list of optional fields to keep has to be of the form "tag1, tag2, ..." where tag1, tag2, etc are the tags of the optional fields that need to be kept in the output.
 
 ### --clean-sam
 

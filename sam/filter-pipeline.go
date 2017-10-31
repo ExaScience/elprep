@@ -163,8 +163,10 @@ AlignmentFilters are nil.
 func ComposeFilters(header *Header, hdrFilters []Filter) (receiver pipeline.Receiver) {
 	var alnFilters []AlignmentFilter
 	for _, f := range hdrFilters {
-		if alnFilter := f(header); alnFilter != nil {
-			alnFilters = append(alnFilters, alnFilter)
+		if f != nil {
+			if alnFilter := f(header); alnFilter != nil {
+				alnFilters = append(alnFilters, alnFilter)
+			}
 		}
 	}
 	if len(alnFilters) > 0 {
