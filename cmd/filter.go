@@ -231,6 +231,11 @@ func Filter() error {
 		log.Println("Warning: Requesting to keep the order of the input file while replacing the reference sequence dictionary may force an additional sorting phase to ensure the original sorting order is respected.")
 	}
 
+	if keepOptionalFields != "" && removeOptionalFields != "" {
+		sanityChecksFailed = true
+		log.Println("Error: Cannot use --keep-optional-fields and --remove-optional-fields in the same filter command.")
+	}
+
 	if nrOfThreads < 0 {
 		sanityChecksFailed = true
 		log.Println("Error: Invalid nr-of-threads: ", nrOfThreads)
@@ -328,25 +333,25 @@ func Filter() error {
 			filters2 = append(filters2, sam.KeepOptionalFields(nil))
 		} else {
 			tags := strings.Split(removeOptionalFields, ",")
-			fmt.Println(tags)
+			for i, tag := range tags {
+				tags[i] = strings.TrimSpace(tag)
+			}
 			filters2 = append(filters2, sam.RemoveOptionalFields(tags))
 		}
 		fmt.Fprint(&command, " --remove-optional-fields \"", removeOptionalFields, "\"")
 	}
 
 	if keepOptionalFields != "" {
-		if removeOptionalFields == "none" {
+		if keepOptionalFields == "none" {
 			filters2 = append(filters2, sam.KeepOptionalFields(nil))
 		} else {
 			tags := strings.Split(keepOptionalFields, ",")
-			fmt.Println(tags)
+			for i, tag := range tags {
+				tags[i] = strings.TrimSpace(tag)
+			}
 			filters2 = append(filters2, sam.KeepOptionalFields(tags))
 		}
 		fmt.Fprint(&command, " --keep-optional-fields \"", keepOptionalFields, "\"")
-	}
-
-	if keepOptionalFields != "" && removeOptionalFields != "" {
-		return fmt.Errorf("Cannot use --keep-optional-fields and --remove-optional-fields in the same filter command.")
 	}
 
 	fmt.Fprint(&command, " --sorting-order ", sortingOrder)
