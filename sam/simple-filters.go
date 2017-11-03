@@ -167,8 +167,10 @@ func AddPGLine(newPG utils.StringMap) Filter {
 	return func(header *Header) AlignmentFilter {
 		id := newPG["ID"]
 		for utils.Find(header.PG, func(entry utils.StringMap) bool { return entry["ID"] == id }) >= 0 {
+			id += " "
 			id += strconv.FormatInt(rand.Int63n(0x10000), 16)
 		}
+		newPG["ID"] = id
 		for _, PG := range header.PG {
 			nextID := PG["ID"]
 			if pos := utils.Find(header.PG, func(entry utils.StringMap) bool { return entry["PP"] == nextID }); pos < 0 {
@@ -255,7 +257,12 @@ func FilterNonOverlappingReads(bed *bed.Bed) Filter {
 			if err != nil {
 				log.Fatal(err.Error(), ", while scanning a CIGAR string for", aln.QNAME, " in FilterNonOverlappingReads")
 			}
-			alnEnd := end(aln, cigar)
+			var alnEnd int32
+			if aln.IsUnmapped() || readLengthFromCigar(cigar) <= 0 {
+				alnEnd = aln.POS
+			} else {
+				alnEnd = end(aln, cigar)
+			}
 			regions := bed.RegionMap[utils.Intern(aln.RNAME)]
 			left := 0
 			right := len(regions) - 1
