@@ -275,7 +275,7 @@ func FilterNonOverlappingReads(bed *bed.Bed) Filter {
 				} else if regionEnd <= alnStart-1 {
 					left = mid + 1
 				} else {
-					return alnStart-1 >= regionStart || alnEnd-1 < regionEnd
+					return true
 
 				}
 			}
