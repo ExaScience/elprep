@@ -276,7 +276,6 @@ func FilterNonOverlappingReads(bed *bed.Bed) Filter {
 					left = mid + 1
 				} else {
 					return true
-
 				}
 			}
 			return false
