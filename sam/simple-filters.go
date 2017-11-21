@@ -1,10 +1,12 @@
 package sam
 
 import (
+	"log"
 	"math/rand"
 	"strconv"
 	"strings"
 
+	"github.com/exascience/elprep/bed"
 	"github.com/exascience/elprep/utils"
 )
 
@@ -278,6 +280,66 @@ func KeepOptionalFields(tags []string) Filter {
 				})
 				return true
 			}
+		}
+	}
+}
+
+/*
+A filter for soft-clipping an alignment at the end of a reference
+sequence, and set MAPQ to 0 if unmapped.
+*/
+func CleanSam(header *Header) AlignmentFilter {
+	referenceSequenceTable := make(map[string]int32)
+	for _, sn := range header.SQ {
+		referenceSequenceTable[sn["SN"]], _ = SQ_LN(sn)
+	}
+	return func(aln *Alignment) bool {
+		if aln.IsUnmapped() {
+			aln.MAPQ = 0
+		} else if cigar, err := ScanCigarString(aln.CIGAR); err != nil {
+			log.Fatal(err.Error(), ", while scanning a CIGAR string for ", aln.QNAME, " in CleanSam")
+		} else if length := referenceSequenceTable[aln.RNAME]; end(aln, cigar) > length {
+			clipFrom := length - aln.POS + 1
+			aln.CIGAR = softClipEndOfRead(clipFrom, cigar)
+		}
+		return true
+	}
+}
+
+/*
+A filter for removing all reads that do not overlap with a set
+of regions specified by a bed file.
+*/
+func FilterNonOverlappingReads(bed *bed.Bed) Filter {
+	return func(header *Header) AlignmentFilter {
+		return func(aln *Alignment) bool {
+			alnStart := aln.POS
+			cigar, err := ScanCigarString(aln.CIGAR)
+			if err != nil {
+				log.Fatal(err.Error(), ", while scanning a CIGAR string for", aln.QNAME, " in FilterNonOverlappingReads")
+			}
+			var alnEnd int32
+			if aln.IsUnmapped() || readLengthFromCigar(cigar) <= 0 {
+				alnEnd = aln.POS
+			} else {
+				alnEnd = end(aln, cigar)
+			}
+			regions := bed.RegionMap[utils.Intern(aln.RNAME)]
+			left := 0
+			right := len(regions) - 1
+			for left <= right {
+				mid := (left + right) / 2
+				regionStart := regions[mid].Start
+				regionEnd := regions[mid].End
+				if regionStart > alnEnd-1 {
+					right = mid - 1
+				} else if regionEnd <= alnStart-1 {
+					left = mid + 1
+				} else {
+					return true
+				}
+			}
+			return false
 		}
 	}
 }

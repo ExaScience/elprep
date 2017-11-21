@@ -87,25 +87,3 @@ func softClipEndOfRead(clipFrom int32, cigars []CigarOperation) string {
 	}
 	return string(newCigar)
 }
-
-/*
-A filter for soft-clipping an alignment at the end of a reference
-sequence, and set MAPQ to 0 if unmapped.
-*/
-func CleanSam(header *Header) AlignmentFilter {
-	referenceSequenceTable := make(map[string]int32)
-	for _, sn := range header.SQ {
-		referenceSequenceTable[sn["SN"]], _ = SQ_LN(sn)
-	}
-	return func(aln *Alignment) bool {
-		if aln.IsUnmapped() {
-			aln.MAPQ = 0
-		} else if cigar, err := ScanCigarString(aln.CIGAR); err != nil {
-			log.Fatal(err.Error(), ", while scanning a CIGAR string for ", aln.QNAME, " in CleanSam")
-		} else if length := referenceSequenceTable[aln.RNAME]; end(aln, cigar) > length {
-			clipFrom := length - aln.POS + 1
-			aln.CIGAR = softClipEndOfRead(clipFrom, cigar)
-		}
-		return true
-	}
-}
