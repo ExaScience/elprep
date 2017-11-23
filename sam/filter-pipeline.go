@@ -100,21 +100,21 @@ represent complete SAM files in memory.
 func (sam *Sam) AddNodes(p *pipeline.Pipeline, header *Header, sortingOrder string) {
 	sam.Header = header
 	switch sortingOrder {
-	case "keep", "unknown":
+	case Keep, Unknown:
 		p.Add(pipeline.Ord(pipeline.Slice(&sam.Alignments)))
-	case "coordinate":
+	case Coordinate:
 		p.Add(pipeline.Seq(
 			pipeline.Slice(&sam.Alignments),
 			pipeline.Finalize(func() { By(CoordinateLess).ParallelStableSort(sam.Alignments) }),
 		))
-	case "queryname":
+	case Queryname:
 		p.Add(pipeline.Seq(
 			pipeline.Slice(&sam.Alignments),
 			pipeline.Finalize(func() {
 				By(func(aln1, aln2 *Alignment) bool { return aln1.QNAME < aln2.QNAME }).ParallelStableSort(sam.Alignments)
 			}),
 		))
-	case "unsorted":
+	case Unsorted:
 		p.Add(pipeline.Seq(pipeline.Slice(&sam.Alignments)))
 	default:
 		p.Err(fmt.Errorf("Unknown sorting order %v", sortingOrder))
@@ -133,12 +133,12 @@ func (output *Writer) AddNodes(p *pipeline.Pipeline, header *Header, sortingOrde
 	}
 	var kind pipeline.NodeKind
 	switch sortingOrder {
-	case "keep", "unknown":
+	case Keep, Unknown:
 		kind = pipeline.Ordered
-	case "coordinate", "queryname":
+	case Coordinate, Queryname:
 		p.Err(errors.New("Sorting on files not supported"))
 		return
-	case "unsorted":
+	case Unsorted:
 		kind = pipeline.Sequential
 	default:
 		p.Err(fmt.Errorf("Unknown sorting order %v", sortingOrder))
@@ -211,10 +211,10 @@ sorting order is :keep, then we need to effectively sort the result
 according to the original sorting order.
 */
 func effectiveSortingOrder(sortingOrder string, header *Header, originalSortingOrder string) string {
-	if sortingOrder == "keep" {
+	if sortingOrder == Keep {
 		currentSortingOrder := header.HDSO()
 		if currentSortingOrder == originalSortingOrder {
-			return "keep"
+			return Keep
 		}
 		header.SetHDSO(originalSortingOrder)
 		return originalSortingOrder
@@ -241,11 +241,11 @@ func (sam *Sam) RunPipeline(output PipelineOutput, hdrFilters []Filter, sortingO
 			alnFilter(0, &out.Alignments)
 		}
 		switch sortingOrder {
-		case "coordinate":
+		case Coordinate:
 			sort.Slice(out.Alignments, func(i, j int) bool { return CoordinateLess(alns[i], alns[j]) })
-		case "queryname":
+		case Queryname:
 			sort.Slice(out.Alignments, func(i, j int) bool { return alns[i].QNAME < alns[j].QNAME })
-		case "keep", "unknown", "unsorted":
+		case Keep, Unknown, Unsorted:
 			// nothing to do
 		default:
 			return fmt.Errorf("Unknown sorting order %v", sortingOrder)
@@ -277,9 +277,9 @@ func (input *Reader) RunPipeline(output PipelineOutput, hdrFilters []Filter, sor
 	sortingOrder = effectiveSortingOrder(sortingOrder, header, originalSortingOrder)
 	if out, ok := output.(*Writer); ok && (alnFilter == nil) {
 		switch sortingOrder {
-		case "coordinate", "queryname":
+		case Coordinate, Queryname:
 			return errors.New("Sorting on files not supported")
-		case "keep", "unknown", "unsorted":
+		case Keep, Unknown, Unsorted:
 			// nothing to do
 		default:
 			return fmt.Errorf("Unknown sorting order %v", sortingOrder)

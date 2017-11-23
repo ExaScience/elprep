@@ -546,11 +546,11 @@ func (sc *StringScanner) ParseAlignment() *Alignment {
 /*
 FormatString writes a SAM file TAG of type string.
 */
-func FormatString(out *bufio.Writer, tag, value string) (err error) {
-	err = out.WriteByte('\t')
-	_, err = out.WriteString(tag)
-	err = out.WriteByte(':')
-	_, err = out.WriteString(value)
+func FormatString(out *bufio.Writer, tag, value string) error {
+	_ = out.WriteByte('\t')
+	_, _ = out.WriteString(tag)
+	_ = out.WriteByte(':')
+	_, err := out.WriteString(value)
 	return err
 }
 
@@ -559,12 +559,12 @@ FormatHeaderLine writes a header line in a SAM file header
 section. See http://samtools.github.io/hts-specs/SAMv1.pdf - Section
 1.3.
 */
-func FormatHeaderLine(out *bufio.Writer, code string, record utils.StringMap) (err error) {
-	_, err = out.WriteString(code)
+func FormatHeaderLine(out *bufio.Writer, code string, record utils.StringMap) error {
+	_, _ = out.WriteString(code)
 	for key, value := range record {
-		err = FormatString(out, key, value)
+		_ = FormatString(out, key, value)
 	}
-	err = out.WriteByte('\n')
+	err := out.WriteByte('\n')
 	return err
 }
 
@@ -573,11 +573,11 @@ FormatComment writes a header comment line in a SAM file header
 section. See http://samtools.github.io/hts-specs/SAMv1.pdf - Section
 1.3.
 */
-func FormatComment(out *bufio.Writer, code, comment string) (err error) {
-	_, err = out.WriteString(code)
-	err = out.WriteByte('\t')
-	_, err = out.WriteString(comment)
-	err = out.WriteByte('\n')
+func FormatComment(out *bufio.Writer, code, comment string) error {
+	_, _ = out.WriteString(code)
+	_ = out.WriteByte('\t')
+	_, _ = out.WriteString(comment)
+	err := out.WriteByte('\n')
 	return err
 }
 
@@ -733,6 +733,13 @@ func (sam *Sam) Format(out *bufio.Writer) error {
 	return nil
 }
 
+// SAM file extensions.
+const (
+	SamExt  = ".sam"
+	BamExt  = ".bam"
+	CramExt = ".cram"
+)
+
 // InputFile represents a SAM, BAM, or CRAM file for input.
 type InputFile struct {
 	rc io.ReadCloser
@@ -780,7 +787,7 @@ If the name is "/dev/stdin", then the input is read from os.Stdin
 */
 func Open(name string, headerOnly bool) (*InputFile, error) {
 	switch filepath.Ext(name) {
-	case ".bam", ".cram":
+	case BamExt, CramExt:
 		if _, err := os.Stat(name); os.IsNotExist(err) {
 			return nil, err
 		}
@@ -833,7 +840,7 @@ If the name is "/dev/stdout", then the output is written to os.Stdout.
 */
 func Create(name, fai, fasta string) (*OutputFile, error) {
 	switch filepath.Ext(name) {
-	case ".bam":
+	case BamExt:
 		args := append([]string{"view", "-Sb", "-@"}, strconv.FormatInt(int64(runtime.GOMAXPROCS(0)), 10))
 		args = append(args, []string{"-o", name, "-"}...)
 		cmd := exec.Command("samtools", args...)
@@ -846,7 +853,7 @@ func Create(name, fai, fasta string) (*OutputFile, error) {
 			return nil, err
 		}
 		return &OutputFile{inPipe, bufio.NewWriter(inPipe), cmd}, nil
-	case ".cram":
+	case CramExt:
 		if (fai == "") && (fasta == "") {
 			log.Fatal("When creating CRAM output, either a reference-fai or a reference-fai must be provided.")
 		} else if (fai != "") && (fasta != "") {

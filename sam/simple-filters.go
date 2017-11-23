@@ -16,7 +16,7 @@ reference sequence dictionary in a Header.
 */
 func ReplaceReferenceSequenceDictionary(dict []utils.StringMap) Filter {
 	return func(header *Header) AlignmentFilter {
-		if sortingOrder := header.HD["SO"]; sortingOrder == "coordinate" {
+		if sortingOrder := header.HD["SO"]; sortingOrder == Coordinate {
 			previousPos := -1
 			oldDict := header.SQ
 			for _, entry := range dict {
@@ -26,7 +26,7 @@ func ReplaceReferenceSequenceDictionary(dict []utils.StringMap) Filter {
 					if pos > previousPos {
 						previousPos = pos
 					} else {
-						header.SetHDSO("unknown")
+						header.SetHDSO(Unknown)
 						break
 					}
 				}

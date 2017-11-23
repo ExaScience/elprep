@@ -14,9 +14,9 @@ import (
 	"github.com/exascience/elprep/utils"
 )
 
-type cmdLine []string
+type commandLine []string
 
-func (cmd *cmdLine) pop() (string, bool) {
+func (cmd *commandLine) pop() (string, bool) {
 	if line := (*[]string)(cmd); len(*line) > 0 {
 		entry := (*line)[0]
 		*cmd = (*line)[1:]
@@ -25,7 +25,7 @@ func (cmd *cmdLine) pop() (string, bool) {
 	return "", false
 }
 
-func (cmd cmdLine) peek() string {
+func (cmd commandLine) peek() string {
 	if line := []string(cmd); len(line) > 0 {
 		return line[0]
 	}
@@ -64,8 +64,8 @@ later stage.
 func DeprecatedFilter() error {
 	setLogOutput()
 	log.Println("Warning: Calling elprep without a command to invoke the filter functionality is depecratead. Please use the filter command instead.")
-	cmdLine := cmdLine(os.Args[1:])
-	sortingOrder := "keep"
+	cmdLine := commandLine(os.Args[1:])
+	sortingOrder := sam.Keep
 	nrOfThreads := 0
 	var markDuplicates, markDuplicatesDeterministic, timed bool
 	var replaceRefSeqDictFilter,
@@ -106,26 +106,25 @@ func DeprecatedFilter() error {
 		case "--mark-duplicates":
 			markDuplicates = true
 			for {
-				switch cmdLine.peek() {
-				case "remove":
+				if next := cmdLine.peek(); next == "remove" {
 					cmdLine.pop()
 					removeDuplicatesFilter = sam.FilterDuplicateReads
-				case "deterministic":
+				} else if next == "deterministic" {
 					cmdLine.pop()
 					markDuplicatesDeterministic = true
-				default:
+				} else {
 					break
 				}
 			}
 			markDuplicatesFilter = sam.MarkDuplicates(markDuplicatesDeterministic)
 		case "--sorting-order":
 			if so := cmdLine.peek(); (so == "") || strings.Contains(so, "--") {
-				sortingOrder = "keep"
+				sortingOrder = sam.Keep
 			} else {
 				cmdLine.pop()
 				sortingOrder = so
 				switch sortingOrder {
-				case "keep", "unknown", "unsorted", "queryname", "coordinate":
+				case sam.Keep, sam.Unknown, sam.Unsorted, sam.Queryname, sam.Coordinate:
 				default:
 					log.Printf("Invalid sorting-order %v.\n", sortingOrder)
 					fmt.Fprint(os.Stderr, DeprecatedFilterHelp)
@@ -192,10 +191,10 @@ func DeprecatedFilter() error {
 		fmt.Fprint(os.Stderr, DeprecatedFilterHelp)
 		os.Exit(1)
 	}
-	if (replaceRefSeqDictFilter != nil) && (sortingOrder == "keep") {
+	if (replaceRefSeqDictFilter != nil) && (sortingOrder == sam.Keep) {
 		log.Print("Warning: Requesting to keep the order of the input file while replacing the reference sequence dictionary may force an additional sorting phase to ensure the original sorting order is respected.")
 	}
-	if (filepath.Ext(filenames[1]) == ".cram") && (referenceFai == "") && (referenceFasta == "") {
+	if (filepath.Ext(filenames[1]) == sam.CramExt) && (referenceFai == "") && (referenceFasta == "") {
 		log.Println("Error: Attempting to output to cram without specifying a reference file. Please add --reference-t or --reference-T to your call.")
 		fmt.Fprint(os.Stderr, DeprecatedFilterHelp)
 		os.Exit(1)
@@ -259,7 +258,7 @@ func DeprecatedFilter() error {
 		"CL": cmdString,
 	})}, removeUnmappedReadsFilter, renameChromosomesFilter, cleanSamFilter, replaceRefSeqDictFilter, replaceReadGroupFilter)
 	if (replaceRefSeqDictFilter != nil) || (markDuplicatesFilter != nil) ||
-		(sortingOrder == "coordinate") || (sortingOrder == "queryname") {
+		(sortingOrder == sam.Coordinate) || (sortingOrder == sam.Queryname) {
 		filters = append(filters, sam.AddREFID)
 	}
 	filters = appendIf(filters, markDuplicatesFilter)
@@ -269,8 +268,8 @@ func DeprecatedFilter() error {
 		filters2 = append(filters2, removeDuplicatesFilter)
 	}
 	log.Println("Executing command:\n", cmdString)
-	if markDuplicates || (sortingOrder == "coordinate") || (sortingOrder == "queryname") ||
-		((replaceRefSeqDictFilter != nil) && (sortingOrder == "keep")) {
+	if markDuplicates || (sortingOrder == sam.Coordinate) || (sortingOrder == sam.Queryname) ||
+		((replaceRefSeqDictFilter != nil) && (sortingOrder == sam.Keep)) {
 		return runBestPracticesPipelineIntermediateSam(filenames[0], filenames[1], referenceFai, referenceFasta, sortingOrder, filters, filters2, timed, profile)
 	}
 	return runBestPracticesPipeline(filenames[0], filenames[1], referenceFai, referenceFasta, sortingOrder, filters, timed, profile)

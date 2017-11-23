@@ -68,7 +68,7 @@ func Split() error {
 	}
 	if outputType == "" {
 		switch ext {
-		case ".sam", ".bam", ".cram":
+		case sam.SamExt, sam.BamExt, sam.CramExt:
 			outputType = ext[1:]
 		default:
 			outputType = "sam"
@@ -79,7 +79,7 @@ func Split() error {
 
 	// sanity checks
 
-	sanityChecksFailed := false
+	var sanityChecksFailed bool
 
 	referenceFai, referenceFasta, success := checkCramOutputOptions(outputType, referenceFai, referenceFasta)
 	sanityChecksFailed = !success

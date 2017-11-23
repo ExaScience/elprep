@@ -65,6 +65,22 @@ type Header struct {
 	UserRecords map[string][]utils.StringMap
 }
 
+// Sorting orders.
+const (
+	Keep       = "keep"
+	Unknown    = "unknown"
+	Unsorted   = "unsorted"
+	Queryname  = "queryname"
+	Coordinate = "coordinate"
+)
+
+// Grouping orders.
+const (
+	None      = "none"
+	Query     = "query"
+	Reference = "reference"
+)
+
 /*
 SQLN returns he LN field value, assuming that the given record
 represents an @SQ line in the the header section of a SAM file. See
@@ -128,7 +144,7 @@ func (hdr *Header) HDSO() string {
 	if sortingOrder, found := hd["SO"]; found {
 		return sortingOrder
 	}
-	return "unknown"
+	return Unknown
 }
 
 /*
@@ -156,7 +172,7 @@ func (hdr *Header) HDGO() string {
 	if groupingOrder, found := hd["GO"]; found {
 		return groupingOrder
 	}
-	return "none"
+	return None
 }
 
 /*
@@ -570,7 +586,7 @@ var cigarOperationsTable = make(map[byte]byte, len(CigarOperations))
 
 func init() {
 	for _, c := range CigarOperations {
-		cigarOperationsTable[byte(c)] = byte(unicode.ToUpper(rune(c)))
+		cigarOperationsTable[byte(c)] = byte(unicode.ToUpper(c))
 	}
 }
 

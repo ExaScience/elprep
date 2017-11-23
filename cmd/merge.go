@@ -62,7 +62,7 @@ func Merge() error {
 
 	// sanity checks
 
-	sanityChecksFailed := false
+	var sanityChecksFailed bool
 
 	referenceFai, referenceFasta, success := checkCramOutputOptions(filepath.Ext(output), referenceFai, referenceFasta)
 	sanityChecksFailed = !success
@@ -113,7 +113,7 @@ func Merge() error {
 
 	var inputExtension string
 	switch ext := filepath.Ext(filesToMerge[0]); ext {
-	case ".sam", ".bam", ".cram":
+	case sam.SamExt, sam.BamExt, sam.CramExt:
 		inputExtension = ext[1:]
 	default:
 		inputExtension = "sam"
@@ -147,12 +147,12 @@ func Merge() error {
 	}
 
 	switch header.HDSO() {
-	case "coordinate":
+	case sam.Coordinate:
 		if singleEnd {
 			return sam.MergeSingleEndFilesSplitPerChromosome(fullInputPath, output, referenceFai, referenceFasta, inputPrefix, inputExtension, header)
 		}
 		return sam.MergeSortedFilesSplitPerChromosome(fullInputPath, output, referenceFai, referenceFasta, inputPrefix, inputExtension, header)
-	case "queryname":
+	case sam.Queryname:
 		log.Fatal("Merging of files sorted by queryname not yet implemented.")
 		panic("Unreachable code.")
 	default:

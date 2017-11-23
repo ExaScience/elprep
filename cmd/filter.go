@@ -87,8 +87,8 @@ func runBestPracticesPipelineIntermediateSam(fileIn, fileOut, fai, fasta, sortin
 				err = nerr
 			}
 		}()
-		if sortingOrder != "unsorted" {
-			sortingOrder = "keep"
+		if sortingOrder != sam.Unsorted {
+			sortingOrder = sam.Keep
 		}
 		return filteredReads.RunPipeline(output.SamWriter(), filters2, sortingOrder)
 	})
@@ -191,7 +191,7 @@ func Filter() error {
 	flags.BoolVar(&removeDuplicates, "remove-duplicates", false, "remove duplicates")
 	flags.StringVar(&removeOptionalFields, "remove-optional-fields", "", "remove the given optional fields")
 	flags.StringVar(&keepOptionalFields, "keep-optional-fields", "", "remove all except for the given optional fields")
-	flags.StringVar(&sortingOrder, "sorting-order", "keep", "determine output order of alignments, one of keep, unknown, unsorted, queryname, or coordinate")
+	flags.StringVar(&sortingOrder, "sorting-order", sam.Keep, "determine output order of alignments, one of keep, unknown, unsorted, queryname, or coordinate")
 	flags.BoolVar(&cleanSam, "clean-sam", false, "clean the sam file")
 	flags.IntVar(&nrOfThreads, "nr-of-threads", 0, "number of worker threads")
 	flags.BoolVar(&timed, "timed", false, "measure the runtime")
@@ -222,19 +222,19 @@ func Filter() error {
 
 	// sanity checks
 
-	sanityChecksFailed := false
+	var sanityChecksFailed bool
 
 	referenceFai, referenceFasta, success := checkCramOutputOptions(filepath.Ext(output), referenceFai, referenceFasta)
 	sanityChecksFailed = !success
 
 	switch sortingOrder {
-	case "keep", "unknown", "unsorted", "queryname", "coordinate":
+	case sam.Keep, sam.Unknown, sam.Unsorted, sam.Queryname, sam.Coordinate:
 	default:
 		sanityChecksFailed = true
 		log.Println("Error: Invalid sorting-order: ", sortingOrder)
 	}
 
-	if (replaceReferenceSequences != "") && (sortingOrder == "keep") {
+	if (replaceReferenceSequences != "") && (sortingOrder == sam.Keep) {
 		log.Println("Warning: Requesting to keep the order of the input file while replacing the reference sequence dictionary may force an additional sorting phase to ensure the original sorting order is respected.")
 	}
 
@@ -326,7 +326,7 @@ func Filter() error {
 
 	if (replaceReferenceSequences != "") ||
 		markDuplicatesDeterministic || markDuplicates ||
-		(sortingOrder == "coordinate") || (sortingOrder == "queryname") {
+		(sortingOrder == sam.Coordinate) || (sortingOrder == sam.Queryname) {
 		filters = append(filters, sam.AddREFID)
 	}
 
@@ -401,8 +401,8 @@ func Filter() error {
 	log.Println("Executing command:\n", commandString)
 
 	if markDuplicatesDeterministic || markDuplicates ||
-		(sortingOrder == "coordinate") || (sortingOrder == "queryname") ||
-		((replaceReferenceSequences != "") && (sortingOrder == "keep")) {
+		(sortingOrder == sam.Coordinate) || (sortingOrder == sam.Queryname) ||
+		((replaceReferenceSequences != "") && (sortingOrder == sam.Keep)) {
 		return runBestPracticesPipelineIntermediateSam(input, output, referenceFai, referenceFasta, sortingOrder, filters, filters2, timed, profile)
 	}
 	return runBestPracticesPipeline(input, output, referenceFai, referenceFasta, sortingOrder, append(filters, filters2...), timed, profile)
