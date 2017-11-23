@@ -88,14 +88,3 @@ func ParseBed(filename string) (b *Bed, err error) {
 	sortRegions(bed)
 	return bed, nil
 }
-
-func printParsedBed(bed *Bed) {
-	fmt.Println("Bed{")
-	for k, r := range bed.RegionMap {
-		fmt.Println("Chrom ", *k, " :")
-		for _, v := range r {
-			fmt.Println("Region{", *v.Chrom, v.Start, v.End, " }")
-		}
-	}
-	fmt.Println("}")
-}

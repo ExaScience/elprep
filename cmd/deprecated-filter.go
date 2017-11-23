@@ -25,11 +25,11 @@ func (cmd *cmdLine) pop() (string, bool) {
 	return "", false
 }
 
-func (cmd cmdLine) peek() (string, bool) {
+func (cmd cmdLine) peek() string {
 	if line := []string(cmd); len(line) > 0 {
-		return line[0], true
+		return line[0]
 	}
-	return "", false
+	return ""
 }
 
 func appendIf(slice []sam.Filter, filters ...sam.Filter) []sam.Filter {
@@ -90,7 +90,7 @@ func DeprecatedFilter() error {
 			}
 			replaceRefSeqDictFilter = r
 		case "--filter-unmapped-reads":
-			if next, _ := cmdLine.peek(); next == "strict" {
+			if cmdLine.peek() == "strict" {
 				filterUnmappedArg, _ = cmdLine.pop()
 				removeUnmappedReadsFilter = sam.FilterUnmappedReadsStrict
 			} else {
@@ -106,19 +106,20 @@ func DeprecatedFilter() error {
 		case "--mark-duplicates":
 			markDuplicates = true
 			for {
-				if next, _ := cmdLine.peek(); next == "remove" {
+				switch cmdLine.peek() {
+				case "remove":
 					cmdLine.pop()
 					removeDuplicatesFilter = sam.FilterDuplicateReads
-				} else if next == "deterministic" {
+				case "deterministic":
 					cmdLine.pop()
 					markDuplicatesDeterministic = true
-				} else {
+				default:
 					break
 				}
 			}
 			markDuplicatesFilter = sam.MarkDuplicates(markDuplicatesDeterministic)
 		case "--sorting-order":
-			if so, _ := cmdLine.peek(); (so == "") || strings.Contains(so, "--") {
+			if so := cmdLine.peek(); (so == "") || strings.Contains(so, "--") {
 				sortingOrder = "keep"
 			} else {
 				cmdLine.pop()
@@ -163,7 +164,7 @@ func DeprecatedFilter() error {
 		case "--profile":
 			profile, _ = cmdLine.pop()
 		case "--reference-t":
-			if ref, _ := cmdLine.peek(); (ref == "") || strings.Contains(ref, "--") {
+			if ref := cmdLine.peek(); (ref == "") || strings.Contains(ref, "--") {
 				log.Println("Please provide reference file with --reference-t.")
 				fmt.Fprint(os.Stderr, DeprecatedFilterHelp)
 				os.Exit(1)
@@ -171,7 +172,7 @@ func DeprecatedFilter() error {
 				referenceFai, _ = cmdLine.pop()
 			}
 		case "--reference-T":
-			if ref, _ := cmdLine.peek(); (ref == "") || strings.Contains(ref, "--") {
+			if ref := cmdLine.peek(); (ref == "") || strings.Contains(ref, "--") {
 				log.Println("Please provide reference file with --reference-T.")
 				fmt.Fprint(os.Stderr, DeprecatedFilterHelp)
 				os.Exit(1)

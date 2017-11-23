@@ -13,17 +13,17 @@ import (
 )
 
 const (
-	_qname = iota + 1
-	_flag
-	_rname
-	_pos
-	_mapq
-	_cigar
-	_rnext
-	_pnext
-	_tlen
-	_seq
-	_qual
+	// _qname = 1
+	// _flag  = 2
+	_rname = 3
+	_pos   = 4
+	// _mapq  = 5
+	// _cigar = 6
+	_rnext = 7
+	// _pnext = 8
+	// _tlen  = 9
+	// _seq   = 10
+	// _qual  = 11
 )
 
 type lineScanner struct {
