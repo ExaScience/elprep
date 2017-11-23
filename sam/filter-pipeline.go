@@ -97,25 +97,25 @@ func StringToAlignment(p *pipeline.Pipeline, _ pipeline.NodeKind, _ *int) (recei
 AddNodes implements the PipelineOutput interface for Sam values to
 represent complete SAM files in memory.
 */
-func (output *Sam) AddNodes(p *pipeline.Pipeline, header *Header, sortingOrder string) {
-	output.Header = header
+func (sam *Sam) AddNodes(p *pipeline.Pipeline, header *Header, sortingOrder string) {
+	sam.Header = header
 	switch sortingOrder {
 	case "keep", "unknown":
-		p.Add(pipeline.Ord(pipeline.Slice(&output.Alignments)))
+		p.Add(pipeline.Ord(pipeline.Slice(&sam.Alignments)))
 	case "coordinate":
 		p.Add(pipeline.Seq(
-			pipeline.Slice(&output.Alignments),
-			pipeline.Finalize(func() { By(CoordinateLess).ParallelStableSort(output.Alignments) }),
+			pipeline.Slice(&sam.Alignments),
+			pipeline.Finalize(func() { By(CoordinateLess).ParallelStableSort(sam.Alignments) }),
 		))
 	case "queryname":
 		p.Add(pipeline.Seq(
-			pipeline.Slice(&output.Alignments),
+			pipeline.Slice(&sam.Alignments),
 			pipeline.Finalize(func() {
-				By(func(aln1, aln2 *Alignment) bool { return aln1.QNAME < aln2.QNAME }).ParallelStableSort(output.Alignments)
+				By(func(aln1, aln2 *Alignment) bool { return aln1.QNAME < aln2.QNAME }).ParallelStableSort(sam.Alignments)
 			}),
 		))
 	case "unsorted":
-		p.Add(pipeline.Seq(pipeline.Slice(&output.Alignments)))
+		p.Add(pipeline.Seq(pipeline.Slice(&sam.Alignments)))
 	default:
 		p.Err(fmt.Errorf("Unknown sorting order %v", sortingOrder))
 	}
@@ -205,14 +205,14 @@ according to the original sorting order.
 */
 func effectiveSortingOrder(sortingOrder string, header *Header, originalSortingOrder string) string {
 	if sortingOrder == "keep" {
-		currentSortingOrder := header.HD_SO()
+		currentSortingOrder := header.HDSO()
 		if currentSortingOrder == originalSortingOrder {
 			return "keep"
 		}
-		header.SetHD_SO(originalSortingOrder)
+		header.SetHDSO(originalSortingOrder)
 		return originalSortingOrder
 	}
-	header.SetHD_SO(sortingOrder)
+	header.SetHDSO(sortingOrder)
 	return sortingOrder
 }
 
@@ -220,11 +220,11 @@ func effectiveSortingOrder(sortingOrder string, header *Header, originalSortingO
 RunPipeline implements the PipelineInput interface for Sam values that
 represent complete SAM files in memory
 */
-func (input *Sam) RunPipeline(output PipelineOutput, hdrFilters []Filter, sortingOrder string) error {
-	header := input.Header
-	alns := input.Alignments
-	*input = Sam{}
-	originalSortingOrder := header.HD_SO()
+func (sam *Sam) RunPipeline(output PipelineOutput, hdrFilters []Filter, sortingOrder string) error {
+	header := sam.Header
+	alns := sam.Alignments
+	*sam = Sam{}
+	originalSortingOrder := header.HDSO()
 	alnFilter := ComposeFilters(header, hdrFilters)
 	sortingOrder = effectiveSortingOrder(sortingOrder, header, originalSortingOrder)
 	if out, ok := output.(*Sam); ok && (runtime.GOMAXPROCS(0) <= 3) {
@@ -265,7 +265,7 @@ func (input *Reader) RunPipeline(output PipelineOutput, hdrFilters []Filter, sor
 	if err != nil {
 		return err
 	}
-	originalSortingOrder := header.HD_SO()
+	originalSortingOrder := header.HDSO()
 	alnFilter := ComposeFilters(header, hdrFilters)
 	sortingOrder = effectiveSortingOrder(sortingOrder, header, originalSortingOrder)
 	if out, ok := output.(*Writer); ok && (alnFilter == nil) {

@@ -19,7 +19,7 @@ func splitTrackField(field string) (string, string) {
 }
 
 /*
-Parses a BED file. See
+ParseBed parses a BED file. See
 https://genome.ucsc.edu/FAQ/FAQformat.html#format1
 */
 func ParseBed(filename string) (b *Bed, err error) {
@@ -39,7 +39,7 @@ func ParseBed(filename string) (b *Bed, err error) {
 
 	scanner := bufio.NewScanner(file)
 
-	var track *BedTrack // for storing the current track
+	var track *Track // for storing the current track
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -57,7 +57,7 @@ func ParseBed(filename string) (b *Bed, err error) {
 				key, val := splitTrackField(field)
 				fields[key] = val
 			}
-			track = NewBedTrack(fields)
+			track = NewTrack(fields)
 		} else {
 			// parse a region entry
 			chrom := utils.Intern(data[0])
@@ -70,11 +70,11 @@ func ParseBed(filename string) (b *Bed, err error) {
 			if err != nil {
 				return nil, fmt.Errorf("Invalid bed region end: %v ", err)
 			}
-			region, err := NewBedRegion(chrom, int32(start), int32(end), data[3:])
+			region, err := NewRegion(chrom, int32(start), int32(end), data[3:])
 			if err != nil {
 				return nil, fmt.Errorf("Invalid bed region: %v ", err)
 			}
-			AddBedRegion(bed, region)
+			AddRegion(bed, region)
 			if track != nil {
 				track.Regions = append(track.Regions, region)
 			}
@@ -85,7 +85,7 @@ func ParseBed(filename string) (b *Bed, err error) {
 		return nil, fmt.Errorf("Error while reading bed file: %v ", err)
 	}
 	// Make sure bed regions are sorted.
-	sortBedRegions(bed)
+	sortRegions(bed)
 	return bed, nil
 }
 
@@ -94,7 +94,7 @@ func printParsedBed(bed *Bed) {
 	for k, r := range bed.RegionMap {
 		fmt.Println("Chrom ", *k, " :")
 		for _, v := range r {
-			fmt.Println("BedRegion{", *v.Chrom, v.Start, v.End, " }")
+			fmt.Println("Region{", *v.Chrom, v.Start, v.End, " }")
 		}
 	}
 	fmt.Println("}")

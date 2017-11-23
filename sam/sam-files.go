@@ -18,7 +18,7 @@ import (
 )
 
 /*
-Parse a field in a header line in a SAM file. See
+ParseHeaderField parses a field in a header line in a SAM file. See
 http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3.
 */
 func (sc *StringScanner) ParseHeaderField() (tag, value string) {
@@ -31,14 +31,13 @@ func (sc *StringScanner) ParseHeaderField() (tag, value string) {
 			sc.err = fmt.Errorf("Invalid field tag %v", tag)
 		}
 		return "", ""
-	} else {
-		value, _ = sc.readUntil('\t')
-		return tag, value
 	}
+	value, _ = sc.readUntil('\t')
+	return tag, value
 }
 
 /*
-Parse a header line in a SAM file. See
+ParseHeaderLine parses a header line in a SAM file. See
 http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3.
 
 The @ record type code must have already been scanned. ParseHeaderLine
@@ -62,7 +61,7 @@ func (sc *StringScanner) ParseHeaderLine() utils.StringMap {
 }
 
 /*
-Parse a complete header in a SAM file. See
+ParseHeader parses a complete header in a SAM file. See
 http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3.
 
 Returns a freshly allocated header, the number of header lines, and a
@@ -76,17 +75,15 @@ func ParseHeader(reader *bufio.Reader) (hdr *Header, lines int, err error) {
 		case err == io.EOF:
 			if sc.err != nil {
 				return nil, 0, sc.err
-			} else {
-				return hdr, lines, nil
 			}
+			return hdr, lines, nil
 		case err != nil:
 			return nil, 0, err
 		case data[0] != '@':
 			if sc.err != nil {
 				return nil, 0, sc.err
-			} else {
-				return hdr, lines, nil
 			}
+			return hdr, lines, nil
 		}
 		bytes, err := reader.ReadSlice('\n')
 		length := len(bytes)
@@ -130,8 +127,8 @@ func ParseHeader(reader *bufio.Reader) (hdr *Header, lines int, err error) {
 }
 
 /*
-Skip the complete header in a SAM file. This is more efficient than
-calling ParseHeader and ignoring its result.
+SkipHeader skips the complete header in a SAM file. This is more
+efficient than calling ParseHeader and ignoring its result.
 
 Returns the number of header lines and a non-nil error value if an
 error occurred.
@@ -142,9 +139,8 @@ func SkipHeader(reader *bufio.Reader) (lines int, err error) {
 		if err != nil {
 			if err == io.EOF {
 				return lines, nil
-			} else {
-				return lines, err
 			}
+			return lines, err
 		}
 		if data[0] != '@' {
 			break
@@ -154,9 +150,8 @@ func SkipHeader(reader *bufio.Reader) (lines int, err error) {
 			if err != nil {
 				if err == io.EOF {
 					return lines, nil
-				} else {
-					return lines, err
 				}
+				return lines, err
 			}
 			if byte == '\n' {
 				break
@@ -175,9 +170,10 @@ func splitHeaderField(field string) (tag, value string, err error) {
 }
 
 /*
-Parse a SAM header line from a string, except that entries are
-separated by white space instead of tabulators. See
-http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3.
+ParseHeaderLineFromString parses a SAM header line from a string,
+except that entries are separated by white space instead of
+tabulators. See http://samtools.github.io/hts-specs/SAMv1.pdf -
+Section 1.3.
 
 The @ record type code must have already been
 scanned. ParseHeaderLineFromString cannot be used for @CO lines.
@@ -197,14 +193,14 @@ func ParseHeaderLineFromString(line string) (utils.StringMap, error) {
 }
 
 /*
-All parsers for optional fields in read alignment lines in SAM files
-have this signature.
+FieldParser is the signature for all parsers for optional fields in
+read alignment lines in SAM files.
 */
 type FieldParser func(*StringScanner, utils.Symbol) (utils.Symbol, interface{})
 
 /*
-Parses a single tab-delimited character and returns it as a byte. See
-http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.5.
+ParseChar parses a single tab-delimited character and returns it as a
+byte. See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.5.
 */
 func (sc *StringScanner) ParseChar(tag utils.Symbol) (utils.Symbol, interface{}) {
 	if sc.err != nil {
@@ -215,8 +211,9 @@ func (sc *StringScanner) ParseChar(tag utils.Symbol) (utils.Symbol, interface{})
 }
 
 /*
-Parses a single tab-delimited integer and returns it as an int32. See
-http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.5.
+ParseInteger parses a single tab-delimited integer and returns it as
+an int32. See http://samtools.github.io/hts-specs/SAMv1.pdf - Section
+1.5.
 */
 func (sc *StringScanner) ParseInteger(tag utils.Symbol) (utils.Symbol, interface{}) {
 	if sc.err != nil {
@@ -231,8 +228,9 @@ func (sc *StringScanner) ParseInteger(tag utils.Symbol) (utils.Symbol, interface
 }
 
 /*
-Parses a single tab-delimited float and returns it as a float32. See
-http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.5.
+ParseFloat parses a single tab-delimited float and returns it as a
+float32. See http://samtools.github.io/hts-specs/SAMv1.pdf - Section
+1.5.
 */
 func (sc *StringScanner) ParseFloat(tag utils.Symbol) (utils.Symbol, interface{}) {
 	if sc.err != nil {
@@ -247,7 +245,7 @@ func (sc *StringScanner) ParseFloat(tag utils.Symbol) (utils.Symbol, interface{}
 }
 
 /*
-Parses a single tab-delimited string and returns it. See
+ParseString parses a single tab-delimited string and returns it. See
 http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.5.
 */
 func (sc *StringScanner) ParseString(tag utils.Symbol) (utils.Symbol, interface{}) {
@@ -264,9 +262,9 @@ func (sc *StringScanner) ParseString(tag utils.Symbol) (utils.Symbol, interface{
 }
 
 /*
-Parses a byte array in the tab-delimited Hex format and returns it as
-a ByteArray. See http://samtools.github.io/hts-specs/SAMv1.pdf -
-Section 1.5.
+ParseByteArray parses a byte array in the tab-delimited Hex format and
+returns it as a ByteArray. See
+http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.5.
 */
 func (sc *StringScanner) ParseByteArray(tag utils.Symbol) (utils.Symbol, interface{}) {
 	if sc.err != nil {
@@ -288,9 +286,9 @@ func (sc *StringScanner) ParseByteArray(tag utils.Symbol) (utils.Symbol, interfa
 }
 
 /*
-Parses a typed, tab-delimited, and comma-separated integer or numeric
-array and returns it as a []int8, []uint8, []int16, []uint16, []int32,
-[]uint32, or []float32. See
+ParseNumericArray parses a typed, tab-delimited, and comma-separated
+integer or numeric array and returns it as a []int8, []uint8, []int16,
+[]uint16, []int32, []uint32, or []float32. See
 http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.5.
 */
 func (sc *StringScanner) ParseNumericArray(tag utils.Symbol) (utils.Symbol, interface{}) {
@@ -433,8 +431,8 @@ func (sc *StringScanner) ParseNumericArray(tag utils.Symbol) (utils.Symbol, inte
 }
 
 /*
-Parses a single tab-delimited mandatory field in a SAM read alignment
-line and returns it as a string. See
+ParseMandatoryField parses a single tab-delimited mandatory field in a
+SAM read alignment line and returns it as a string. See
 http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.
 */
 func (sc *StringScanner) ParseMandatoryField() string {
@@ -452,8 +450,8 @@ var optionalFieldParseTable = map[byte]FieldParser{
 }
 
 /*
-Parses a single tab-delimited optional field in a SAM read alignment
-line and returns it as a tag/value pair. See
+ParseOptionalField parses a single tab-delimited optional field in a
+SAM read alignment line and returns it as a tag/value pair. See
 http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.5.
 
 The second return value is one of byte (representing an ASCII
@@ -519,7 +517,8 @@ func (sc *StringScanner) doUint(bitSize int) uint64 {
 }
 
 /*
-Parses a read alignment line in a SAM file and returns a freshly allocated alignment. See
+ParseAlignment parses a read alignment line in a SAM file and returns
+a freshly allocated alignment. See
 http://samtools.github.io/hts-specs/SAMv1.pdf - Sections 1.4 and 1.5.
 */
 func (sc *StringScanner) ParseAlignment() *Alignment {
@@ -545,7 +544,7 @@ func (sc *StringScanner) ParseAlignment() *Alignment {
 }
 
 /*
-Write a SAM file TAG of type string.
+FormatString writes a SAM file TAG of type string.
 */
 func FormatString(out *bufio.Writer, tag, value string) {
 	out.WriteByte('\t')
@@ -555,8 +554,9 @@ func FormatString(out *bufio.Writer, tag, value string) {
 }
 
 /*
-Write a header line in a SAM file header section. See
-http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3.
+FormatHeaderLine writes a header line in a SAM file header
+section. See http://samtools.github.io/hts-specs/SAMv1.pdf - Section
+1.3.
 */
 func FormatHeaderLine(out *bufio.Writer, code string, record utils.StringMap) {
 	out.WriteString(code)
@@ -567,8 +567,9 @@ func FormatHeaderLine(out *bufio.Writer, code string, record utils.StringMap) {
 }
 
 /*
-Write a header comment line in a SAM file header section. See
-http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3.
+FormatComment writes a header comment line in a SAM file header
+section. See http://samtools.github.io/hts-specs/SAMv1.pdf - Section
+1.3.
 */
 func FormatComment(out *bufio.Writer, code, comment string) {
 	out.WriteString(code)
@@ -578,7 +579,7 @@ func FormatComment(out *bufio.Writer, code, comment string) {
 }
 
 /*
-Write the header section of a SAM file. See
+Format writes the header section of a SAM file. See
 http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3.
 */
 func (hdr *Header) Format(out *bufio.Writer) {
@@ -605,10 +606,10 @@ func (hdr *Header) Format(out *bufio.Writer) {
 }
 
 /*
-Write a SAM file TAG by appending its ASCII-string representation to
-out and returning the result, dispatching on the actual type of the
-given value. See http://samtools.github.io/hts-specs/SAMv1.pdf -
-Section 1.5.
+FormatTag writes a SAM file TAG by appending its ASCII-string
+representation to out and returning the result, dispatching on the
+actual type of the given value. See
+http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.5.
 
 The following types are accepted: byte (A), int32 (i), float32 (f),
 string (Z), ByteArray (H), []int8 (B:c), []uint8 (B:C), []int16 (B:s),
@@ -678,8 +679,8 @@ func FormatTag(out []byte, tag utils.Symbol, value interface{}) ([]byte, error) 
 }
 
 /*
-Write a SAM file read alignment line by appending its ASCII-string
-representation to out and return the result. See
+Format writes a SAM file read alignment line by appending its
+ASCII-string representation to out and return the result. See
 http://samtools.github.io/hts-specs/SAMv1.pdf - Sections 1.4 and 1.5.
 */
 func (aln *Alignment) Format(out []byte) ([]byte, error) {
@@ -706,7 +707,7 @@ func (aln *Alignment) Format(out []byte) ([]byte, error) {
 }
 
 /*
-Write a complete SAM file. See
+Format writes a complete SAM file. See
 http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.
 */
 func (sam *Sam) Format(out *bufio.Writer) error {
@@ -725,27 +726,32 @@ func (sam *Sam) Format(out *bufio.Writer) error {
 	return nil
 }
 
-type (
-	InputFile struct {
-		rc io.ReadCloser
-		*bufio.Reader
-		*exec.Cmd
-	}
+// InputFile represents a SAM, BAM, or CRAM file for input.
+type InputFile struct {
+	rc io.ReadCloser
+	*bufio.Reader
+	*exec.Cmd
+}
 
-	OutputFile struct {
-		wc io.WriteCloser
-		*bufio.Writer
-		*exec.Cmd
-	}
+// OutputFile represents a SAM, BAM, or CRAM file for output.
+type OutputFile struct {
+	wc io.WriteCloser
+	*bufio.Writer
+	*exec.Cmd
+}
 
-	Reader bufio.Reader
-	Writer bufio.Writer
-)
+// Reader is a bufio.Reader for a SAM, BAM or CRAM InputFile.
+type Reader bufio.Reader
 
+// Writer is a bufio.Writer for a SAM, BAM or CRAM OutputFile.
+type Writer bufio.Writer
+
+// SamReader returns the Reader for a SAM, BAM or CRAM InputFile.
 func (input *InputFile) SamReader() *Reader {
 	return (*Reader)(input.Reader)
 }
 
+// SamWriter returns the Writer for a SAM, BAM or CRAM OutputFile.
 func (output *OutputFile) SamWriter() *Writer {
 	return (*Writer)(output.Writer)
 }
@@ -770,36 +776,34 @@ func Open(name string, headerOnly bool) (*InputFile, error) {
 	case ".bam", ".cram":
 		if _, err := os.Stat(name); os.IsNotExist(err) {
 			return nil, err
-		} else {
-			args := []string{"view"}
-			if headerOnly {
-				args = append(args, "-H")
-			} else {
-				args = append(args, "-h")
-			}
-			args = append(args, []string{"-@", strconv.FormatInt(int64(runtime.GOMAXPROCS(0)), 10)}...)
-			args = append(args, name)
-			cmd := exec.Command("samtools", args...)
-			outPipe, err := cmd.StdoutPipe()
-			if err != nil {
-				return nil, err
-			}
-			err = cmd.Start()
-			if err != nil {
-				return nil, err
-			}
-			return &InputFile{outPipe, bufio.NewReader(outPipe), cmd}, nil
 		}
+		args := []string{"view"}
+		if headerOnly {
+			args = append(args, "-H")
+		} else {
+			args = append(args, "-h")
+		}
+		args = append(args, []string{"-@", strconv.FormatInt(int64(runtime.GOMAXPROCS(0)), 10)}...)
+		args = append(args, name)
+		cmd := exec.Command("samtools", args...)
+		outPipe, err := cmd.StdoutPipe()
+		if err != nil {
+			return nil, err
+		}
+		err = cmd.Start()
+		if err != nil {
+			return nil, err
+		}
+		return &InputFile{outPipe, bufio.NewReader(outPipe), cmd}, nil
 	default:
 		if name == "/dev/stdin" {
 			return &InputFile{os.Stdin, bufio.NewReader(os.Stdin), nil}, nil
-		} else {
-			file, err := os.Open(name)
-			if err != nil {
-				return nil, err
-			}
-			return &InputFile{file, bufio.NewReader(file), nil}, nil
 		}
+		file, err := os.Open(name)
+		if err != nil {
+			return nil, err
+		}
+		return &InputFile{file, bufio.NewReader(file), nil}, nil
 	}
 }
 
@@ -870,15 +874,15 @@ func Create(name, fai, fasta string) (*OutputFile, error) {
 Close the SAM input file. If samtools view is used for input, wait for
 its process to finish.
 */
-func (sam *InputFile) Close() error {
-	if sam.rc != os.Stdin {
-		err := sam.rc.Close()
+func (input *InputFile) Close() error {
+	if input.rc != os.Stdin {
+		err := input.rc.Close()
 		if err != nil {
 			return err
 		}
 	}
-	if sam.Cmd != nil {
-		err := sam.Wait()
+	if input.Cmd != nil {
+		err := input.Wait()
 		if err != nil {
 			return err
 		}
@@ -890,19 +894,19 @@ func (sam *InputFile) Close() error {
 Close the SAM output file. If samtools view is used for output, wait
 for its process to finish.
 */
-func (sam *OutputFile) Close() error {
-	err := sam.Flush()
+func (output *OutputFile) Close() error {
+	err := output.Flush()
 	if err != nil {
 		return err
 	}
-	if sam.wc != os.Stdout {
-		err := sam.wc.Close()
+	if output.wc != os.Stdout {
+		err := output.wc.Close()
 		if err != nil {
 			return err
 		}
 	}
-	if sam.Cmd != nil {
-		err := sam.Wait()
+	if output.Cmd != nil {
+		err := output.Wait()
 		if err != nil {
 			return err
 		}

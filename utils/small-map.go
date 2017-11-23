@@ -1,19 +1,18 @@
 package utils
 
-type (
-	SmallMapEntry struct {
-		Key   Symbol
-		Value interface{}
-	}
+// SmallMapEntry is an entry in a SmallMap.
+type SmallMapEntry struct {
+	Key   Symbol
+	Value interface{}
+}
 
-	/*
-	  A SmallMap maps keys to values, similar to Go's built-in maps. A
-	  SmallMap can be more efficient in terms of memory and runtime
-	  performance than a native map if it has only few entries. SmallMap
-	  keys are always symbols.
-	*/
-	SmallMap []SmallMapEntry
-)
+/*
+A SmallMap maps keys to values, similar to Go's built-in maps. A
+SmallMap can be more efficient in terms of memory and runtime
+performance than a native map if it has only few entries. SmallMap
+keys are always symbols.
+*/
+type SmallMap []SmallMapEntry
 
 /*
 Get returns the first entry in the SmallMap that has the same key as

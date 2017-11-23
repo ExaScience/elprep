@@ -24,7 +24,7 @@ func timedRun(timed bool, profile, msg string, phase int64, f func() error) erro
 		filename := profile + strconv.FormatInt(phase, 10) + ".prof"
 		file, err := os.Create(filename)
 		if err != nil {
-			return fmt.Errorf("%v, while creating file %v for a CPU profile.", err.Error(), filename)
+			return fmt.Errorf("%v, while creating file %v for a CPU profile", err.Error(), filename)
 		}
 		pprof.StartCPUProfile(file)
 		defer pprof.StopCPUProfile()
@@ -131,6 +131,7 @@ func runBestPracticesPipeline(fileIn, fileOut, fai, fasta, sortingOrder string, 
 	})
 }
 
+// FilterHelp is the help string for this command.
 const FilterHelp = "Filter parameters:\n" +
 	"elprep filter sam-file sam-output-file\n" +
 	"[--replace-reference-sequences sam-file]\n" +
@@ -170,7 +171,7 @@ func Filter() error {
 		nrOfThreads                                                   int
 		timed                                                         bool
 		profile                                                       string
-		reference_t, reference_T                                      string
+		referenceFai, referenceFasta                                  string
 		renameChromosomes                                             bool
 	)
 
@@ -193,8 +194,8 @@ func Filter() error {
 	flags.IntVar(&nrOfThreads, "nr-of-threads", 0, "number of worker threads")
 	flags.BoolVar(&timed, "timed", false, "measure the runtime")
 	flags.StringVar(&profile, "profile", "", "write a runtime profile to the specified file(s)")
-	flags.StringVar(&reference_t, "reference-t", "", "specify a .fai file for cram output")
-	flags.StringVar(&reference_T, "reference-T", "", "specify a .fasta file for cram output")
+	flags.StringVar(&referenceFai, "reference-t", "", "specify a .fai file for cram output")
+	flags.StringVar(&referenceFasta, "reference-T", "", "specify a .fasta file for cram output")
 	flags.BoolVar(&renameChromosomes, "rename-chromosomes", false, "")
 
 	if len(os.Args) < 4 {
@@ -221,7 +222,7 @@ func Filter() error {
 
 	sanityChecksFailed := false
 
-	reference_t, reference_T, success := checkCramOutputOptions(filepath.Ext(output), reference_t, reference_T)
+	referenceFai, referenceFasta, success := checkCramOutputOptions(filepath.Ext(output), referenceFai, referenceFasta)
 	sanityChecksFailed = !success
 
 	switch sortingOrder {
@@ -255,12 +256,12 @@ func Filter() error {
 	var command bytes.Buffer
 	fmt.Fprint(&command, os.Args[0], " filter ", input, " ", output)
 
-	if reference_t != "" {
-		fmt.Fprint(&command, " --reference-t ", reference_t)
+	if referenceFai != "" {
+		fmt.Fprint(&command, " --reference-t ", referenceFai)
 	}
 
-	if reference_T != "" {
-		fmt.Fprint(&command, " --reference-T ", reference_T)
+	if referenceFasta != "" {
+		fmt.Fprint(&command, " --reference-T ", referenceFasta)
 	}
 
 	var filters, filters2 []sam.Filter
@@ -400,8 +401,7 @@ func Filter() error {
 	if markDuplicatesDeterministic || markDuplicates ||
 		(sortingOrder == "coordinate") || (sortingOrder == "queryname") ||
 		((replaceReferenceSequences != "") && (sortingOrder == "keep")) {
-		return runBestPracticesPipelineIntermediateSam(input, output, reference_t, reference_T, sortingOrder, filters, filters2, timed, profile)
-	} else {
-		return runBestPracticesPipeline(input, output, reference_t, reference_T, sortingOrder, append(filters, filters2...), timed, profile)
+		return runBestPracticesPipelineIntermediateSam(input, output, referenceFai, referenceFasta, sortingOrder, filters, filters2, timed, profile)
 	}
+	return runBestPracticesPipeline(input, output, referenceFai, referenceFasta, sortingOrder, append(filters, filters2...), timed, profile)
 }

@@ -37,7 +37,7 @@ func init() {
 }
 
 /*
-Sum the adapted Phred qualities of an alignment.
+ComputePhredScore sums the adapted Phred qualities of an alignment.
 */
 func (aln *Alignment) ComputePhredScore() (score int32) {
 	var error int32
@@ -62,8 +62,8 @@ var (
 )
 
 /*
-Compute unclipped position of an alignment, based on its FLAG, POS,
-and CIGAR string.
+ComputeUnclippedPosition determines the unclipped position of an
+alignment, based on its FLAG, POS, and CIGAR string.
 */
 func (aln *Alignment) ComputeUnclippedPosition() (result int32) {
 	cigar, err := ScanCigarString(aln.CIGAR)
@@ -137,8 +137,8 @@ position; fill in Phred score.
 func adaptAlignment(aln *Alignment, lbTable map[string]string) {
 	rg := aln.RG()
 	if rg != nil {
-		lb, lb_found := lbTable[rg.(string)]
-		if lb_found {
+		lb, lbFound := lbTable[rg.(string)]
+		if lbFound {
 			aln.SetLIBID(lb)
 		}
 	}
@@ -388,8 +388,9 @@ func classifyPair(aln *Alignment, fragments, pairs *sync.Map, deterministic bool
 }
 
 /*
-A filter for marking duplicate alignments. Depends on the AddREFID
-filter being called before to fill in the refid.
+MarkDuplicates returns a filter for marking duplicate
+alignments. Depends on the AddREFID filter being called before to fill
+in the refid.
 
 Duplicate marking is based on an adapted Phred score. In case of ties,
 if deterministic is true, the QNAME is used as a tie-breaker.
@@ -404,10 +405,10 @@ func MarkDuplicates(deterministic bool) Filter {
 		pairs := sync.NewMap(splits)
 		// map read groups to library ids
 		lbTable := make(map[string]string)
-		for _, rg_entry := range header.RG {
-			lb, found := rg_entry["LB"]
+		for _, rgEntry := range header.RG {
+			lb, found := rgEntry["LB"]
 			if found {
-				id, found := rg_entry["ID"]
+				id, found := rgEntry["ID"]
 				if !found {
 					log.Fatal("Missing mandatory ID entry in an @RG line in a SAM file header.")
 				}

@@ -9,39 +9,39 @@ import (
 )
 
 /*
-A struct for representing the contents of a BED file. See
+Bed is a struct for representing the contents of a BED file. See
 https://genome.ucsc.edu/FAQ/FAQformat.html#format1
 */
 type Bed struct {
 	// Bed tracks defined in the file.
-	Tracks []*BedTrack
+	Tracks []*Track
 	// Maps chromosome name onto bed regions.
-	RegionMap map[utils.Symbol][]*BedRegion
+	RegionMap map[utils.Symbol][]*Region
 }
 
 /*
-A struct for representing BED tracks. See
+A Track is a struct for representing BED tracks. See
 https://genome.ucsc.edu/FAQ/FAQformat.html#format1
 */
-type BedTrack struct {
+type Track struct {
 	// All track fields are optional.
 	Fields map[string]string
 	// The bed regions this track groups together.
-	Regions []*BedRegion
+	Regions []*Region
 }
 
 /*
-An interval as defined in a BED file. See
-https://genome.ucsc.edu/FAQ/FAQformat.html#format1
+A Region is a struct for representing intervals as defined in a BED
+file. See https://genome.ucsc.edu/FAQ/FAQformat.html#format1
 */
-type BedRegion struct {
+type Region struct {
 	Chrom          utils.Symbol
 	Start          int32
 	End            int32
 	OptionalFields []interface{}
 }
 
-// Symbols for optional strand field of a BedRegion.
+// Symbols for optional strand field of a Region.
 var (
 	// Strand forward.
 	SF = utils.Intern("+")
@@ -50,20 +50,21 @@ var (
 )
 
 /*
-Allocates and initializes a new BedRegion. Optional fields are given
-in order. If a "later" field is entered, then the "earlier" field was
-entered as well. See https://genome.ucsc.edu/FAQ/FAQformat.html#format1
+NewRegion allocates and initializes a new Region. Optional fields are
+given in order. If a "later" field is entered, then the "earlier"
+field was entered as well. See
+https://genome.ucsc.edu/FAQ/FAQformat.html#format1
 */
-func NewBedRegion(chrom utils.Symbol, start int32, end int32, fields []string) (b *BedRegion, err error) {
-	bedRegionFields, err := initializeBedRegionFields(fields)
+func NewRegion(chrom utils.Symbol, start int32, end int32, fields []string) (b *Region, err error) {
+	regionFields, err := initializeRegionFields(fields)
 	if err != nil {
 		return nil, err
 	}
-	return &BedRegion{
+	return &Region{
 		Chrom:          chrom,
 		Start:          start,
 		End:            end,
-		OptionalFields: bedRegionFields,
+		OptionalFields: regionFields,
 	}, nil
 }
 
@@ -81,9 +82,9 @@ const (
 )
 
 /*
-Allocates a fresh SmallMap to initialize a BedRegion's optional fields.
+Allocates a fresh SmallMap to initialize a Region's optional fields.
 */
-func initializeBedRegionFields(fields []string) ([]interface{}, error) {
+func initializeRegionFields(fields []string) ([]interface{}, error) {
 	brFields := make([]interface{}, len(fields))
 	for i, val := range fields {
 		switch i {
@@ -137,34 +138,34 @@ func initializeBedRegionFields(fields []string) ([]interface{}, error) {
 			}
 			brFields[brBlockStarts] = start
 		default:
-			return nil, fmt.Errorf("Invalid optional field: %v out of 0-8.", val)
+			return nil, fmt.Errorf("invalid optional field: %v out of 0-8", val)
 		}
 	}
 	return brFields, nil
 }
 
 /*
-Allocates and initializes a new BedTrack.
+NewTrack allocates and initializes a new Track.
 */
-func NewBedTrack(fields map[string]string) *BedTrack {
-	return &BedTrack{
+func NewTrack(fields map[string]string) *Track {
+	return &Track{
 		Fields: fields,
 	}
 }
 
 /*
-Allocates and initializes an empty bed.
+NewBed allocates and initializes an empty bed.
 */
 func NewBed() *Bed {
 	return &Bed{
-		RegionMap: make(map[utils.Symbol][]*BedRegion),
+		RegionMap: make(map[utils.Symbol][]*Region),
 	}
 }
 
 /*
-Add region to the bed region map.
+AddRegion adds a region to the bed region map.
 */
-func AddBedRegion(bed *Bed, region *BedRegion) {
+func AddRegion(bed *Bed, region *Region) {
 	// append the region entry
 	bed.RegionMap[region.Chrom] = append(bed.RegionMap[region.Chrom], region)
 }
@@ -172,7 +173,7 @@ func AddBedRegion(bed *Bed, region *BedRegion) {
 /*
 A function for sorting the bed regions.
 */
-func sortBedRegions(bed *Bed) {
+func sortRegions(bed *Bed) {
 	for _, regions := range bed.RegionMap {
 		sort.SliceStable(regions, func(i, j int) bool {
 			return regions[i].Start < regions[j].Start

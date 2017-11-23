@@ -21,17 +21,15 @@ func (cmd *cmdLine) pop() (string, bool) {
 		entry := (*line)[0]
 		*cmd = (*line)[1:]
 		return entry, true
-	} else {
-		return "", false
 	}
+	return "", false
 }
 
 func (cmd cmdLine) peek() (string, bool) {
 	if line := []string(cmd); len(line) > 0 {
 		return line[0], true
-	} else {
-		return "", false
 	}
+	return "", false
 }
 
 func appendIf(slice []sam.Filter, filters ...sam.Filter) []sam.Filter {
@@ -43,6 +41,7 @@ func appendIf(slice []sam.Filter, filters ...sam.Filter) []sam.Filter {
 	return slice
 }
 
+// DeprecatedFilterHelp is the help string for this command.
 const DeprecatedFilterHelp = "Filter parameters: (deprecated, please use the filter command instead)\n" +
 	"elprep sam-file sam-output-file\n" +
 	"[--replace-reference-sequences sam-file]\n" +
@@ -85,11 +84,11 @@ func DeprecatedFilter() error {
 			os.Exit(0)
 		case "--replace-reference-sequences":
 			refSeqDict, _ = cmdLine.pop()
-			if r, err := sam.ReplaceReferenceSequenceDictionaryFromSamFile(refSeqDict); err != nil {
+			r, err := sam.ReplaceReferenceSequenceDictionaryFromSamFile(refSeqDict)
+			if err != nil {
 				return err
-			} else {
-				replaceRefSeqDictFilter = r
 			}
+			replaceRefSeqDictFilter = r
 		case "--filter-unmapped-reads":
 			if next, _ := cmdLine.peek(); next == "strict" {
 				filterUnmappedArg, _ = cmdLine.pop()
@@ -99,11 +98,11 @@ func DeprecatedFilter() error {
 			}
 		case "--replace-read-group":
 			readGroupString, _ = cmdLine.pop()
-			if record, err := sam.ParseHeaderLineFromString(readGroupString); err != nil {
+			record, err := sam.ParseHeaderLineFromString(readGroupString)
+			if err != nil {
 				return err
-			} else {
-				replaceReadGroupFilter = sam.AddOrReplaceReadGroup(record)
 			}
+			replaceReadGroupFilter = sam.AddOrReplaceReadGroup(record)
 		case "--mark-duplicates":
 			markDuplicates = true
 			for {
@@ -272,7 +271,6 @@ func DeprecatedFilter() error {
 	if markDuplicates || (sortingOrder == "coordinate") || (sortingOrder == "queryname") ||
 		((replaceRefSeqDictFilter != nil) && (sortingOrder == "keep")) {
 		return runBestPracticesPipelineIntermediateSam(filenames[0], filenames[1], referenceFai, referenceFasta, sortingOrder, filters, filters2, timed, profile)
-	} else {
-		return runBestPracticesPipeline(filenames[0], filenames[1], referenceFai, referenceFasta, sortingOrder, filters, timed, profile)
 	}
+	return runBestPracticesPipeline(filenames[0], filenames[1], referenceFai, referenceFasta, sortingOrder, filters, timed, profile)
 }

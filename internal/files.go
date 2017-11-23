@@ -6,10 +6,10 @@ import (
 )
 
 /*
-If the given filename refers to a directory, return a slice of names
-of files that are in this directory. If the given filename does not
-refer to a directory, return a slice with this filename as the only
-entry.
+Directory returns a slice of filenames. If the given filename refers
+to a directory, return a slice of names of files that are in this
+directory. If the given filename does not refer to a directory, return
+a slice with this filename as the only entry.
 */
 func Directory(file string) (files []string, err error) {
 	info, err := os.Stat(file)
@@ -33,8 +33,8 @@ func Directory(file string) (files []string, err error) {
 }
 
 /*
-If the given filename is absolute, return it. Otherwise, join it with
-the current working directory.
+FullPathname returns the given filename if it is absolute. Otherwise,
+join it with the current working directory.
 */
 func FullPathname(filename string) (string, error) {
 	if filepath.IsAbs(filename) {
@@ -43,7 +43,6 @@ func FullPathname(filename string) (string, error) {
 	wd, err := os.Getwd()
 	if err != nil {
 		return "", err
-	} else {
-		return filepath.Join(wd, filename), nil
 	}
+	return filepath.Join(wd, filename), nil
 }

@@ -11,11 +11,16 @@ import (
 )
 
 const (
-	ProgramName    = "elprep"
+	// ProgramName is "elprep"
+	ProgramName = "elprep"
+	// ProgramVersion is the version of the elprep binary
 	ProgramVersion = "3.04"
-	ProgramURL     = "http://github.com/exascience/elprep"
+	// ProgramURL is the repository for the elprep source code
+	ProgramURL = "http://github.com/exascience/elprep"
 )
 
+// ProgramMessage is the first line printed when the elprep binary is
+// called.
 var ProgramMessage string
 
 func init() {

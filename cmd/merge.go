@@ -14,6 +14,7 @@ import (
 	"github.com/exascience/elprep/sam"
 )
 
+// MergeHelp is the help string for this command.
 const MergeHelp = "Merge parameters:\n" +
 	"elprep merge /path/to/input sam-output-file\n" +
 	"[--single-end]\n" +
@@ -26,17 +27,17 @@ Merge implements the elprep merge command.
 */
 func Merge() error {
 	var (
-		reference_t, reference_T string
-		nrOfThreads              int
-		singleEnd                bool
+		referenceFai, referenceFasta string
+		nrOfThreads                  int
+		singleEnd                    bool
 	)
 
 	var flags flag.FlagSet
 
 	flags.BoolVar(&singleEnd, "single-end", false, "when splitting single-end data")
 	flags.IntVar(&nrOfThreads, "nr-of-threads", 0, "number of worker threads")
-	flags.StringVar(&reference_t, "reference-t", "", "specify a .fai file for cram output")
-	flags.StringVar(&reference_T, "reference-T", "", "specify a .fasta file for cram output")
+	flags.StringVar(&referenceFai, "reference-t", "", "specify a .fai file for cram output")
+	flags.StringVar(&referenceFasta, "reference-T", "", "specify a .fasta file for cram output")
 
 	if len(os.Args) < 4 {
 		fmt.Fprintln(os.Stderr, "Incorrect number of parameters.")
@@ -63,7 +64,7 @@ func Merge() error {
 
 	sanityChecksFailed := false
 
-	reference_t, reference_T, success := checkCramOutputOptions(filepath.Ext(output), reference_t, reference_T)
+	referenceFai, referenceFasta, success := checkCramOutputOptions(filepath.Ext(output), referenceFai, referenceFasta)
 	sanityChecksFailed = !success
 
 	fullInputPath, err := internal.FullPathname(input)
@@ -129,11 +130,11 @@ func Merge() error {
 		runtime.GOMAXPROCS(nrOfThreads)
 		fmt.Fprint(&command, " --nr-of-threads ", nrOfThreads)
 	}
-	if reference_t != "" {
-		fmt.Fprint(&command, " --reference-t ", reference_t)
+	if referenceFai != "" {
+		fmt.Fprint(&command, " --reference-t ", referenceFai)
 	}
-	if reference_T != "" {
-		fmt.Fprint(&command, " --reference-T ", reference_T)
+	if referenceFasta != "" {
+		fmt.Fprint(&command, " --reference-T ", referenceFasta)
 	}
 
 	// executing command
@@ -145,21 +146,19 @@ func Merge() error {
 		return err
 	}
 
-	switch header.HD_SO() {
+	switch header.HDSO() {
 	case "coordinate":
 		if singleEnd {
-			return sam.MergeSingleEndFilesSplitPerChromosome(fullInputPath, output, reference_t, reference_T, inputPrefix, inputExtension, header)
-		} else {
-			return sam.MergeSortedFilesSplitPerChromosome(fullInputPath, output, reference_t, reference_T, inputPrefix, inputExtension, header)
+			return sam.MergeSingleEndFilesSplitPerChromosome(fullInputPath, output, referenceFai, referenceFasta, inputPrefix, inputExtension, header)
 		}
+		return sam.MergeSortedFilesSplitPerChromosome(fullInputPath, output, referenceFai, referenceFasta, inputPrefix, inputExtension, header)
 	case "queryname":
 		log.Fatal("Merging of files sorted by queryname not yet implemented.")
 		panic("Unreachable code.")
 	default:
 		if singleEnd {
-			return sam.MergeSingleEndFilesSplitPerChromosome(fullInputPath, output, reference_t, reference_T, inputPrefix, inputExtension, header)
-		} else {
-			return sam.MergeUnsortedFilesSplitPerChromosome(fullInputPath, output, reference_t, reference_T, inputPrefix, inputExtension, header)
+			return sam.MergeSingleEndFilesSplitPerChromosome(fullInputPath, output, referenceFai, referenceFasta, inputPrefix, inputExtension, header)
 		}
+		return sam.MergeUnsortedFilesSplitPerChromosome(fullInputPath, output, referenceFai, referenceFasta, inputPrefix, inputExtension, header)
 	}
 }

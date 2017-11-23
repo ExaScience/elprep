@@ -8,10 +8,10 @@ import (
 	"github.com/exascience/elprep/internal"
 )
 
-type (
-	symbolName string
-	Symbol     *string
-)
+type symbolName string
+
+// A Symbol is a unique pointer to a string.
+type Symbol *string
 
 /*
 SymbolHash computes a hash value for the given Symbol.

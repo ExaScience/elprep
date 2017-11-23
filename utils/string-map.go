@@ -1,5 +1,6 @@
 package utils
 
+// A StringMap maps strings to strings.
 type StringMap map[string]string
 
 /*
@@ -24,8 +25,7 @@ StringMap.
 func (record StringMap) SetUniqueEntry(key, value string) bool {
 	if _, found := record[key]; found {
 		return false
-	} else {
-		record[key] = value
-		return true
 	}
+	record[key] = value
+	return true
 }

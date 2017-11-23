@@ -13,6 +13,7 @@ import (
 	"github.com/exascience/elprep/sam"
 )
 
+// SplitHelp is the help string for this command.
 const SplitHelp = "Split parameters:\n" +
 	"elprep split (sam-file | /path/to/input/) /path/to/output/\n" +
 	"[--output-prefix name]\n" +
@@ -27,9 +28,9 @@ Split implements the elprep split command.
 */
 func Split() error {
 	var (
-		outputPrefix, outputType, reference_t, reference_T string
-		nrOfThreads                                        int
-		singleEnd                                          bool
+		outputPrefix, outputType, referenceFai, referenceFasta string
+		nrOfThreads                                            int
+		singleEnd                                              bool
 	)
 
 	var flags flag.FlagSet
@@ -38,8 +39,8 @@ func Split() error {
 	flags.StringVar(&outputType, "output-type", "", "format of the output files")
 	flags.BoolVar(&singleEnd, "single-end", false, "when splitting single-end data")
 	flags.IntVar(&nrOfThreads, "nr-of-threads", 0, "number of worker threads")
-	flags.StringVar(&reference_t, "reference-t", "", "specify a .fai file for cram output")
-	flags.StringVar(&reference_T, "reference-T", "", "specify a .fasta file for cram output")
+	flags.StringVar(&referenceFai, "reference-t", "", "specify a .fai file for cram output")
+	flags.StringVar(&referenceFasta, "reference-T", "", "specify a .fasta file for cram output")
 
 	if len(os.Args) < 4 {
 		fmt.Fprintln(os.Stderr, "Incorrect number of parameters.")
@@ -80,7 +81,7 @@ func Split() error {
 
 	sanityChecksFailed := false
 
-	reference_t, reference_T, success := checkCramOutputOptions(outputType, reference_t, reference_T)
+	referenceFai, referenceFasta, success := checkCramOutputOptions(outputType, referenceFai, referenceFasta)
 	sanityChecksFailed = !success
 
 	if filepath.Dir(output) != filepath.Clean(output) {
@@ -111,11 +112,11 @@ func Split() error {
 		runtime.GOMAXPROCS(nrOfThreads)
 		fmt.Fprint(&command, " --nr-of-threads ", nrOfThreads)
 	}
-	if reference_t != "" {
-		fmt.Fprint(&command, " --reference-t ", reference_t)
+	if referenceFai != "" {
+		fmt.Fprint(&command, " --reference-t ", referenceFai)
 	}
-	if reference_T != "" {
-		fmt.Fprint(&command, " --reference-T ", reference_T)
+	if referenceFasta != "" {
+		fmt.Fprint(&command, " --reference-T ", referenceFasta)
 	}
 
 	// executing command
@@ -138,8 +139,7 @@ func Split() error {
 	}
 
 	if singleEnd {
-		return sam.SplitSingleEndFilePerChromosome(fullInput, fullOutput, outputPrefix, outputType, reference_t, reference_T)
-	} else {
-		return sam.SplitFilePerChromosome(fullInput, fullOutput, outputPrefix, outputType, reference_t, reference_T)
+		return sam.SplitSingleEndFilePerChromosome(fullInput, fullOutput, outputPrefix, outputType, referenceFai, referenceFasta)
 	}
+	return sam.SplitFilePerChromosome(fullInput, fullOutput, outputPrefix, outputType, referenceFai, referenceFasta)
 }

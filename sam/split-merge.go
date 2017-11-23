@@ -100,7 +100,7 @@ func (s *lineScanner) err() error {
 }
 
 /*
-A function for splitting a SAM file into: a file containing all
+SplitFilePerChromosome splits a SAM file into: a file containing all
 unmapped reads, a file containing all pairs where reads map to
 different chromosomes, and a file per chromosome containing all pairs
 where the reads map to that chromosome. There are no requirements on
@@ -213,8 +213,8 @@ func SplitFilePerChromosome(input, outputPath, outputPrefix, outputExtension, fa
 }
 
 /*
-A function for merging files that were split with elPrep and sorted in
-coordinate order.
+MergeSortedFilesSplitPerChromosome merges files that were split with
+SplitFilePerChromosome and sorted in coordinate order.
 */
 func MergeSortedFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPrefix, inputExtension string, header *Header) (err error) {
 
@@ -297,9 +297,8 @@ func MergeSortedFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPref
 		if err != nil {
 			if os.IsNotExist(err) {
 				return nil
-			} else {
-				return err
 			}
+			return err
 		}
 		defer func() {
 			if nerr := file.Close(); err == nil {
@@ -424,8 +423,8 @@ func MergeSortedFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPref
 }
 
 /*
-A function for merging files that were split with elPrep and are
-unsorted.
+MergeUnsortedFilesSplitPerChromosome merges files that were split with
+SplitFilePerChromosome and are unsorted.
 */
 func MergeUnsortedFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPrefix, inputExtension string, header *Header) (err error) {
 	out, err := Create(output, fai, fasta)
@@ -445,9 +444,8 @@ func MergeUnsortedFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPr
 		if err != nil {
 			if missingOK && os.IsNotExist(err) {
 				return nil
-			} else {
-				return err
 			}
+			return err
 		}
 		defer func() {
 			if nerr := file.Close(); err == nil {
@@ -476,8 +474,11 @@ func MergeUnsortedFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPr
 	return nil
 }
 
-/* A function for splitting SAM files containing single-end reads into a file for the unmapped reads,
-and a file per chromosome, containing all reads that map to that chromosome. There are no requirements on the input file for splitting.
+/*
+SplitSingleEndFilePerChromosome splits a SAM file containing
+single-end reads into a file for the unmapped reads, and a file per
+chromosome, containing all reads that map to that chromosome. There
+are no requirements on the input file for splitting.
 */
 func SplitSingleEndFilePerChromosome(input, outputPath, outputPrefix, outputExtension, fai, fasta string) (err error) {
 	files, err := internal.Directory(input)
@@ -563,8 +564,10 @@ func SplitSingleEndFilePerChromosome(input, outputPath, outputPrefix, outputExte
 	return nil
 }
 
-/* A function for merging files containing single-end reads that were split with elPrep.
- */
+/*
+MergeSingleEndFilesSplitPerChromosome merges files containing
+single-end reads that were split with SplitSingleEndFilePerChromosome.
+*/
 func MergeSingleEndFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPrefix, inputExtension string, header *Header) (err error) {
 
 	out, err := Create(output, fai, fasta)
