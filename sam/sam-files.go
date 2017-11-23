@@ -716,12 +716,12 @@ func (sam *Sam) Format(out *bufio.Writer) error {
 	defer internal.ReleaseByteBuffer(buf)
 	for _, aln := range sam.Alignments {
 		var err error
-		buf, err = aln.Format(buf)
+		*buf, err = aln.Format(*buf)
 		if err != nil {
 			return err
 		}
-		out.Write(buf)
-		buf = buf[:0]
+		out.Write(*buf)
+		*buf = (*buf)[:0]
 	}
 	return nil
 }

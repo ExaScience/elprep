@@ -56,12 +56,12 @@ func AlignmentToString(p *pipeline.Pipeline, _ pipeline.NodeKind, _ *int) (recei
 		defer internal.ReleaseByteBuffer(buf)
 		var err error
 		for _, aln := range alns {
-			buf, err = aln.Format(buf)
+			*buf, err = aln.Format(*buf)
 			if err != nil {
 				p.Err(fmt.Errorf("%v in AlignmentToString", err.Error()))
 			}
-			strings = append(strings, string(buf))
-			buf = buf[:0]
+			strings = append(strings, string(*buf))
+			*buf = (*buf)[:0]
 		}
 		return strings
 	}

@@ -77,13 +77,13 @@ func softClipEndOfRead(clipFrom int32, cigars []CigarOperation) string {
 			endPos += op.Length
 		}
 		if endPos < clipFrom {
-			newCigar = strconv.AppendInt(append(newCigar, op.Operation), int64(op.Length), 10)
+			*newCigar = strconv.AppendInt(append(*newCigar, op.Operation), int64(op.Length), 10)
 		} else {
 			clippedBases := readLengthFromCigar(cigars) + clipFrom
-			newCigar = elementStradlessClippedRead(newCigar, op.Operation, clipFrom-pos, clippedBases)
+			*newCigar = elementStradlessClippedRead(*newCigar, op.Operation, clipFrom-pos, clippedBases)
 			break
 		}
 		pos += endPos
 	}
-	return string(newCigar)
+	return string(*newCigar)
 }
