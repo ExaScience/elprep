@@ -127,7 +127,10 @@ produce output in the SAM file format.
 */
 func (output *Writer) AddNodes(p *pipeline.Pipeline, header *Header, sortingOrder string) {
 	writer := (*bufio.Writer)(output)
-	header.Format(writer)
+	if err := header.Format(writer); err != nil {
+		p.Err(fmt.Errorf("%v, while writing a SAM header to output", err.Error()))
+		return
+	}
 	var kind pipeline.NodeKind
 	switch sortingOrder {
 	case "keep", "unknown":
@@ -144,8 +147,12 @@ func (output *Writer) AddNodes(p *pipeline.Pipeline, header *Header, sortingOrde
 	p.Add(
 		pipeline.Par(AlignmentToString),
 		pipeline.NewNode(kind, pipeline.Receive(func(_ int, data interface{}) interface{} {
+			var err error
 			for _, aln := range data.([]string) {
-				writer.WriteString(aln)
+				_, err = writer.WriteString(aln)
+			}
+			if err != nil {
+				p.Err(fmt.Errorf("%v, while writing SAM alignment strings to output", err.Error()))
 			}
 			return data
 		})),
@@ -278,9 +285,11 @@ func (input *Reader) RunPipeline(output PipelineOutput, hdrFilters []Filter, sor
 			return fmt.Errorf("Unknown sorting order %v", sortingOrder)
 		}
 		writer := (*bufio.Writer)(out)
-		header.Format(writer)
+		if err := header.Format(writer); err != nil {
+			return fmt.Errorf("%v, while writing a SAM header to output", err.Error())
+		}
 		_, err := reader.WriteTo(writer)
-		return err
+		return fmt.Errorf("%v, while writing SAM alignments to output", err.Error())
 	}
 	var p pipeline.Pipeline
 	p.Source(pipeline.NewScanner(reader))

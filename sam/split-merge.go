@@ -136,7 +136,9 @@ func SplitFilePerChromosome(input, outputPath, outputPrefix, outputExtension, fa
 			err = nerr
 		}
 	}()
-	header.Format(out.Writer)
+	if err = header.Format(out.Writer); err != nil {
+		return err
+	}
 	chromsEncountered["*"] = out
 	for _, sn := range header.SQ {
 		chrom := sn["SN"]
@@ -149,7 +151,9 @@ func SplitFilePerChromosome(input, outputPath, outputPrefix, outputExtension, fa
 				err = nerr
 			}
 		}()
-		header.Format(out.Writer)
+		if err = header.Format(out.Writer); err != nil {
+			return err
+		}
 		chromsEncountered[chrom] = out
 	}
 	spreadReads, err := Create(filepath.Join(outputPath, outputPrefix+"-spread."+outputExtension), fai, fasta)
@@ -161,24 +165,33 @@ func SplitFilePerChromosome(input, outputPath, outputPrefix, outputExtension, fa
 			err = nerr
 		}
 	}()
-	header.Format(spreadReads.Writer)
+	if err = header.Format(spreadReads.Writer); err != nil {
+		return err
+	}
 	processFile := func(in *bufio.Reader, filename string, lines int) error {
 		s := newLineScanner(in, filename, lines)
+		var oerr, serr error
 		for s.scan() {
 			rname := s.field(_rname)
 			rnext := s.field(_rnext)
 			out := chromsEncountered[rname]
 			if (rnext == "=") || (rname == rnext) || (rname == "*") {
-				out.Write(s.bytes)
-				out.WriteByte('\n')
+				_, oerr = out.Write(s.bytes)
+				oerr = out.WriteByte('\n')
 			} else {
-				spreadReads.Write(s.bytes)
-				spreadReads.WriteByte('\n')
-				out.Write(s.bytes)
-				out.WriteString("\tsr:i:1\n")
+				_, serr = spreadReads.Write(s.bytes)
+				serr = spreadReads.WriteByte('\n')
+				_, oerr = out.Write(s.bytes)
+				_, oerr = out.WriteString("\tsr:i:1\n")
 			}
 		}
-		return s.err()
+		if oerr != nil {
+			return oerr
+		} else if serr != nil {
+			return serr
+		} else {
+			return s.err()
+		}
 	}
 	if err = processFile(firstIn.Reader, firstFile, lines); err != nil {
 		return fmt.Errorf("%v, while processing file %v in SplitFilePerChromosome", err.Error(), err)
@@ -272,11 +285,13 @@ func MergeSortedFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPref
 		}
 	}()
 
-	header.Format(out.Writer)
+	if err = header.Format(out.Writer); err != nil {
+		return err
+	}
 
-	finishSpreadReads := func(chrom string) error {
-		out.Write(spreadReadsScanner.bytes)
-		out.WriteByte('\n')
+	finishSpreadReads := func(chrom string) (err error) {
+		_, err = out.Write(spreadReadsScanner.bytes)
+		err = out.WriteByte('\n')
 		for {
 			spreadReadsReady = spreadReadsScanner.scan()
 			if !spreadReadsReady {
@@ -286,10 +301,14 @@ func MergeSortedFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPref
 			if spreadReadRname != chrom {
 				return nil
 			}
-			out.Write(spreadReadsScanner.bytes)
-			out.WriteByte('\n')
+			_, err = out.Write(spreadReadsScanner.bytes)
+			err = out.WriteByte('\n')
 		}
-		return spreadReadsScanner.err()
+		if err != nil {
+			return err
+		} else {
+			return spreadReadsScanner.err()
+		}
 	}
 
 	processSN := func(chrom, fullInputPath string) (err error) {
@@ -326,10 +345,13 @@ func MergeSortedFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPref
 			return finishSpreadReads(chrom)
 		}
 
-		finishChromosomeReads := func() error {
-			out.Write(chromosomeScanner.bytes)
-			out.WriteByte('\n')
-			_, err := file.WriteTo(out)
+		finishChromosomeReads := func() (err error) {
+			_, err = out.Write(chromosomeScanner.bytes)
+			err = out.WriteByte('\n')
+			if err != nil {
+				return err
+			}
+			_, err = file.WriteTo(out)
 			return err
 		}
 
@@ -350,8 +372,11 @@ func MergeSortedFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPref
 
 		for {
 			if spreadReadPos < chromosomeReadPos {
-				out.Write(spreadReadsScanner.bytes)
-				out.WriteByte('\n')
+				_, err = out.Write(spreadReadsScanner.bytes)
+				err = out.WriteByte('\n')
+				if err != nil {
+					return err
+				}
 				spreadReadsReady = spreadReadsScanner.scan()
 				if spreadReadsReady {
 					spreadReadRname = spreadReadsScanner.field(_rname)
@@ -369,8 +394,11 @@ func MergeSortedFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPref
 					return finishChromosomeReads()
 				}
 			} else {
-				out.Write(chromosomeScanner.bytes)
-				out.WriteByte('\n')
+				_, err = out.Write(chromosomeScanner.bytes)
+				err = out.WriteByte('\n')
+				if err != nil {
+					return err
+				}
 				chromosomeReady = chromosomeScanner.scan()
 				if chromosomeReady {
 					chromosomeReadRname = chromosomeScanner.field(_rname)
@@ -398,8 +426,11 @@ func MergeSortedFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPref
 	}
 
 	if spreadReadsReady {
-		out.Write(spreadReadsScanner.bytes)
-		out.WriteByte('\n')
+		_, err = out.Write(spreadReadsScanner.bytes)
+		err = out.WriteByte('\n')
+		if err != nil {
+			return err
+		}
 		if _, err = spreadReads.WriteTo(out); err != nil {
 			return err
 		}
@@ -437,7 +468,9 @@ func MergeUnsortedFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPr
 		}
 	}()
 
-	header.Format(out.Writer)
+	if err = header.Format(out.Writer); err != nil {
+		return err
+	}
 
 	processFile := func(filename string, missingOK bool) (err error) {
 		file, err := Open(filename, false)
@@ -506,7 +539,9 @@ func SplitSingleEndFilePerChromosome(input, outputPath, outputPrefix, outputExte
 			err = nerr
 		}
 	}()
-	header.Format(out.Writer)
+	if err = header.Format(out.Writer); err != nil {
+		return err
+	}
 	chromsEncountered["*"] = out
 	for _, sn := range header.SQ {
 		chrom := sn["SN"]
@@ -519,18 +554,24 @@ func SplitSingleEndFilePerChromosome(input, outputPath, outputPrefix, outputExte
 				err = nerr
 			}
 		}()
-		header.Format(out.Writer)
+		if err = header.Format(out.Writer); err != nil {
+			return err
+		}
 		chromsEncountered[chrom] = out
 	}
-	processFile := func(in *bufio.Reader, filename string, lines int) error {
+	processFile := func(in *bufio.Reader, filename string, lines int) (err error) {
 		s := newLineScanner(in, filename, lines)
 		for s.scan() {
 			rname := s.field(_rname)
 			out := chromsEncountered[rname]
-			out.Write(s.bytes)
-			out.WriteByte('\n')
+			_, err = out.Write(s.bytes)
+			err = out.WriteByte('\n')
 		}
-		return s.err()
+		if err != nil {
+			return err
+		} else {
+			return s.err()
+		}
 	}
 	if err = processFile(firstIn.Reader, firstFile, lines); err != nil {
 		return fmt.Errorf("%v, while processing file %v in SplitSingleEndFilePerChromosome", err.Error(), err)
@@ -580,7 +621,9 @@ func MergeSingleEndFilesSplitPerChromosome(inputPath, output, fai, fasta, inputP
 		}
 	}()
 
-	header.Format(out.Writer)
+	if err = header.Format(out.Writer); err != nil {
+		return err
+	}
 
 	for _, sn := range header.SQ {
 		chrom := sn["SN"]

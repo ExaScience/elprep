@@ -26,7 +26,9 @@ func timedRun(timed bool, profile, msg string, phase int64, f func() error) erro
 		if err != nil {
 			return fmt.Errorf("%v, while creating file %v for a CPU profile", err.Error(), filename)
 		}
-		pprof.StartCPUProfile(file)
+		if err = pprof.StartCPUProfile(file); err != nil {
+			return fmt.Errorf("%v, while starting a CPU profile", err.Error())
+		}
 		defer pprof.StopCPUProfile()
 	}
 	if timed {

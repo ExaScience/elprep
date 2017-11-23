@@ -546,11 +546,12 @@ func (sc *StringScanner) ParseAlignment() *Alignment {
 /*
 FormatString writes a SAM file TAG of type string.
 */
-func FormatString(out *bufio.Writer, tag, value string) {
-	out.WriteByte('\t')
-	out.WriteString(tag)
-	out.WriteByte(':')
-	out.WriteString(value)
+func FormatString(out *bufio.Writer, tag, value string) (err error) {
+	err = out.WriteByte('\t')
+	_, err = out.WriteString(tag)
+	err = out.WriteByte(':')
+	_, err = out.WriteString(value)
+	return err
 }
 
 /*
@@ -558,12 +559,13 @@ FormatHeaderLine writes a header line in a SAM file header
 section. See http://samtools.github.io/hts-specs/SAMv1.pdf - Section
 1.3.
 */
-func FormatHeaderLine(out *bufio.Writer, code string, record utils.StringMap) {
-	out.WriteString(code)
+func FormatHeaderLine(out *bufio.Writer, code string, record utils.StringMap) (err error) {
+	_, err = out.WriteString(code)
 	for key, value := range record {
-		FormatString(out, key, value)
+		err = FormatString(out, key, value)
 	}
-	out.WriteByte('\n')
+	err = out.WriteByte('\n')
+	return err
 }
 
 /*
@@ -571,38 +573,40 @@ FormatComment writes a header comment line in a SAM file header
 section. See http://samtools.github.io/hts-specs/SAMv1.pdf - Section
 1.3.
 */
-func FormatComment(out *bufio.Writer, code, comment string) {
-	out.WriteString(code)
-	out.WriteByte('\t')
-	out.WriteString(comment)
-	out.WriteByte('\n')
+func FormatComment(out *bufio.Writer, code, comment string) (err error) {
+	_, err = out.WriteString(code)
+	err = out.WriteByte('\t')
+	_, err = out.WriteString(comment)
+	err = out.WriteByte('\n')
+	return err
 }
 
 /*
 Format writes the header section of a SAM file. See
 http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3.
 */
-func (hdr *Header) Format(out *bufio.Writer) {
+func (hdr *Header) Format(out *bufio.Writer) (err error) {
 	if hdr.HD != nil {
-		FormatHeaderLine(out, "@HD", hdr.HD)
+		err = FormatHeaderLine(out, "@HD", hdr.HD)
 	}
 	for _, record := range hdr.SQ {
-		FormatHeaderLine(out, "@SQ", record)
+		err = FormatHeaderLine(out, "@SQ", record)
 	}
 	for _, record := range hdr.RG {
-		FormatHeaderLine(out, "@RG", record)
+		err = FormatHeaderLine(out, "@RG", record)
 	}
 	for _, record := range hdr.PG {
-		FormatHeaderLine(out, "@PG", record)
+		err = FormatHeaderLine(out, "@PG", record)
 	}
 	for _, comment := range hdr.CO {
-		FormatComment(out, "@CO", comment)
+		err = FormatComment(out, "@CO", comment)
 	}
 	for code, records := range hdr.UserRecords {
 		for _, record := range records {
-			FormatHeaderLine(out, code, record)
+			err = FormatHeaderLine(out, code, record)
 		}
 	}
+	return err
 }
 
 /*
@@ -711,16 +715,19 @@ Format writes a complete SAM file. See
 http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.
 */
 func (sam *Sam) Format(out *bufio.Writer) error {
-	sam.Header.Format(out)
+	if err := sam.Header.Format(out); err != nil {
+		return err
+	}
 	buf := internal.ReserveByteBuffer()
 	defer internal.ReleaseByteBuffer(buf)
+	var err error
 	for _, aln := range sam.Alignments {
-		var err error
-		*buf, err = aln.Format(*buf)
-		if err != nil {
+		if *buf, err = aln.Format(*buf); err != nil {
 			return err
 		}
-		out.Write(*buf)
+		if _, err = out.Write(*buf); err != nil {
+			return err
+		}
 		*buf = (*buf)[:0]
 	}
 	return nil
