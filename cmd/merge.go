@@ -22,9 +22,7 @@ const MergeHelp = "Merge parameters:\n" +
 	"[--reference-t fai-file]\n" +
 	"[--reference-T fasta-file]\n"
 
-/*
-Merge implements the elprep merge command.
-*/
+// Merge implements the elprep merge command.
 func Merge() error {
 	var (
 		referenceFai, referenceFasta string

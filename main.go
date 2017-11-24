@@ -1,12 +1,10 @@
-/*
-elPrep is a high-performance tool for preparing .sam/.bam/.cram files
-for variant calling in sequencing pipelines.
-
-Please see https://github.com/exascience/elprep for a documentation of
-the tool, and below (and/or
-https://godoc.org/github.com/ExaScience/elprep) for the API
-documentation.
-*/
+// elPrep is a high-performance tool for preparing .sam/.bam/.cram
+// files for variant calling in sequencing pipelines.
+//
+// Please see https://github.com/exascience/elprep for a documentation
+// of the tool, and below (and/or
+// https://godoc.org/github.com/ExaScience/elprep) for the API
+// documentation.
 package main
 
 import (

@@ -10,18 +10,14 @@ import (
 	"github.com/exascience/elprep/utils"
 )
 
-/*
-Helper function for parsing a track line field.
-*/
+// Helper function for parsing a track line field.
 func splitTrackField(field string) (string, string) {
 	split := strings.Split(field, "=")
 	return split[0], split[1]
 }
 
-/*
-ParseBed parses a BED file. See
-https://genome.ucsc.edu/FAQ/FAQformat.html#format1
-*/
+// ParseBed parses a BED file. See
+// https://genome.ucsc.edu/FAQ/FAQformat.html#format1
 func ParseBed(filename string) (b *Bed, err error) {
 
 	bed := NewBed()
@@ -64,15 +60,15 @@ func ParseBed(filename string) (b *Bed, err error) {
 			var err error
 			start, err := strconv.Atoi(data[1])
 			if err != nil {
-				return nil, fmt.Errorf("Invalid bed region start: %v ", err)
+				return nil, fmt.Errorf("invalid bed region start: %v ", err.Error())
 			}
 			end, err := strconv.Atoi(data[2])
 			if err != nil {
-				return nil, fmt.Errorf("Invalid bed region end: %v ", err)
+				return nil, fmt.Errorf("invalid bed region end: %v ", err.Error())
 			}
 			region, err := NewRegion(chrom, int32(start), int32(end), data[3:])
 			if err != nil {
-				return nil, fmt.Errorf("Invalid bed region: %v ", err)
+				return nil, fmt.Errorf("invalid bed region: %v ", err.Error())
 			}
 			AddRegion(bed, region)
 			if track != nil {
@@ -82,7 +78,7 @@ func ParseBed(filename string) (b *Bed, err error) {
 
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("Error while reading bed file: %v ", err)
+		return nil, fmt.Errorf("error while reading bed file: %v ", err.Error())
 	}
 	// Make sure bed regions are sorted.
 	sortRegions(bed)

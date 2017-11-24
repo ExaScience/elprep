@@ -4,38 +4,30 @@ import (
 	"fmt"
 )
 
-/*
-A StringScanner can be used scan/parse ASCII strings representing
-lines in SAM files.
-
-The zero StringScanner is valid and empty.
-*/
+// A StringScanner can be used scan/parse ASCII strings representing
+// lines in SAM files.
+//
+// The zero StringScanner is valid and empty.
 type StringScanner struct {
 	index int
 	data  string
 	err   error
 }
 
-/*
-Err returns the error that occurred during scanning/parsing.
-*/
+// Err returns the error that occurred during scanning/parsing.
 func (sc *StringScanner) Err() error {
 	return sc.err
 }
 
-/*
-Reset resets the scanner, and initializes it with the given string.
-*/
+// Reset resets the scanner, and initializes it with the given string.
 func (sc *StringScanner) Reset(s string) {
 	sc.index = 0
 	sc.data = s
 	sc.err = nil
 }
 
-/*
-Len returns the number of ASCII characters that still need to be
-scanned/parsed. Returns 0 if Err() would return a non-nil value.
-*/
+// Len returns the number of ASCII characters that still need to be
+// scanned/parsed. Returns 0 if Err() would return a non-nil value.
 func (sc *StringScanner) Len() int {
 	if sc.err != nil {
 		return 0
@@ -54,7 +46,7 @@ func (sc *StringScanner) readByteUntil(c byte) (b byte, found bool) {
 		return sc.data[start], false
 	} else if sc.data[next] != c {
 		if sc.err == nil {
-			sc.err = fmt.Errorf("Unexpected character %v in StringScanner.ReadByteUntil", sc.data[next])
+			sc.err = fmt.Errorf("unexpected character %v in StringScanner.ReadByteUntil", sc.data[next])
 		}
 		return 0, false
 	} else {

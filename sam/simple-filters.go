@@ -10,10 +10,8 @@ import (
 	"github.com/exascience/elprep/utils"
 )
 
-/*
-ReplaceReferenceSequenceDictionary returns a filter for replacing the
-reference sequence dictionary in a Header.
-*/
+// ReplaceReferenceSequenceDictionary returns a filter for replacing
+// the reference sequence dictionary in a Header.
 func ReplaceReferenceSequenceDictionary(dict []utils.StringMap) Filter {
 	return func(header *Header) AlignmentFilter {
 		if sortingOrder := header.HD["SO"]; sortingOrder == Coordinate {
@@ -41,11 +39,9 @@ func ReplaceReferenceSequenceDictionary(dict []utils.StringMap) Filter {
 	}
 }
 
-/*
-ReplaceReferenceSequenceDictionaryFromSamFile returns a filter for
-replacing the reference sequence dictionary in a Header with one
-parsed from the given SAM/DICT file.
-*/
+// ReplaceReferenceSequenceDictionaryFromSamFile returns a filter for
+// replacing the reference sequence dictionary in a Header with one
+// parsed from the given SAM/DICT file.
 func ReplaceReferenceSequenceDictionaryFromSamFile(samFile string) (f Filter, err error) {
 	input, err := Open(samFile, true)
 	if err != nil {
@@ -64,29 +60,23 @@ func ReplaceReferenceSequenceDictionaryFromSamFile(samFile string) (f Filter, er
 	return ReplaceReferenceSequenceDictionary(header.SQ), nil
 }
 
-/*
-FilterUnmappedReads is a filter for removing unmapped sam-alignment
-instances, based on FLAG.
-*/
+// FilterUnmappedReads is a filter for removing unmapped sam-alignment
+// instances, based on FLAG.
 func FilterUnmappedReads(_ *Header) AlignmentFilter {
 	return func(aln *Alignment) bool { return (aln.FLAG & Unmapped) == 0 }
 }
 
-/*
-FilterUnmappedReadsStrict is a filter for removing unmapped
-sam-alignment instances, based on FLAG, or POS=0, or RNAME=*.
-*/
+// FilterUnmappedReadsStrict is a filter for removing unmapped
+// sam-alignment instances, based on FLAG, or POS=0, or RNAME=*.
 func FilterUnmappedReadsStrict(_ *Header) AlignmentFilter {
 	return func(aln *Alignment) bool {
 		return ((aln.FLAG & Unmapped) == 0) && (aln.POS != 0) && (aln.RNAME != "*")
 	}
 }
 
-/*
-FilterNonExactMappingReads is a filter that removes all reads that are
-not exact matches with the reference (soft-clipping ok), based on
-CIGAR string (only M and S allowed).
-*/
+// FilterNonExactMappingReads is a filter that removes all reads that
+// are not exact matches with the reference (soft-clipping ok), based
+// on CIGAR string (only M and S allowed).
 func FilterNonExactMappingReads(_ *Header) AlignmentFilter {
 	return func(aln *Alignment) bool { return !strings.ContainsAny(aln.CIGAR, "IDNHPX=") }
 }
@@ -101,12 +91,10 @@ var (
 	XG = utils.Intern("XG")
 )
 
-/*
-FilterNonExactMappingReadsStrict is a filter that removes all reads
-that are not exact matches with the reference, based on the optional
-fields X0=1 (unique mapping), X1=0 (no suboptimal hit), XM=0 (no
-mismatch), XO=0 (no gap opening), XG=0 (no gap extension).
-*/
+// FilterNonExactMappingReadsStrict is a filter that removes all reads
+// that are not exact matches with the reference, based on the
+// optional fields X0=1 (unique mapping), X1=0 (no suboptimal hit),
+// XM=0 (no mismatch), XO=0 (no gap opening), XG=0 (no gap extension).
 func FilterNonExactMappingReadsStrict(header *Header) AlignmentFilter {
 	return func(aln *Alignment) bool {
 		if x0, ok := aln.TAGS.Get(X0); !ok || x0.(int32) != 1 {
@@ -128,20 +116,16 @@ func FilterNonExactMappingReadsStrict(header *Header) AlignmentFilter {
 	}
 }
 
-/*
-FilterDuplicateReads is a filter for removing duplicate sam-alignment
-instances, based on FLAG.
-*/
+// FilterDuplicateReads is a filter for removing duplicate
+// sam-alignment instances, based on FLAG.
 func FilterDuplicateReads(_ *Header) AlignmentFilter {
 	return func(aln *Alignment) bool { return (aln.FLAG & Duplicate) == 0 }
 }
 
 var sr = utils.Intern("sr")
 
-/*
-FilterOptionalReads is a filter for removing alignments that represent
-optional information in elPrep.
-*/
+// FilterOptionalReads is a filter for removing alignments that
+// represent optional information in elPrep.
 func FilterOptionalReads(header *Header) AlignmentFilter {
 	if _, found := header.UserRecords["@sr"]; found {
 		delete(header.UserRecords, "@sr")
@@ -150,10 +134,8 @@ func FilterOptionalReads(header *Header) AlignmentFilter {
 	return nil
 }
 
-/*
-AddOrReplaceReadGroup returns a filter for adding or replacing the
-read group both in the Header and in each Alignment.
-*/
+// AddOrReplaceReadGroup returns a filter for adding or replacing the
+// read group both in the Header and in each Alignment.
 func AddOrReplaceReadGroup(readGroup utils.StringMap) Filter {
 	return func(header *Header) AlignmentFilter {
 		header.RG = []utils.StringMap{readGroup}
@@ -162,10 +144,8 @@ func AddOrReplaceReadGroup(readGroup utils.StringMap) Filter {
 	}
 }
 
-/*
-AddPGLine returns a filter for adding a @PG tag to a Header, and
-ensuring that it is the first one in the chain.
-*/
+// AddPGLine returns a filter for adding a @PG tag to a Header, and
+// ensuring that it is the first one in the chain.
 func AddPGLine(newPG utils.StringMap) Filter {
 	return func(header *Header) AlignmentFilter {
 		id := newPG["ID"]
@@ -186,10 +166,9 @@ func AddPGLine(newPG utils.StringMap) Filter {
 	}
 }
 
-/*
-RenameChromosomes is a filter for prepending "chr" to the reference
-sequence names in a Header, and in RNAME and RNEXT in each Alignment.
-*/
+// RenameChromosomes is a filter for prepending "chr" to the reference
+// sequence names in a Header, and in RNAME and RNEXT in each
+// Alignment.
 func RenameChromosomes(header *Header) AlignmentFilter {
 	for _, entry := range header.SQ {
 		if sn, found := entry["SN"]; found {
@@ -207,10 +186,8 @@ func RenameChromosomes(header *Header) AlignmentFilter {
 	}
 }
 
-/*
-AddREFID is a filter for adding the refid (index in the reference
-sequence dictionary) to alignments as temporary values.
-*/
+// AddREFID is a filter for adding the refid (index in the reference
+// sequence dictionary) to alignments as temporary values.
 func AddREFID(header *Header) AlignmentFilter {
 	dictTable := make(map[string]int32)
 	for index, entry := range header.SQ {
@@ -226,10 +203,8 @@ func AddREFID(header *Header) AlignmentFilter {
 	}
 }
 
-/*
-RemoveOptionalFields returns a filter for removing optional fields in
-an alignment.
-*/
+// RemoveOptionalFields returns a filter for removing optional fields
+// in an alignment.
 func RemoveOptionalFields(tags []string) Filter {
 	if len(tags) == 0 {
 		return nil
@@ -254,10 +229,8 @@ func RemoveOptionalFields(tags []string) Filter {
 	}
 }
 
-/*
-KeepOptionalFields returns a filter for removing all but a list of
-given optional fields in an alignment.
-*/
+// KeepOptionalFields returns a filter for removing all but a list of
+// given optional fields in an alignment.
 func KeepOptionalFields(tags []string) Filter {
 	if len(tags) == 0 {
 		return func(header *Header) AlignmentFilter {
@@ -287,10 +260,8 @@ func KeepOptionalFields(tags []string) Filter {
 	}
 }
 
-/*
-CleanSam is a filter for soft-clipping an alignment at the end of a
-reference sequence, and set MAPQ to 0 if unmapped.
-*/
+// CleanSam is a filter for soft-clipping an alignment at the end of a
+// reference sequence, and set MAPQ to 0 if unmapped.
 func CleanSam(header *Header) AlignmentFilter {
 	referenceSequenceTable := make(map[string]int32)
 	for _, sn := range header.SQ {
@@ -309,10 +280,8 @@ func CleanSam(header *Header) AlignmentFilter {
 	}
 }
 
-/*
-FilterNonOverlappingReads returns a filter for removing all reads that
-do not overlap with a set of regions specified by a bed file.
-*/
+// FilterNonOverlappingReads returns a filter for removing all reads
+// that do not overlap with a set of regions specified by a bed file.
 func FilterNonOverlappingReads(bed *bed.Bed) Filter {
 	return func(header *Header) AlignmentFilter {
 		return func(aln *Alignment) bool {

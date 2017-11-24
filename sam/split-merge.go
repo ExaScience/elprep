@@ -79,7 +79,7 @@ func (s *lineScanner) field(n int) string {
 			}
 		}
 	}
-	s._err = fmt.Errorf("Invalid index %v, while scanning line %v in file %v", n, s.line, s.filename)
+	s._err = fmt.Errorf("invalid index %v, while scanning line %v in file %v", n, s.line, s.filename)
 	return ""
 }
 
@@ -99,13 +99,11 @@ func (s *lineScanner) err() error {
 	return s._err
 }
 
-/*
-SplitFilePerChromosome splits a SAM file into: a file containing all
-unmapped reads, a file containing all pairs where reads map to
-different chromosomes, and a file per chromosome containing all pairs
-where the reads map to that chromosome. There are no requirements on
-the input file for splitting.
-*/
+// SplitFilePerChromosome splits a SAM file into: a file containing
+// all unmapped reads, a file containing all pairs where reads map to
+// different chromosomes, and a file per chromosome containing all
+// pairs where the reads map to that chromosome. There are no
+// requirements on the input file for splitting.
 func SplitFilePerChromosome(input, outputPath, outputPrefix, outputExtension, fai, fasta string) (err error) {
 	files, err := internal.Directory(input)
 	if err != nil {
@@ -225,10 +223,8 @@ func SplitFilePerChromosome(input, outputPath, outputPrefix, outputExtension, fa
 	return nil
 }
 
-/*
-MergeSortedFilesSplitPerChromosome merges files that were split with
-SplitFilePerChromosome and sorted in coordinate order.
-*/
+// MergeSortedFilesSplitPerChromosome merges files that were split
+// with SplitFilePerChromosome and sorted in coordinate order.
 func MergeSortedFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPrefix, inputExtension string, header *Header) (err error) {
 
 	// Extract the header to identify the files names.  Assume that all
@@ -356,7 +352,7 @@ func MergeSortedFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPref
 
 		chromosomeReadRname := chromosomeScanner.field(_rname)
 		if chromosomeReadRname != chrom {
-			return fmt.Errorf("Invalid RNAME %v, expected %v, in file %v", chromosomeReadRname, chrom, fullInputPath)
+			return fmt.Errorf("invalid RNAME %v, expected %v, in file %v", chromosomeReadRname, chrom, fullInputPath)
 		}
 
 		spreadReadPos := spreadReadsScanner.parseInt(_pos)
@@ -410,7 +406,7 @@ func MergeSortedFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPref
 					return finishSpreadReads(chrom)
 				}
 				if chromosomeReadRname != chrom {
-					return fmt.Errorf("Invalid RNAME %v, expected %v, in file %v", chromosomeReadRname, chrom, fullInputPath)
+					return fmt.Errorf("invalid RNAME %v, expected %v, in file %v", chromosomeReadRname, chrom, fullInputPath)
 				}
 			}
 		}
@@ -452,10 +448,8 @@ func MergeSortedFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPref
 	return err
 }
 
-/*
-MergeUnsortedFilesSplitPerChromosome merges files that were split with
-SplitFilePerChromosome and are unsorted.
-*/
+// MergeUnsortedFilesSplitPerChromosome merges files that were split
+// with SplitFilePerChromosome and are unsorted.
 func MergeUnsortedFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPrefix, inputExtension string, header *Header) (err error) {
 	out, err := Create(output, fai, fasta)
 	if err != nil {
@@ -506,12 +500,10 @@ func MergeUnsortedFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPr
 	return nil
 }
 
-/*
-SplitSingleEndFilePerChromosome splits a SAM file containing
-single-end reads into a file for the unmapped reads, and a file per
-chromosome, containing all reads that map to that chromosome. There
-are no requirements on the input file for splitting.
-*/
+// SplitSingleEndFilePerChromosome splits a SAM file containing
+// single-end reads into a file for the unmapped reads, and a file per
+// chromosome, containing all reads that map to that chromosome. There
+// are no requirements on the input file for splitting.
 func SplitSingleEndFilePerChromosome(input, outputPath, outputPrefix, outputExtension, fai, fasta string) (err error) {
 	files, err := internal.Directory(input)
 	if err != nil {
@@ -603,10 +595,9 @@ func SplitSingleEndFilePerChromosome(input, outputPath, outputPrefix, outputExte
 	return nil
 }
 
-/*
-MergeSingleEndFilesSplitPerChromosome merges files containing
-single-end reads that were split with SplitSingleEndFilePerChromosome.
-*/
+// MergeSingleEndFilesSplitPerChromosome merges files containing
+// single-end reads that were split with
+// SplitSingleEndFilePerChromosome.
 func MergeSingleEndFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPrefix, inputExtension string, header *Header) (err error) {
 
 	out, err := Create(output, fai, fasta)

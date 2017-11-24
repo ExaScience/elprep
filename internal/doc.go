@@ -1,5 +1,3 @@
-/*
-Package internal provides additional utility functions that are needed
-in elPrep.
-*/
+// Package internal provides additional utility functions that are
+// needed in elPrep.
 package internal
