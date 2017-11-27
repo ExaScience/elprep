@@ -57,7 +57,7 @@ func AlignmentToString(p *pipeline.Pipeline, _ pipeline.NodeKind, _ *int) (recei
 		for _, aln := range alns {
 			*buf, err = aln.Format(*buf)
 			if err != nil {
-				p.Err(fmt.Errorf("%v in AlignmentToString", err.Error()))
+				p.SetErr(fmt.Errorf("%v in AlignmentToString", err.Error()))
 			}
 			strings = append(strings, string(*buf))
 			*buf = (*buf)[:0]
@@ -81,7 +81,7 @@ func StringToAlignment(p *pipeline.Pipeline, _ pipeline.NodeKind, _ *int) (recei
 			sc.Reset(str)
 			aln := sc.ParseAlignment()
 			if err := sc.Err(); err != nil {
-				p.Err(fmt.Errorf("%v, while parsing SAM alignment %v", err.Error(), str))
+				p.SetErr(fmt.Errorf("%v, while parsing SAM alignment %v", err.Error(), str))
 				return alns
 			}
 			alns = append(alns, aln)
@@ -113,7 +113,7 @@ func (sam *Sam) AddNodes(p *pipeline.Pipeline, header *Header, sortingOrder stri
 	case Unsorted:
 		p.Add(pipeline.Seq(pipeline.Slice(&sam.Alignments)))
 	default:
-		p.Err(fmt.Errorf("unknown sorting order %v", sortingOrder))
+		p.SetErr(fmt.Errorf("unknown sorting order %v", sortingOrder))
 	}
 }
 
@@ -122,7 +122,7 @@ func (sam *Sam) AddNodes(p *pipeline.Pipeline, header *Header, sortingOrder stri
 func (output *Writer) AddNodes(p *pipeline.Pipeline, header *Header, sortingOrder string) {
 	writer := (*bufio.Writer)(output)
 	if err := header.Format(writer); err != nil {
-		p.Err(fmt.Errorf("%v, while writing a SAM header to output", err.Error()))
+		p.SetErr(fmt.Errorf("%v, while writing a SAM header to output", err.Error()))
 		return
 	}
 	var kind pipeline.NodeKind
@@ -130,12 +130,12 @@ func (output *Writer) AddNodes(p *pipeline.Pipeline, header *Header, sortingOrde
 	case Keep, Unknown:
 		kind = pipeline.Ordered
 	case Coordinate, Queryname:
-		p.Err(errors.New("sorting on files not supported"))
+		p.SetErr(errors.New("sorting on files not supported"))
 		return
 	case Unsorted:
 		kind = pipeline.Sequential
 	default:
-		p.Err(fmt.Errorf("unknown sorting order %v", sortingOrder))
+		p.SetErr(fmt.Errorf("unknown sorting order %v", sortingOrder))
 		return
 	}
 	p.Add(
@@ -146,7 +146,7 @@ func (output *Writer) AddNodes(p *pipeline.Pipeline, header *Header, sortingOrde
 				_, err = writer.WriteString(aln)
 			}
 			if err != nil {
-				p.Err(fmt.Errorf("%v, while writing SAM alignment strings to output", err.Error()))
+				p.SetErr(fmt.Errorf("%v, while writing SAM alignment strings to output", err.Error()))
 			}
 			return data
 		})),
@@ -247,7 +247,7 @@ func (sam *Sam) RunPipeline(output PipelineOutput, hdrFilters []Filter, sortingO
 	}
 	output.AddNodes(&p, header, sortingOrder)
 	p.Run()
-	return p.Err(nil)
+	return p.Err()
 }
 
 // RunPipeline implements the PipelineInput interface for Reader
@@ -285,5 +285,5 @@ func (input *Reader) RunPipeline(output PipelineOutput, hdrFilters []Filter, sor
 	}
 	output.AddNodes(&p, header, sortingOrder)
 	p.Run()
-	return p.Err(nil)
+	return p.Err()
 }
