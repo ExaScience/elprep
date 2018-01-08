@@ -545,7 +545,7 @@ func slowScanCigarString(cigar string) (slice []CigarOperation, err error) {
 	for i := 0; i < len(cigar); {
 		cigarOperation, j, err := newCigarOperation(cigar, i)
 		if err != nil {
-			return nil, fmt.Errorf("%v, while scanning CIGAR string %v", err.Error(), cigar)
+			return nil, fmt.Errorf("%v, while scanning CIGAR string %v", err, cigar)
 		}
 		slice = append(slice, cigarOperation)
 		i = j

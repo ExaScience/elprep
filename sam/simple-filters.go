@@ -271,7 +271,7 @@ func CleanSam(header *Header) AlignmentFilter {
 		if aln.IsUnmapped() {
 			aln.MAPQ = 0
 		} else if cigar, err := ScanCigarString(aln.CIGAR); err != nil {
-			log.Fatal(err.Error(), ", while scanning a CIGAR string for ", aln.QNAME, " in CleanSam")
+			log.Fatal(err, ", while scanning a CIGAR string for ", aln.QNAME, " in CleanSam")
 		} else if length := referenceSequenceTable[aln.RNAME]; end(aln, cigar) > length {
 			clipFrom := length - aln.POS + 1
 			aln.CIGAR = softClipEndOfRead(clipFrom, cigar)
@@ -288,7 +288,7 @@ func FilterNonOverlappingReads(bed *bed.Bed) Filter {
 			alnStart := aln.POS
 			cigar, err := ScanCigarString(aln.CIGAR)
 			if err != nil {
-				log.Fatal(err.Error(), ", while scanning a CIGAR string for", aln.QNAME, " in FilterNonOverlappingReads")
+				log.Fatal(err, ", while scanning a CIGAR string for", aln.QNAME, " in FilterNonOverlappingReads")
 			}
 			var alnEnd int32
 			if aln.IsUnmapped() || readLengthFromCigar(cigar) <= 0 {

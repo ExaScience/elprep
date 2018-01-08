@@ -52,7 +52,7 @@ func Split() error {
 	if err := flags.Parse(os.Args[4:]); err != nil {
 		x := 0
 		if err != flag.ErrHelp {
-			fmt.Fprintln(os.Stderr, err.Error())
+			fmt.Fprintln(os.Stderr, err)
 			x = 1
 		}
 		fmt.Fprint(os.Stderr, SplitHelp)

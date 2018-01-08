@@ -87,7 +87,7 @@ func (s *lineScanner) parseInt(n int) int64 {
 	field := s.field(n)
 	value, err := strconv.ParseInt(field, 10, 32)
 	if (err != nil) && ((s._err == nil) || (s._err == io.EOF)) {
-		s._err = fmt.Errorf("%v, while parsing integer %v in line %v of file %v", err.Error(), field, s.line, s.filename)
+		s._err = fmt.Errorf("%v, while parsing integer %v in line %v of file %v", err, field, s.line, s.filename)
 	}
 	return value
 }
@@ -107,7 +107,7 @@ func (s *lineScanner) err() error {
 func SplitFilePerChromosome(input, outputPath, outputPrefix, outputExtension, fai, fasta string) (err error) {
 	files, err := internal.Directory(input)
 	if err != nil {
-		return fmt.Errorf("%v, while attempting to fetch file(s) %v in SplitFilePerChromosome", err.Error(), input)
+		return fmt.Errorf("%v, while attempting to fetch file(s) %v in SplitFilePerChromosome", err, input)
 	}
 	inputPath := filepath.Dir(input)
 	firstFile := filepath.Join(inputPath, files[0])
@@ -117,7 +117,7 @@ func SplitFilePerChromosome(input, outputPath, outputPrefix, outputExtension, fa
 	}
 	header, lines, err := ParseHeader(firstIn.Reader)
 	if err != nil {
-		return fmt.Errorf("%v, while parsing header of %v in SplitFilePerChromosome", err.Error(), firstFile)
+		return fmt.Errorf("%v, while parsing header of %v in SplitFilePerChromosome", err, firstFile)
 	}
 	splitsPath := filepath.Join(outputPath, "splits")
 	chromsEncountered := make(map[string]*OutputFile)
@@ -192,7 +192,7 @@ func SplitFilePerChromosome(input, outputPath, outputPrefix, outputExtension, fa
 		}
 	}
 	if err = processFile(firstIn.Reader, firstFile, lines); err != nil {
-		return fmt.Errorf("%v, while processing file %v in SplitFilePerChromosome", err.Error(), err)
+		return fmt.Errorf("%v, while processing file %v in SplitFilePerChromosome", err, firstFile)
 	}
 	if err = firstIn.Close(); err != nil {
 		return err
@@ -210,9 +210,9 @@ func SplitFilePerChromosome(input, outputPath, outputPrefix, outputExtension, fa
 				}
 			}()
 			if lines, err := SkipHeader(in.Reader); err != nil {
-				return fmt.Errorf("%v, while skipping header of file %v in SplitFilePerChromosome", err.Error(), inFile)
+				return fmt.Errorf("%v, while skipping header of file %v in SplitFilePerChromosome", err, inFile)
 			} else if err = processFile(in.Reader, inFile, lines); err != nil {
-				return fmt.Errorf("%v, while processing file %v in SplitFilePerChromosome", err.Error(), inFile)
+				return fmt.Errorf("%v, while processing file %v in SplitFilePerChromosome", err, inFile)
 			}
 			return nil
 		}()
@@ -257,7 +257,7 @@ func MergeSortedFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPref
 	}()
 	spreadReadsLines, err := SkipHeader(spreadReads.Reader)
 	if err != nil {
-		return fmt.Errorf("%v, while skipping header of file %v", err.Error(), spreadReadsName)
+		return fmt.Errorf("%v, while skipping header of file %v", err, spreadReadsName)
 	}
 
 	spreadReadsScanner := newLineScanner(spreadReads.Reader, spreadReadsName, spreadReadsLines)
@@ -322,7 +322,7 @@ func MergeSortedFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPref
 
 		chromosomeLines, err := SkipHeader(file.Reader)
 		if err != nil {
-			return fmt.Errorf("%v, while skipping SAM file header in file %v", err.Error(), fullInputPath)
+			return fmt.Errorf("%v, while skipping SAM file header in file %v", err, fullInputPath)
 		}
 
 		if !spreadReadsReady || (spreadReadRname != chrom) {
@@ -507,7 +507,7 @@ func MergeUnsortedFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPr
 func SplitSingleEndFilePerChromosome(input, outputPath, outputPrefix, outputExtension, fai, fasta string) (err error) {
 	files, err := internal.Directory(input)
 	if err != nil {
-		return fmt.Errorf("%v, while attempting to fetch file(s) %v in SplitSingleEndFilePerChromosome", err.Error(), input)
+		return fmt.Errorf("%v, while attempting to fetch file(s) %v in SplitSingleEndFilePerChromosome", err, input)
 	}
 	inputPath := filepath.Dir(input)
 	firstFile := filepath.Join(inputPath, files[0])
@@ -517,7 +517,7 @@ func SplitSingleEndFilePerChromosome(input, outputPath, outputPrefix, outputExte
 	}
 	header, lines, err := ParseHeader(firstIn.Reader)
 	if err != nil {
-		return fmt.Errorf("%v, while parsing header of %v in SplitSingleEndFilePerChromosome", err.Error(), firstFile)
+		return fmt.Errorf("%v, while parsing header of %v in SplitSingleEndFilePerChromosome", err, firstFile)
 	}
 	chromsEncountered := make(map[string]*OutputFile)
 	header.AddUserRecord("@sr", utils.StringMap{"co": "This file was created using elprep split --single-end."})
@@ -564,7 +564,7 @@ func SplitSingleEndFilePerChromosome(input, outputPath, outputPrefix, outputExte
 		return s.err()
 	}
 	if err = processFile(firstIn.Reader, firstFile, lines); err != nil {
-		return fmt.Errorf("%v, while processing file %v in SplitSingleEndFilePerChromosome", err.Error(), err)
+		return fmt.Errorf("%v, while processing file %v in SplitSingleEndFilePerChromosome", err, firstFile)
 	}
 	if err = firstIn.Close(); err != nil {
 		return err
@@ -582,9 +582,9 @@ func SplitSingleEndFilePerChromosome(input, outputPath, outputPrefix, outputExte
 				}
 			}()
 			if lines, err := SkipHeader(in.Reader); err != nil {
-				return fmt.Errorf("%v, while skipping header of file %v in SplitSingleEndFilePerChromosome", err.Error(), inFile)
+				return fmt.Errorf("%v, while skipping header of file %v in SplitSingleEndFilePerChromosome", err, inFile)
 			} else if err = processFile(in.Reader, inFile, lines); err != nil {
-				return fmt.Errorf("%v, while processing file %v in SplitSingleEndFilePerChromosome", err.Error(), inFile)
+				return fmt.Errorf("%v, while processing file %v in SplitSingleEndFilePerChromosome", err, inFile)
 			}
 			return nil
 		}()

@@ -74,11 +74,11 @@ func setLogOutput() {
 	logPath := createLogFilename()
 	fullPath := filepath.Join(os.Getenv("HOME"), logPath)
 	if err := os.MkdirAll(filepath.Dir(fullPath), 0700); err != nil {
-		log.Fatal(err.Error(), ", while trying to create directories for log file ", fullPath)
+		log.Fatal(err, ", while trying to create directories for log file ", fullPath)
 	}
 	f, err := os.Create(fullPath)
 	if err != nil {
-		log.Fatal(err.Error(), ", while trying to create log file ", fullPath)
+		log.Fatal(err, ", while trying to create log file ", fullPath)
 	}
 	fmt.Fprintln(f, ProgramMessage)
 	log.SetOutput(io.MultiWriter(f, os.Stderr))

@@ -60,7 +60,7 @@ var (
 func (aln *Alignment) ComputeUnclippedPosition() (result int32) {
 	cigar, err := ScanCigarString(aln.CIGAR)
 	if err != nil {
-		log.Fatal(err.Error(), ", while scanning CIGAR string for ", aln.QNAME, " in ComputeUnclippedPosition")
+		log.Fatal(err, ", while scanning CIGAR string for ", aln.QNAME, " in ComputeUnclippedPosition")
 	}
 
 	result = aln.POS

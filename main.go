@@ -43,7 +43,7 @@ func main() {
 			err = cmd.DeprecatedFilter()
 		}
 		if err != nil {
-			log.Fatal(err.Error())
+			log.Fatal(err)
 		}
 	}
 }

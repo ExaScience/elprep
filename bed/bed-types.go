@@ -84,7 +84,7 @@ func initializeRegionFields(fields []string) ([]interface{}, error) {
 		case brScore:
 			score, err := strconv.Atoi(val)
 			if err != nil || score < 0 || score > 1000 {
-				return nil, fmt.Errorf("invalid Score field : %v", err.Error())
+				return nil, fmt.Errorf("invalid Score field : %v", err)
 			}
 			brFields[brScore] = score
 		case brStrand:
@@ -95,13 +95,13 @@ func initializeRegionFields(fields []string) ([]interface{}, error) {
 		case brThickStart:
 			start, err := strconv.Atoi(val)
 			if err != nil {
-				return nil, fmt.Errorf("invalid ThickStart field: %v", err.Error())
+				return nil, fmt.Errorf("invalid ThickStart field: %v", err)
 			}
 			brFields[brThickStart] = start
 		case brThickEnd:
 			end, err := strconv.Atoi(val)
 			if err != nil {
-				return nil, fmt.Errorf("invalid ThickEnd field: %v", err.Error())
+				return nil, fmt.Errorf("invalid ThickEnd field: %v", err)
 			}
 			brFields[brThickEnd] = end
 		case brItemRgb:
@@ -113,19 +113,19 @@ func initializeRegionFields(fields []string) ([]interface{}, error) {
 		case brBlockCount:
 			count, err := strconv.Atoi(val)
 			if err != nil {
-				return nil, fmt.Errorf("invalid BlockCount field: %v", err.Error())
+				return nil, fmt.Errorf("invalid BlockCount field: %v", err)
 			}
 			brFields[brBlockCount] = count
 		case brBlockSizes:
 			sizes, err := strconv.Atoi(val)
 			if err != nil {
-				return nil, fmt.Errorf("invalid BlockSizes field: %v", err.Error())
+				return nil, fmt.Errorf("invalid BlockSizes field: %v", err)
 			}
 			brFields[brBlockSizes] = sizes
 		case brBlockStarts:
 			start, err := strconv.Atoi(val)
 			if err != nil {
-				return nil, fmt.Errorf("invalid BlockStarts field: %v", err.Error())
+				return nil, fmt.Errorf("invalid BlockStarts field: %v", err)
 			}
 			brFields[brBlockStarts] = start
 		default:

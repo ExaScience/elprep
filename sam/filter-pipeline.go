@@ -57,7 +57,7 @@ func AlignmentToString(p *pipeline.Pipeline, _ pipeline.NodeKind, _ *int) (recei
 		for _, aln := range alns {
 			*buf, err = aln.Format(*buf)
 			if err != nil {
-				p.SetErr(fmt.Errorf("%v in AlignmentToString", err.Error()))
+				p.SetErr(fmt.Errorf("%v in AlignmentToString", err))
 			}
 			strings = append(strings, string(*buf))
 			*buf = (*buf)[:0]
@@ -81,7 +81,7 @@ func StringToAlignment(p *pipeline.Pipeline, _ pipeline.NodeKind, _ *int) (recei
 			sc.Reset(str)
 			aln := sc.ParseAlignment()
 			if err := sc.Err(); err != nil {
-				p.SetErr(fmt.Errorf("%v, while parsing SAM alignment %v", err.Error(), str))
+				p.SetErr(fmt.Errorf("%v, while parsing SAM alignment %v", err, str))
 				return alns
 			}
 			alns = append(alns, aln)
@@ -122,7 +122,7 @@ func (sam *Sam) AddNodes(p *pipeline.Pipeline, header *Header, sortingOrder stri
 func (output *Writer) AddNodes(p *pipeline.Pipeline, header *Header, sortingOrder string) {
 	writer := (*bufio.Writer)(output)
 	if err := header.Format(writer); err != nil {
-		p.SetErr(fmt.Errorf("%v, while writing a SAM header to output", err.Error()))
+		p.SetErr(fmt.Errorf("%v, while writing a SAM header to output", err))
 		return
 	}
 	var kind pipeline.NodeKind
@@ -146,7 +146,7 @@ func (output *Writer) AddNodes(p *pipeline.Pipeline, header *Header, sortingOrde
 				_, err = writer.WriteString(aln)
 			}
 			if err != nil {
-				p.SetErr(fmt.Errorf("%v, while writing SAM alignment strings to output", err.Error()))
+				p.SetErr(fmt.Errorf("%v, while writing SAM alignment strings to output", err))
 			}
 			return data
 		})),
@@ -272,10 +272,10 @@ func (input *Reader) RunPipeline(output PipelineOutput, hdrFilters []Filter, sor
 		}
 		writer := (*bufio.Writer)(out)
 		if err := header.Format(writer); err != nil {
-			return fmt.Errorf("%v, while writing a SAM header to output", err.Error())
+			return fmt.Errorf("%v, while writing a SAM header to output", err)
 		}
 		_, err := reader.WriteTo(writer)
-		return fmt.Errorf("%v, while writing SAM alignments to output", err.Error())
+		return fmt.Errorf("%v, while writing SAM alignments to output", err)
 	}
 	var p pipeline.Pipeline
 	p.Source(pipeline.NewScanner(reader))

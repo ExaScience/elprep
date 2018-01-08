@@ -60,15 +60,15 @@ func ParseBed(filename string) (b *Bed, err error) {
 			var err error
 			start, err := strconv.Atoi(data[1])
 			if err != nil {
-				return nil, fmt.Errorf("invalid bed region start: %v ", err.Error())
+				return nil, fmt.Errorf("invalid bed region start: %v ", err)
 			}
 			end, err := strconv.Atoi(data[2])
 			if err != nil {
-				return nil, fmt.Errorf("invalid bed region end: %v ", err.Error())
+				return nil, fmt.Errorf("invalid bed region end: %v ", err)
 			}
 			region, err := NewRegion(chrom, int32(start), int32(end), data[3:])
 			if err != nil {
-				return nil, fmt.Errorf("invalid bed region: %v ", err.Error())
+				return nil, fmt.Errorf("invalid bed region: %v ", err)
 			}
 			AddRegion(bed, region)
 			if track != nil {
@@ -78,7 +78,7 @@ func ParseBed(filename string) (b *Bed, err error) {
 
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error while reading bed file: %v ", err.Error())
+		return nil, fmt.Errorf("error while reading bed file: %v ", err)
 	}
 	// Make sure bed regions are sorted.
 	sortRegions(bed)

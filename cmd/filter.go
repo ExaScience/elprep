@@ -24,10 +24,10 @@ func timedRun(timed bool, profile, msg string, phase int64, f func() error) erro
 		filename := profile + strconv.FormatInt(phase, 10) + ".prof"
 		file, err := os.Create(filename)
 		if err != nil {
-			return fmt.Errorf("%v, while creating file %v for a CPU profile", err.Error(), filename)
+			return fmt.Errorf("%v, while creating file %v for a CPU profile", err, filename)
 		}
 		if err = pprof.StartCPUProfile(file); err != nil {
-			return fmt.Errorf("%v, while starting a CPU profile", err.Error())
+			return fmt.Errorf("%v, while starting a CPU profile", err)
 		}
 		defer pprof.StopCPUProfile()
 	}
@@ -205,7 +205,7 @@ func Filter() error {
 	if err := flags.Parse(os.Args[4:]); err != nil {
 		x := 0
 		if err != flag.ErrHelp {
-			fmt.Fprintln(os.Stderr, err.Error())
+			fmt.Fprintln(os.Stderr, err)
 			x = 1
 		}
 		fmt.Fprint(os.Stderr, FilterHelp)
