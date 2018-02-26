@@ -138,6 +138,7 @@ const FilterHelp = "Filter parameters:\n" +
 	"[--filter-non-exact-mapping-reads]\n" +
 	"[--filter-non-exact-mapping-reads-strict]\n" +
 	"[--filter-non-overlapping-reads bed-file]\n" +
+	"[--filter-mapping-quality mapping-quality]\n" +
 	"[--replace-read-group read-group-string]\n" +
 	"[--mark-duplicates]\n" +
 	"[--remove-duplicates]\n" +
@@ -158,6 +159,7 @@ func Filter() error {
 		filterNonExactMappingReads                                    bool
 		filterNonExactMappingReadsStrict                              bool
 		filterNonOverlappingReads                                     string
+		filterMappingQuality                                          int
 		replaceReadGroup                                              string
 		markDuplicates, markDuplicatesDeterministic, removeDuplicates bool
 		removeOptionalFields                                          string
@@ -179,6 +181,7 @@ func Filter() error {
 	flags.BoolVar(&filterNonExactMappingReads, "filter-non-exact-mapping-reads", false, "output only exact mapping reads (soft-clipping allowed) based on cigar string (only M,S allowed)")
 	flags.BoolVar(&filterNonExactMappingReadsStrict, "filter-non-exact-mapping-reads-strict", false, "output only exact mapping reads (soft-clipping allowed) based on optional fields X0=1, X1=0, XM=0, XO=0, XG=0")
 	flags.StringVar(&filterNonOverlappingReads, "filter-non-overlapping-reads", "", "output only reads that overlap with the given regions (bed format)")
+	flags.IntVar(&filterMappingQuality, "filter-mapping-quality", 0, "output only reads that equal or exceed given mapping quality")
 	flags.StringVar(&replaceReadGroup, "replace-read-group", "", "add or replace alignment read groups")
 	flags.BoolVar(&markDuplicates, "mark-duplicates", false, "mark duplicates")
 	flags.BoolVar(&markDuplicatesDeterministic, "mark-duplicates-deterministic", false, "mark duplicates deterministically")
@@ -288,6 +291,12 @@ func Filter() error {
 		filterNonOverlappingReadsFilter := sam.FilterNonOverlappingReads(parsedBed)
 		filters = append(filters, filterNonOverlappingReadsFilter)
 		fmt.Fprint(&command, " --filter-non-overlapping-reads ", filterNonOverlappingReads)
+	}
+
+	if filterMappingQuality > 0 {
+		filterMappingQualityFilter := sam.FilterMappingQuality(filterMappingQuality)
+		filters = append(filters, filterMappingQualityFilter)
+		fmt.Fprint(&command, " --filter-mapping-quality", filterMappingQuality)
 	}
 
 	if renameChromosomes {

@@ -315,3 +315,8 @@ func FilterNonOverlappingReads(bed *bed.Bed) Filter {
 		}
 	}
 }
+
+// Filter reads that do not match or exceed the given mapping quality
+func FilterMappingQuality(mq int) AlignmentFilter {
+	return func(aln *Alignment) bool { return (aln.MAPQ >= mq) == 1 }
+}
