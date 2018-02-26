@@ -154,13 +154,14 @@ The order in which command options are passed is ignored. For optimal performanc
 1. filter-unmapped-reads or filter-unmapped-reads-strict
 2. filter-non-exact-mapping-reads or filter-non-exact-mapping-reads-strict
 3. filter-non-overlapping-reads
-4. clean-sam
-5. replace-reference-sequences
-6. replace-read-group
-7. mark-duplicates
-8. remove-duplicates
-9. remove-optional-fields
-10. keep-optional-fields
+4. filter-mapping-quality
+5. clean-sam
+6. replace-reference-sequences
+7. replace-read-group
+8. mark-duplicates
+9. remove-duplicates
+10. remove-optional-fields
+11. keep-optional-fields
 
 Sorting is done after filtering.
 
@@ -250,6 +251,10 @@ Removes all alignments where the mapping is not an exact match with reference or
 ### --filter-non-overlapping-reads bed-file
 
 Removes all reads where the mapping positions do not overlap with any region specified in the bed file. Specifically, either the start or end of the read's mapping position must be contained in an interval, or the read is removed from the output.
+
+### --filter-mapping-quality mapping-quality
+
+Remove all alignments with mapping quality lower than given mapping quality")
 
 ### --replace-read-group read-group-string
 
