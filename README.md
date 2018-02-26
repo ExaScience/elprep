@@ -254,7 +254,7 @@ Removes all reads where the mapping positions do not overlap with any region spe
 
 ### --filter-mapping-quality mapping-quality
 
-Remove all alignments with mapping quality lower than given mapping quality")
+Remove all alignments with mapping quality lower than given mapping quality.
 
 ### --replace-read-group read-group-string
 
