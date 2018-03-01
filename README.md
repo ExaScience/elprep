@@ -152,9 +152,9 @@ The elprep filter commandline tool has three types of command options: filters, 
 The order in which command options are passed is ignored. For optimal performance, elPrep always applies filters in the following order:
 
 1. filter-unmapped-reads or filter-unmapped-reads-strict
-2. filter-non-exact-mapping-reads or filter-non-exact-mapping-reads-strict
-3. filter-non-overlapping-reads
-4. filter-mapping-quality
+2. filter-mapping-quality
+3. filter-non-exact-mapping-reads or filter-non-exact-mapping-reads-strict
+4. filter-non-overlapping-reads
 5. clean-sam
 6. replace-reference-sequences
 7. replace-read-group
@@ -240,6 +240,10 @@ Removes all alignments in the input file that are unmapped. An alignment is dete
 
 Removes all alignments in the input file that are unmapped. An alignment is determined unmapped when bit 0x4 of its FLAG is set, conforming to the SAM specification. Also removes alignments where the mapping position (POS) is 0 or where the reference sequence name (RNAME) is *. Such alignments are considered unmapped by the SAM specification, but some alignment programs may not mark the FLAG of those alignments as unmapped. This option is recommended when you are targeting older versions of GATK (cf. GATK 1.6).
 
+### --filter-mapping-quality mapping-quality
+
+Remove all alignments with mapping quality lower than given mapping quality.
+
 ### --filter-non-exact-mapping-reads
 
 Removes all alignments where the mapping is not an exact match with the reference, albeit soft-clipping is allowed. This filter checks the CIGAR string and only allow occurences of M and S.
@@ -251,10 +255,6 @@ Removes all alignments where the mapping is not an exact match with reference or
 ### --filter-non-overlapping-reads bed-file
 
 Removes all reads where the mapping positions do not overlap with any region specified in the bed file. Specifically, either the start or end of the read's mapping position must be contained in an interval, or the read is removed from the output.
-
-### --filter-mapping-quality mapping-quality
-
-Remove all alignments with mapping quality lower than given mapping quality.
 
 ### --replace-read-group read-group-string
 
