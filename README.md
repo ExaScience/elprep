@@ -536,6 +536,8 @@ Many thanks for testing, bug reports, or contributions:
 
 Richard Corbett
 
+Matthias De Smet
+
 Keith James
 
 Leonor Palmeira
