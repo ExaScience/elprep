@@ -11,7 +11,8 @@ def member(el,l):
   i = iter(l)
   for val in i:
     if val == el:
-      return list(i)
+      rest = list(i)
+      return [el] + rest
 
 def flg_option(opt, cmdl):
   val = member(opt, cmdl)
@@ -19,7 +20,7 @@ def flg_option(opt, cmdl):
 
 def cmd_option(opt, cmdl):
   val = member(opt, cmdl)
-  return [opt,val[0]] if val else []
+  return [opt,val[1]] if val else []
 
 def remove_flg_option(cmd_l, name):
   nl = []
