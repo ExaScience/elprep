@@ -2,6 +2,7 @@ package sam
 
 import (
 	"log"
+	"math"
 	"math/rand"
 	"strconv"
 	"strings"
@@ -313,5 +314,24 @@ func FilterNonOverlappingReads(bed *bed.Bed) Filter {
 			}
 			return false
 		}
+	}
+}
+
+// FilterMappingQuality is a filter for removing reads that do not
+// match or exceed the given mapping quality.
+func FilterMappingQuality(mq int) Filter {
+	if mq == 0 {
+		return nil // no need to add any filter because aln.MAPQ is always >= 0
+	}
+	if mq > math.MaxUint8 {
+		return func(_ *Header) AlignmentFilter {
+			return func(_ *Alignment) bool {
+				return false // no aln.MAPQ can be > math.MaxUint8
+			}
+		}
+	}
+	mapq := byte(mq)
+	return func(_ *Header) AlignmentFilter {
+		return func(aln *Alignment) bool { return aln.MAPQ >= mapq }
 	}
 }

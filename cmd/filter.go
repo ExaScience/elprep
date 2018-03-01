@@ -135,6 +135,7 @@ const FilterHelp = "Filter parameters:\n" +
 	"[--replace-reference-sequences sam-file]\n" +
 	"[--filter-unmapped-reads]\n" +
 	"[--filter-unmapped-reads-strict]\n" +
+	"[--filter-mapping-quality mapping-quality]\n" +
 	"[--filter-non-exact-mapping-reads]\n" +
 	"[--filter-non-exact-mapping-reads-strict]\n" +
 	"[--filter-non-overlapping-reads bed-file]\n" +
@@ -155,6 +156,7 @@ func Filter() error {
 	var (
 		replaceReferenceSequences                                     string
 		filterUnmappedReads, filterUnmappedReadsStrict                bool
+		filterMappingQuality                                          int
 		filterNonExactMappingReads                                    bool
 		filterNonExactMappingReadsStrict                              bool
 		filterNonOverlappingReads                                     string
@@ -176,6 +178,7 @@ func Filter() error {
 	flags.StringVar(&replaceReferenceSequences, "replace-reference-sequences", "", "replace the existing header by a new one")
 	flags.BoolVar(&filterUnmappedReads, "filter-unmapped-reads", false, "remove all unmapped alignments")
 	flags.BoolVar(&filterUnmappedReadsStrict, "filter-unmapped-reads-strict", false, "remove all unmapped alignments, taking also POS and RNAME into account")
+	flags.IntVar(&filterMappingQuality, "filter-mapping-quality", 0, "output only reads that equal or exceed given mapping quality")
 	flags.BoolVar(&filterNonExactMappingReads, "filter-non-exact-mapping-reads", false, "output only exact mapping reads (soft-clipping allowed) based on cigar string (only M,S allowed)")
 	flags.BoolVar(&filterNonExactMappingReadsStrict, "filter-non-exact-mapping-reads-strict", false, "output only exact mapping reads (soft-clipping allowed) based on optional fields X0=1, X1=0, XM=0, XO=0, XG=0")
 	flags.StringVar(&filterNonOverlappingReads, "filter-non-overlapping-reads", "", "output only reads that overlap with the given regions (bed format)")
@@ -268,6 +271,12 @@ func Filter() error {
 	} else if filterUnmappedReads {
 		filters = append(filters, sam.FilterUnmappedReads)
 		fmt.Fprint(&command, " --filter-unmapped-reads")
+	}
+
+	if filterMappingQuality > 0 {
+		filterMappingQualityFilter := sam.FilterMappingQuality(filterMappingQuality)
+		filters = append(filters, filterMappingQualityFilter)
+		fmt.Fprint(&command, " --filter-mapping-quality ", filterMappingQuality)
 	}
 
 	if filterNonExactMappingReads {
