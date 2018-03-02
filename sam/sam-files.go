@@ -67,16 +67,10 @@ func ParseHeader(reader *bufio.Reader) (hdr *Header, lines int, err error) {
 	for first := true; ; first = false {
 		switch data, err := reader.Peek(1); {
 		case err == io.EOF:
-			if sc.err != nil {
-				return nil, 0, sc.err
-			}
 			return hdr, lines, nil
 		case err != nil:
 			return nil, 0, err
 		case data[0] != '@':
-			if sc.err != nil {
-				return nil, 0, sc.err
-			}
 			return hdr, lines, nil
 		}
 		bytes, err := reader.ReadSlice('\n')
@@ -116,6 +110,9 @@ func ParseHeader(reader *bufio.Reader) (hdr *Header, lines int, err error) {
 			default:
 				return nil, 0, fmt.Errorf("unknown SAM record type code %v", code)
 			}
+		}
+		if sc.err != nil {
+			return nil, 0, sc.err
 		}
 	}
 }
