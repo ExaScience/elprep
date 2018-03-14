@@ -827,6 +827,10 @@ func Create(name, fai, fasta string) (*OutputFile, error) {
 		if err != nil {
 			return nil, err
 		}
+                err = cmd.Start()
+                if err != nil {
+                        return nil, err
+                }
 		return &OutputFile{inPipe, bufio.NewWriter(inPipe), cmd}, nil
 	default:
 		if name == "/dev/stdout" {
