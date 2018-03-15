@@ -394,7 +394,7 @@ The Python scripts have been tested with Python 2.7.6. Please add the elPrep and
 
 ## Synopsis
 
-	./elprep-sfm.py $input $output --filter-unmapped-reads --filter-unmapped-reads-strict --replace-reference-sequences ucsc.hg19.dict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --remove-duplicates --sorting-order coordinate --nr-of-threads $threads --intermediate-files-output-type [sam | bam | cram] --intermediate-files-output-prefix name --single-end
+	./elprep-sfm.py $input $output --filter-unmapped-reads --filter-unmapped-reads-strict --replace-reference-sequences ucsc.hg19.dict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --remove-duplicates --sorting-order coordinate --nr-of-threads $threads --intermediate-files-output-type [sam | bam | cram] --refernce-T fasta reference-t fai --intermediate-files-output-prefix name --single-end
 
 ## Description
 
@@ -417,6 +417,14 @@ The output prefix that will be default used for the intermediate split files. Th
 ### --single-end
 
 The elprep split and merge commands will treat the data as single-end data. When this option is not used, the elprep split and merge commands will be called to treat the data as paired-end data.
+
+### --reference-T reference-fasta
+
+A fasta format reference file used by SAMtools for .cram compression, optionally compressed with bgzip and indexed by samtools faidx. elPrep uses it to fill in the "-T" option when calling the samtools view command for converting to .cram. This option (or --reference-t) is required when setting --intermediate-files-output-type to cram.
+
+### --reference-t reference-fai
+
+A tab-delimited file, where a first column lists the reference names and a second column lists the lengths of those references; for example, a .fai file generated with samtools faidx. elPrep uses it to fill in the "-t" option when calling the samtools view command for converting to .cram. This option (or --reference-T) is required when setting --intermediate-files-output-type to cram.
 
 ### Name
 

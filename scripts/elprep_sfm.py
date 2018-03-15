@@ -35,6 +35,17 @@ def elprep_sfm (argv):
   else:
     intermediate_files_output_type = output_extension[1:]
 
+  fasta_opt = []
+  if intermediate_files_output_type == "cram":
+     fasta_t_opt = elprep_io_wrapper.cmd_option("--reference-t", argv)
+     fasta_T_opt = elprep_io_wrapper.cmd_option("--reference-T", argv)
+     if fasta_t_opt:
+         fasta_opt = fasta_t_opt
+     elif fasta_T_opt:
+         fasta_opt = fasta_T_opt
+     else:
+         return "Intermediate files output type is .cram, so need to pass either --reference-t or reference-T"
+
   intermediate_files_op_opt = elprep_io_wrapper.cmd_option("--intermediate-files-output-prefix", argv) 
   if intermediate_files_op_opt:
     output_prefix = intermediate_files_op_opt[1]
@@ -50,7 +61,7 @@ def elprep_sfm (argv):
 
   single_end_opt = elprep_io_wrapper.flg_option("--single-end", argv)
 
-  elprep_io_wrapper.cmd_wrap_input(["elprep", "split"], file_in, split_dir, ["--output-prefix", output_prefix, "--output-type", intermediate_files_output_type] + nr_of_threads_opt + single_end_opt)
+  elprep_io_wrapper.cmd_wrap_input(["elprep", "split"], file_in, split_dir, ["--output-prefix", output_prefix, "--output-type", intermediate_files_output_type] + fasta_opt + nr_of_threads_opt + single_end_opt)
 
   if single_end_opt:
     splits_path = split_dir
@@ -81,7 +92,7 @@ def elprep_sfm (argv):
   os.rmdir(split_dir)
 
   # merge command
-  elprep_io_wrapper.cmd_wrap_output(["elprep", "merge"], result_dir, file_out, nr_of_threads_opt + single_end_opt)
+  elprep_io_wrapper.cmd_wrap_output(["elprep", "merge"], result_dir, file_out, fasta_opt + nr_of_threads_opt + single_end_opt)
   # remove directories for intermediate results
   for root, dirs, files in os.walk(result_dir):
     for file in files:
