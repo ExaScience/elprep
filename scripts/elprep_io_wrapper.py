@@ -65,9 +65,19 @@ def cmd_wrap_output (cmd_list, file_in, file_out, cmd_opts):
   output_prefix, output_extension = os.path.splitext(output)
   nr_of_threads_opt = cmd_option("--nr-of-threads", cmd_opts)
   nr_of_threads = str(nr_of_threads_opt[1]) if nr_of_threads_opt else str(multiprocessing.cpu_count()) 
-  if (output_extension == ".bam" or output_extension == ".cram"):
+  if output_extension == ".bam":
     p1 = subprocess.Popen(cmd_list + [file_in, "/dev/stdout"] + cmd_opts, bufsize=-1, stdout=subprocess.PIPE)
     p2 = subprocess.Popen(["samtools", "view", "-bS", "-@", nr_of_threads, "-o", file_out, "-"], bufsize=-1, stdin=p1.stdout) 
+    p2.communicate()
+    if p2.returncode != 0: raise SystemExit, p2.returncode
+  if output_extension == ".cram":
+    reference_t_opt = cmd_option("--reference-t", cmd_opts)
+    reference_bigT_opt = cmd_option("--reference-T", cmd_opts)
+    if not(reference_t_opt) and not(reference_bigT_opt): return "Converting to .cram. Need to pass reference-t or reference-T"
+    opt_to_delete = "--reference-t" if reference_t_opt else "--reference-T"
+    p1 = subprocess.Popen(cmd_list + [file_in, "/dev/stdout"] + remove_cmd_option(cmd_opts, opt_to_delete), bufsize=-1, stdout=subprocess.PIPE)
+    t_opt = ["-t", reference_t_opt[1]] if reference_t_opt else ["-T", reference_bigT_opt[1]]
+    p2 = subprocess.Popen(["samtools", "view", "-C", "-@", nr_of_threads] + t_opt + ["-o", file_out, "-"], bufsize=-1, stdin=p1.stdout)
     p2.communicate()
     if p2.returncode != 0: raise SystemExit, p2.returncode
   else:
