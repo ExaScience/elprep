@@ -106,9 +106,7 @@ func (sam *Sam) AddNodes(p *pipeline.Pipeline, header *Header, sortingOrder stri
 	case Queryname:
 		p.Add(pipeline.Seq(
 			pipeline.Slice(&sam.Alignments),
-			pipeline.Finalize(func() {
-				By(func(aln1, aln2 *Alignment) bool { return aln1.QNAME < aln2.QNAME }).ParallelStableSort(sam.Alignments)
-			}),
+			pipeline.Finalize(func() { By(QNAMELess).ParallelStableSort(sam.Alignments) }),
 		))
 	case Unsorted:
 		p.Add(pipeline.Seq(pipeline.Slice(&sam.Alignments)))
@@ -197,19 +195,29 @@ func ComposeFilters(header *Header, hdrFilters []Filter) (receiver pipeline.Rece
 }
 
 // Determine effective sorting order: Some filters may destroy the
-// sorting order recorded in the input.  If this happens, and
-// requested sorting order is :keep, then we need to effectively sort
-// the result according to the original sorting order.
+// sorting order recorded in the input. If this happens, and
+// the requested sorting order is Keep, then we need to effectively
+// sort the result according to the original sorting order.
+// The reverse is also true: If the requested sorting order is
+// Coordinate or Queryname, and the current sorting order already
+// fulfills it, then we can just return Keep to avoid any additional
+// sorting.
 func effectiveSortingOrder(sortingOrder string, header *Header, originalSortingOrder string) string {
 	if sortingOrder == Keep {
-		currentSortingOrder := header.HDSO()
-		if currentSortingOrder == originalSortingOrder {
+		sortingOrder = originalSortingOrder
+	}
+	currentSortingOrder := header.HDSO()
+	switch sortingOrder {
+	case Coordinate, Queryname:
+		if currentSortingOrder == sortingOrder {
 			return Keep
 		}
-		header.SetHDSO(originalSortingOrder)
-		return originalSortingOrder
+		header.SetHDSO(sortingOrder)
+	case Unknown, Unsorted:
+		if currentSortingOrder != sortingOrder {
+			header.SetHDSO(sortingOrder)
+		}
 	}
-	header.SetHDSO(sortingOrder)
 	return sortingOrder
 }
 
@@ -218,21 +226,23 @@ func effectiveSortingOrder(sortingOrder string, header *Header, originalSortingO
 func (sam *Sam) RunPipeline(output PipelineOutput, hdrFilters []Filter, sortingOrder string) error {
 	header := sam.Header
 	alns := sam.Alignments
-	*sam = Sam{}
+	sam.Header = NewHeader()
+	sam.Alignments = nil
 	originalSortingOrder := header.HDSO()
 	alnFilter := ComposeFilters(header, hdrFilters)
 	sortingOrder = effectiveSortingOrder(sortingOrder, header, originalSortingOrder)
 	if out, ok := output.(*Sam); ok && (runtime.GOMAXPROCS(0) <= 3) {
 		out.Header = header
-		out.Alignments = alns
 		if alnFilter != nil {
-			alnFilter(0, &out.Alignments)
+			out.Alignments = alnFilter(0, alns).([]*Alignment)
+		} else {
+			out.Alignments = alns
 		}
 		switch sortingOrder {
 		case Coordinate:
 			sort.Slice(out.Alignments, func(i, j int) bool { return CoordinateLess(alns[i], alns[j]) })
 		case Queryname:
-			sort.Slice(out.Alignments, func(i, j int) bool { return alns[i].QNAME < alns[j].QNAME })
+			sort.Slice(out.Alignments, func(i, j int) bool { return QNAMELess(alns[i], alns[i]) })
 		case Keep, Unknown, Unsorted:
 			// nothing to do
 		default:

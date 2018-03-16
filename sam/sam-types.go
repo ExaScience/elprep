@@ -321,6 +321,14 @@ func CoordinateLess(aln1, aln2 *Alignment) bool {
 	}
 }
 
+// QNAMELess compares two alignments according to their
+// query template name. See
+// http://samtools.github.io/hts-specs/SAMv1.pdf - Section
+// 1.3, Tag @HD, SO.
+func QNAMELess(aln1, aln2 *Alignment) bool {
+	return aln1.QNAME < aln2.QNAME
+}
+
 // Bit values for the FLAG field in the Alignment struct. See
 // http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.4.2.
 const (
