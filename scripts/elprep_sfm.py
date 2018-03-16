@@ -35,8 +35,10 @@ def elprep_sfm (argv):
   else:
     intermediate_files_output_type = output_extension[1:]
 
+  file_out_output_prefix, file_out_output_extension = os.path.splitext(os.path.basename(file_out))
+
   fasta_opt = []
-  if intermediate_files_output_type == "cram":
+  if intermediate_files_output_type == "cram" or file_out_output_extension == ".cram":
      fasta_t_opt = elprep_io_wrapper.cmd_option("--reference-t", argv)
      fasta_T_opt = elprep_io_wrapper.cmd_option("--reference-T", argv)
      if fasta_t_opt:
@@ -44,7 +46,12 @@ def elprep_sfm (argv):
      elif fasta_T_opt:
          fasta_opt = fasta_T_opt
      else:
-         return "Intermediate files output type is .cram, so need to pass either --reference-t or reference-T"
+         if intermediate_files_output_type == "cram":
+             print("Intermediate files output type is .cram, so need to pass either --reference-t or --reference-T")
+             return
+         else:
+             print("Output file output type is .cram, so need to pass either --reference-t or --reference-T")
+             return
 
   intermediate_files_op_opt = elprep_io_wrapper.cmd_option("--intermediate-files-output-prefix", argv) 
   if intermediate_files_op_opt:

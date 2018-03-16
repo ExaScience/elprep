@@ -73,7 +73,9 @@ def cmd_wrap_output (cmd_list, file_in, file_out, cmd_opts):
   if output_extension == ".cram":
     reference_t_opt = cmd_option("--reference-t", cmd_opts)
     reference_bigT_opt = cmd_option("--reference-T", cmd_opts)
-    if not(reference_t_opt) and not(reference_bigT_opt): return "Converting to .cram. Need to pass reference-t or reference-T"
+    if not(reference_t_opt) and not(reference_bigT_opt): 
+        print("Converting to .cram. Need to pass reference-t or reference-T")
+        return
     opt_to_delete = "--reference-t" if reference_t_opt else "--reference-T"
     p1 = subprocess.Popen(cmd_list + [file_in, "/dev/stdout"] + remove_cmd_option(cmd_opts, opt_to_delete), bufsize=-1, stdout=subprocess.PIPE)
     t_opt = ["-t", reference_t_opt[1]] if reference_t_opt else ["-T", reference_bigT_opt[1]]
@@ -81,6 +83,7 @@ def cmd_wrap_output (cmd_list, file_in, file_out, cmd_opts):
     p2.communicate()
     if p2.returncode != 0: raise SystemExit, p2.returncode
   else:
+    print("else")
     ret = subprocess.call(cmd_list + [file_in, file_out] + cmd_opts)
     if ret != 0: raise SystemExit, ret
 
@@ -101,7 +104,9 @@ def cmd_wrap_io(cmd_list, file_in, file_out, cmd_opts):
     elif (output_extension == ".cram"):
       reference_t_opt = cmd_option("--reference-t", cmd_opts)
       reference_bigT_opt = cmd_option("--reference-T", cmd_opts)
-      if not(reference_t_opt) and not(reference_bigT_opt): return "Converting to .cram. Need to pass reference-t or reference-T"
+      if not(reference_t_opt) and not(reference_bigT_opt): 
+          print("Converting to .cram. Need to pass reference-t or reference-T")
+          return
       opt_to_delete = "--reference-t" if reference_t_opt else "--reference-T"
       p2 = subprocess.Popen(cmd_list + ["/dev/stdin", "/dev/stdout"] + remove_cmd_option(cmd_opts, opt_to_delete), bufsize=-1, stdin=p1.stdout, stdout=subprocess.PIPE)
       t_opt = ["-t", reference_t_opt[1]] if reference_t_opt else ["-T", reference_bigT_opt[1]]
@@ -121,7 +126,9 @@ def cmd_wrap_io(cmd_list, file_in, file_out, cmd_opts):
     elif (output_extension == ".cram"):
       reference_t_opt = cmd_option("--reference-t", cmd_opts)
       reference_bigT_opt = cmd_option("--reference-T", cmd_opts)
-      if not(reference_t_opt) and not(reference_bigT_opt): return "Converting to .cram. Need to pass reference-t or reference-T"
+      if not(reference_t_opt) and not(reference_bigT_opt): 
+          print("Converting to .cram. Need to pass reference-t or reference-T")
+          return
       opt_to_delete = "--reference-t" if reference_t_opt else "--reference-T"
       p1 = subprocess.Popen(cmd_list + [file_in, "/dev/stdout"] + remove_cmd_option(cmd_opts, opt_to_delete), bufsize=-1, stdout=subprocess.PIPE)
       t_opt = ["-t", reference_t_opt[1]] if reference_t_opt else ["-T", reference_bigT_opt[1]]
