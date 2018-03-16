@@ -83,7 +83,6 @@ def cmd_wrap_output (cmd_list, file_in, file_out, cmd_opts):
     p2.communicate()
     if p2.returncode != 0: raise SystemExit, p2.returncode
   else:
-    print("else")
     ret = subprocess.call(cmd_list + [file_in, file_out] + cmd_opts)
     if ret != 0: raise SystemExit, ret
 
