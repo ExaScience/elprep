@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/exascience/elprep/filters"
 	"github.com/exascience/elprep/sam"
 	"github.com/exascience/elprep/utils"
 )
@@ -82,7 +83,7 @@ func DeprecatedFilter() error {
 			os.Exit(0)
 		case "--replace-reference-sequences":
 			refSeqDict, _ = cmdLine.pop()
-			r, err := sam.ReplaceReferenceSequenceDictionaryFromSamFile(refSeqDict)
+			r, err := filters.ReplaceReferenceSequenceDictionaryFromSamFile(refSeqDict)
 			if err != nil {
 				return err
 			}
@@ -90,9 +91,9 @@ func DeprecatedFilter() error {
 		case "--filter-unmapped-reads":
 			if cmdLine.peek() == "strict" {
 				filterUnmappedArg, _ = cmdLine.pop()
-				removeUnmappedReadsFilter = sam.FilterUnmappedReadsStrict
+				removeUnmappedReadsFilter = filters.RemoveUnmappedReadsStrict
 			} else {
-				removeUnmappedReadsFilter = sam.FilterUnmappedReads
+				removeUnmappedReadsFilter = filters.RemoveUnmappedReads
 			}
 		case "--replace-read-group":
 			readGroupString, _ = cmdLine.pop()
@@ -100,13 +101,13 @@ func DeprecatedFilter() error {
 			if err != nil {
 				return err
 			}
-			replaceReadGroupFilter = sam.AddOrReplaceReadGroup(record)
+			replaceReadGroupFilter = filters.AddOrReplaceReadGroup(record)
 		case "--mark-duplicates":
 			markDuplicates = true
 			for {
 				if next := cmdLine.peek(); next == "remove" {
 					cmdLine.pop()
-					removeDuplicatesFilter = sam.FilterDuplicateReads
+					removeDuplicatesFilter = filters.RemoveDuplicateReads
 				} else if next == "deterministic" {
 					cmdLine.pop()
 					markDuplicatesDeterministic = true
@@ -114,13 +115,13 @@ func DeprecatedFilter() error {
 					break
 				}
 			}
-			markDuplicatesFilter = sam.MarkDuplicates(markDuplicatesDeterministic)
+			markDuplicatesFilter = filters.MarkDuplicates(markDuplicatesDeterministic)
 		case "--sorting-order":
 			if so := cmdLine.peek(); (so == "") || strings.Contains(so, "--") {
 				sortingOrder = sam.Keep
 			} else {
 				cmdLine.pop()
-				sortingOrder = so
+				sortingOrder = sam.SortingOrder(so)
 				switch sortingOrder {
 				case sam.Keep, sam.Unknown, sam.Unsorted, sam.Queryname, sam.Coordinate:
 				default:
@@ -130,7 +131,7 @@ func DeprecatedFilter() error {
 				}
 			}
 		case "--clean-sam":
-			cleanSamFilter = sam.CleanSam
+			cleanSamFilter = filters.CleanSam
 		case "--nr-of-threads":
 			sval, _ := cmdLine.pop()
 			if val, err := strconv.ParseInt(sval, 10, 64); err != nil {
@@ -177,7 +178,7 @@ func DeprecatedFilter() error {
 				referenceFasta, _ = cmdLine.pop()
 			}
 		case "--rename-chromosomes":
-			renameChromosomesFilter = sam.RenameChromosomes
+			renameChromosomesFilter = filters.RenameChromosomes
 		case "--split-file":
 			log.Println("Warning: The split-file option is not necessary anymore in this version of elPrep.")
 		default:
@@ -248,7 +249,7 @@ func DeprecatedFilter() error {
 		fmt.Fprint(&s, " --profile ", profile)
 	}
 	cmdString := s.String()
-	filters := appendIf([]sam.Filter{sam.AddPGLine(utils.StringMap{
+	filters1 := appendIf([]sam.Filter{filters.AddPGLine(utils.StringMap{
 		"ID": ProgramName + " " + ProgramVersion,
 		"PN": ProgramName,
 		"VN": ProgramVersion,
@@ -257,10 +258,10 @@ func DeprecatedFilter() error {
 	})}, removeUnmappedReadsFilter, renameChromosomesFilter, cleanSamFilter, replaceRefSeqDictFilter, replaceReadGroupFilter)
 	if (replaceRefSeqDictFilter != nil) || (markDuplicatesFilter != nil) ||
 		(sortingOrder == sam.Coordinate) || (sortingOrder == sam.Queryname) {
-		filters = append(filters, sam.AddREFID)
+		filters1 = append(filters1, filters.AddREFID)
 	}
-	filters = appendIf(filters, markDuplicatesFilter)
-	filters = append(filters, sam.FilterOptionalReads)
+	filters1 = appendIf(filters1, markDuplicatesFilter)
+	filters1 = append(filters1, filters.RemoveOptionalReads)
 	var filters2 []sam.Filter
 	if removeDuplicatesFilter != nil {
 		filters2 = append(filters2, removeDuplicatesFilter)
@@ -268,7 +269,7 @@ func DeprecatedFilter() error {
 	log.Println("Executing command:\n", cmdString)
 	if markDuplicates || (sortingOrder == sam.Coordinate) || (sortingOrder == sam.Queryname) ||
 		((replaceRefSeqDictFilter != nil) && (sortingOrder == sam.Keep)) {
-		return runBestPracticesPipelineIntermediateSam(filenames[0], filenames[1], referenceFai, referenceFasta, sortingOrder, filters, filters2, timed, profile)
+		return runBestPracticesPipelineIntermediateSam(filenames[0], filenames[1], referenceFai, referenceFasta, sortingOrder, filters1, filters2, timed, profile)
 	}
-	return runBestPracticesPipeline(filenames[0], filenames[1], referenceFai, referenceFasta, sortingOrder, filters, timed, profile)
+	return runBestPracticesPipeline(filenames[0], filenames[1], referenceFai, referenceFasta, sortingOrder, filters1, timed, profile)
 }

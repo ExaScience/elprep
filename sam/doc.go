@@ -1,6 +1,7 @@
-// Package sam is a library for efficiently executing sequencing
-// pipelines on .sam/.bam/.cram files, taking advantage of modern
-// multi-core processors.
+// Package sam is a library for parsing and representing SAM files,
+// and for efficiently executing sequencing pipelines on
+// .sam/.bam/.cram files, taking advantage of modern multi-core
+// processors.
 //
 // Modifications to headers and alignments are expressed as
 // filters. The library comes with a number of commonly used

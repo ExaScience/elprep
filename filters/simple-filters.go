@@ -1,4 +1,4 @@
-package sam
+package filters
 
 import (
 	"log"
@@ -8,14 +8,15 @@ import (
 	"strings"
 
 	"github.com/exascience/elprep/bed"
+	"github.com/exascience/elprep/sam"
 	"github.com/exascience/elprep/utils"
 )
 
 // ReplaceReferenceSequenceDictionary returns a filter for replacing
 // the reference sequence dictionary in a Header.
-func ReplaceReferenceSequenceDictionary(dict []utils.StringMap) Filter {
-	return func(header *Header) AlignmentFilter {
-		if sortingOrder := header.HD["SO"]; sortingOrder == Coordinate {
+func ReplaceReferenceSequenceDictionary(dict []utils.StringMap) sam.Filter {
+	return func(header *sam.Header) sam.AlignmentFilter {
+		if sortingOrder := sam.SortingOrder(header.HD["SO"]); sortingOrder == sam.Coordinate {
 			previousPos := -1
 			oldDict := header.SQ
 			for _, entry := range dict {
@@ -25,7 +26,7 @@ func ReplaceReferenceSequenceDictionary(dict []utils.StringMap) Filter {
 					if pos > previousPos {
 						previousPos = pos
 					} else {
-						header.SetHDSO(Unknown)
+						header.SetHDSO(sam.Unknown)
 						break
 					}
 				}
@@ -36,15 +37,15 @@ func ReplaceReferenceSequenceDictionary(dict []utils.StringMap) Filter {
 			dictTable[entry["SN"]] = true
 		}
 		header.SQ = dict
-		return func(aln *Alignment) bool { return dictTable[aln.RNAME] }
+		return func(aln *sam.Alignment) bool { return dictTable[aln.RNAME] }
 	}
 }
 
 // ReplaceReferenceSequenceDictionaryFromSamFile returns a filter for
 // replacing the reference sequence dictionary in a Header with one
 // parsed from the given SAM/DICT file.
-func ReplaceReferenceSequenceDictionaryFromSamFile(samFile string) (f Filter, err error) {
-	input, err := Open(samFile, true)
+func ReplaceReferenceSequenceDictionaryFromSamFile(samFile string) (f sam.Filter, err error) {
+	input, err := sam.Open(samFile, true)
 	if err != nil {
 		return nil, err
 	}
@@ -54,32 +55,32 @@ func ReplaceReferenceSequenceDictionaryFromSamFile(samFile string) (f Filter, er
 			err = nerr
 		}
 	}()
-	header, _, err := ParseHeader(input.Reader)
+	header, _, err := sam.ParseHeader(input.Reader)
 	if err != nil {
 		return nil, err
 	}
 	return ReplaceReferenceSequenceDictionary(header.SQ), nil
 }
 
-// FilterUnmappedReads is a filter for removing unmapped sam-alignment
+// RemoveUnmappedReads is a filter for removing unmapped sam-alignment
 // instances, based on FLAG.
-func FilterUnmappedReads(_ *Header) AlignmentFilter {
-	return func(aln *Alignment) bool { return (aln.FLAG & Unmapped) == 0 }
+func RemoveUnmappedReads(_ *sam.Header) sam.AlignmentFilter {
+	return func(aln *sam.Alignment) bool { return (aln.FLAG & sam.Unmapped) == 0 }
 }
 
-// FilterUnmappedReadsStrict is a filter for removing unmapped
+// RemoveUnmappedReadsStrict is a filter for removing unmapped
 // sam-alignment instances, based on FLAG, or POS=0, or RNAME=*.
-func FilterUnmappedReadsStrict(_ *Header) AlignmentFilter {
-	return func(aln *Alignment) bool {
-		return ((aln.FLAG & Unmapped) == 0) && (aln.POS != 0) && (aln.RNAME != "*")
+func RemoveUnmappedReadsStrict(_ *sam.Header) sam.AlignmentFilter {
+	return func(aln *sam.Alignment) bool {
+		return ((aln.FLAG & sam.Unmapped) == 0) && (aln.POS != 0) && (aln.RNAME != "*")
 	}
 }
 
-// FilterNonExactMappingReads is a filter that removes all reads that
+// RemoveNonExactMappingReads is a filter that removes all reads that
 // are not exact matches with the reference (soft-clipping ok), based
 // on CIGAR string (only M and S allowed).
-func FilterNonExactMappingReads(_ *Header) AlignmentFilter {
-	return func(aln *Alignment) bool { return !strings.ContainsAny(aln.CIGAR, "IDNHPX=") }
+func RemoveNonExactMappingReads(_ *sam.Header) sam.AlignmentFilter {
+	return func(aln *sam.Alignment) bool { return !strings.ContainsAny(aln.CIGAR, "IDNHPX=") }
 }
 
 // Symbols for optional fields used for determining exact matches. See
@@ -92,12 +93,12 @@ var (
 	XG = utils.Intern("XG")
 )
 
-// FilterNonExactMappingReadsStrict is a filter that removes all reads
+// RemoveNonExactMappingReadsStrict is a filter that removes all reads
 // that are not exact matches with the reference, based on the
 // optional fields X0=1 (unique mapping), X1=0 (no suboptimal hit),
 // XM=0 (no mismatch), XO=0 (no gap opening), XG=0 (no gap extension).
-func FilterNonExactMappingReadsStrict(header *Header) AlignmentFilter {
-	return func(aln *Alignment) bool {
+func RemoveNonExactMappingReadsStrict(header *sam.Header) sam.AlignmentFilter {
+	return func(aln *sam.Alignment) bool {
 		if x0, ok := aln.TAGS.Get(X0); !ok || x0.(int32) != 1 {
 			return false
 		}
@@ -117,38 +118,38 @@ func FilterNonExactMappingReadsStrict(header *Header) AlignmentFilter {
 	}
 }
 
-// FilterDuplicateReads is a filter for removing duplicate
+// RemoveDuplicateReads is a filter for removing duplicate
 // sam-alignment instances, based on FLAG.
-func FilterDuplicateReads(_ *Header) AlignmentFilter {
-	return func(aln *Alignment) bool { return (aln.FLAG & Duplicate) == 0 }
+func RemoveDuplicateReads(_ *sam.Header) sam.AlignmentFilter {
+	return func(aln *sam.Alignment) bool { return (aln.FLAG & sam.Duplicate) == 0 }
 }
 
 var sr = utils.Intern("sr")
 
-// FilterOptionalReads is a filter for removing alignments that
+// RemoveOptionalReads is a filter for removing alignments that
 // represent optional information in elPrep.
-func FilterOptionalReads(header *Header) AlignmentFilter {
+func RemoveOptionalReads(header *sam.Header) sam.AlignmentFilter {
 	if _, found := header.UserRecords["@sr"]; found {
 		delete(header.UserRecords, "@sr")
-		return func(aln *Alignment) bool { _, found := aln.TAGS.Get(sr); return !found }
+		return func(aln *sam.Alignment) bool { _, found := aln.TAGS.Get(sr); return !found }
 	}
 	return nil
 }
 
 // AddOrReplaceReadGroup returns a filter for adding or replacing the
 // read group both in the Header and in each Alignment.
-func AddOrReplaceReadGroup(readGroup utils.StringMap) Filter {
-	return func(header *Header) AlignmentFilter {
+func AddOrReplaceReadGroup(readGroup utils.StringMap) sam.Filter {
+	return func(header *sam.Header) sam.AlignmentFilter {
 		header.RG = []utils.StringMap{readGroup}
 		id := readGroup["ID"]
-		return func(aln *Alignment) bool { aln.SetRG(id); return true }
+		return func(aln *sam.Alignment) bool { aln.SetRG(id); return true }
 	}
 }
 
 // AddPGLine returns a filter for adding a @PG tag to a Header, and
 // ensuring that it is the first one in the chain.
-func AddPGLine(newPG utils.StringMap) Filter {
-	return func(header *Header) AlignmentFilter {
+func AddPGLine(newPG utils.StringMap) sam.Filter {
+	return func(header *sam.Header) sam.AlignmentFilter {
 		id := newPG["ID"]
 		for utils.Find(header.PG, func(entry utils.StringMap) bool { return entry["ID"] == id }) >= 0 {
 			id += " "
@@ -170,13 +171,13 @@ func AddPGLine(newPG utils.StringMap) Filter {
 // RenameChromosomes is a filter for prepending "chr" to the reference
 // sequence names in a Header, and in RNAME and RNEXT in each
 // Alignment.
-func RenameChromosomes(header *Header) AlignmentFilter {
+func RenameChromosomes(header *sam.Header) sam.AlignmentFilter {
 	for _, entry := range header.SQ {
 		if sn, found := entry["SN"]; found {
 			entry["SN"] = "chr" + sn
 		}
 	}
-	return func(aln *Alignment) bool {
+	return func(aln *sam.Alignment) bool {
 		if (aln.RNAME != "=") && (aln.RNAME != "*") {
 			aln.RNAME = "chr" + aln.RNAME
 		}
@@ -189,12 +190,12 @@ func RenameChromosomes(header *Header) AlignmentFilter {
 
 // AddREFID is a filter for adding the refid (index in the reference
 // sequence dictionary) to alignments as temporary values.
-func AddREFID(header *Header) AlignmentFilter {
+func AddREFID(header *sam.Header) sam.AlignmentFilter {
 	dictTable := make(map[string]int32)
 	for index, entry := range header.SQ {
 		dictTable[entry["SN"]] = int32(index)
 	}
-	return func(aln *Alignment) bool {
+	return func(aln *sam.Alignment) bool {
 		value, found := dictTable[aln.RNAME]
 		if !found {
 			value = -1
@@ -206,7 +207,7 @@ func AddREFID(header *Header) AlignmentFilter {
 
 // RemoveOptionalFields returns a filter for removing optional fields
 // in an alignment.
-func RemoveOptionalFields(tags []string) Filter {
+func RemoveOptionalFields(tags []string) sam.Filter {
 	if len(tags) == 0 {
 		return nil
 	}
@@ -215,8 +216,8 @@ func RemoveOptionalFields(tags []string) Filter {
 	for _, tag := range tags {
 		optionals = append(optionals, utils.Intern(tag))
 	}
-	return func(header *Header) AlignmentFilter {
-		return func(aln *Alignment) bool {
+	return func(header *sam.Header) sam.AlignmentFilter {
+		return func(aln *sam.Alignment) bool {
 			aln.TAGS, _ = aln.TAGS.DeleteIf(func(key utils.Symbol, val interface{}) bool {
 				for _, tag := range optionals {
 					if tag == key {
@@ -232,10 +233,10 @@ func RemoveOptionalFields(tags []string) Filter {
 
 // KeepOptionalFields returns a filter for removing all but a list of
 // given optional fields in an alignment.
-func KeepOptionalFields(tags []string) Filter {
+func KeepOptionalFields(tags []string) sam.Filter {
 	if len(tags) == 0 {
-		return func(header *Header) AlignmentFilter {
-			return func(aln *Alignment) bool {
+		return func(header *sam.Header) sam.AlignmentFilter {
+			return func(aln *sam.Alignment) bool {
 				aln.TAGS = nil
 				return true
 			}
@@ -246,8 +247,8 @@ func KeepOptionalFields(tags []string) Filter {
 	for _, tag := range tags {
 		optionals = append(optionals, utils.Intern(tag))
 	}
-	return func(header *Header) AlignmentFilter {
-		return func(aln *Alignment) bool {
+	return func(header *sam.Header) sam.AlignmentFilter {
+		return func(aln *sam.Alignment) bool {
 			aln.TAGS, _ = aln.TAGS.DeleteIf(func(key utils.Symbol, val interface{}) bool {
 				for _, tag := range optionals {
 					if tag == key {
@@ -263,15 +264,15 @@ func KeepOptionalFields(tags []string) Filter {
 
 // CleanSam is a filter for soft-clipping an alignment at the end of a
 // reference sequence, and set MAPQ to 0 if unmapped.
-func CleanSam(header *Header) AlignmentFilter {
+func CleanSam(header *sam.Header) sam.AlignmentFilter {
 	referenceSequenceTable := make(map[string]int32)
 	for _, sn := range header.SQ {
-		referenceSequenceTable[sn["SN"]], _ = SQLN(sn)
+		referenceSequenceTable[sn["SN"]], _ = sam.SQLN(sn)
 	}
-	return func(aln *Alignment) bool {
+	return func(aln *sam.Alignment) bool {
 		if aln.IsUnmapped() {
 			aln.MAPQ = 0
-		} else if cigar, err := ScanCigarString(aln.CIGAR); err != nil {
+		} else if cigar, err := sam.ScanCigarString(aln.CIGAR); err != nil {
 			log.Fatal(err, ", while scanning a CIGAR string for ", aln.QNAME, " in CleanSam")
 		} else if length := referenceSequenceTable[aln.RNAME]; end(aln, cigar) > length {
 			clipFrom := length - aln.POS + 1
@@ -281,13 +282,13 @@ func CleanSam(header *Header) AlignmentFilter {
 	}
 }
 
-// FilterNonOverlappingReads returns a filter for removing all reads
+// RemoveNonOverlappingReads returns a filter for removing all reads
 // that do not overlap with a set of regions specified by a bed file.
-func FilterNonOverlappingReads(bed *bed.Bed) Filter {
-	return func(header *Header) AlignmentFilter {
-		return func(aln *Alignment) bool {
+func RemoveNonOverlappingReads(bed *bed.Bed) sam.Filter {
+	return func(header *sam.Header) sam.AlignmentFilter {
+		return func(aln *sam.Alignment) bool {
 			alnStart := aln.POS
-			cigar, err := ScanCigarString(aln.CIGAR)
+			cigar, err := sam.ScanCigarString(aln.CIGAR)
 			if err != nil {
 				log.Fatal(err, ", while scanning a CIGAR string for", aln.QNAME, " in FilterNonOverlappingReads")
 			}
@@ -317,21 +318,21 @@ func FilterNonOverlappingReads(bed *bed.Bed) Filter {
 	}
 }
 
-// FilterMappingQuality is a filter for removing reads that do not
-// match or exceed the given mapping quality.
-func FilterMappingQuality(mq int) Filter {
+// RemoveMappingQualityLessThan is a filter for removing reads
+// that do not match or exceed the given mapping quality.
+func RemoveMappingQualityLessThan(mq int) sam.Filter {
 	if mq == 0 {
 		return nil // no need to add any filter because aln.MAPQ is always >= 0
 	}
 	if mq > math.MaxUint8 {
-		return func(_ *Header) AlignmentFilter {
-			return func(_ *Alignment) bool {
+		return func(_ *sam.Header) sam.AlignmentFilter {
+			return func(_ *sam.Alignment) bool {
 				return false // no aln.MAPQ can be > math.MaxUint8
 			}
 		}
 	}
 	mapq := byte(mq)
-	return func(_ *Header) AlignmentFilter {
-		return func(aln *Alignment) bool { return aln.MAPQ >= mapq }
+	return func(_ *sam.Header) sam.AlignmentFilter {
+		return func(aln *sam.Alignment) bool { return aln.MAPQ >= mapq }
 	}
 }

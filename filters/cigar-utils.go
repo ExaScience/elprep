@@ -1,17 +1,18 @@
-package sam
+package filters
 
 import (
 	"log"
 	"strconv"
 
 	"github.com/exascience/elprep/internal"
+	"github.com/exascience/elprep/sam"
 )
 
 var cigarConsumesReferenceBases = map[byte]int32{'M': 1, 'D': 1, 'N': 1, '=': 1, 'X': 1}
 
 // Sums the lengths of all CIGAR operations that consume reference
 // bases.
-func end(aln *Alignment, cigars []CigarOperation) int32 {
+func end(aln *sam.Alignment, cigars []sam.CigarOperation) int32 {
 	var length int32
 	for _, op := range cigars {
 		length += cigarConsumesReferenceBases[op.Operation] * op.Length
@@ -38,7 +39,7 @@ func operatorConsumesReferenceBases(operator byte) bool {
 }
 
 // Sums the lengths of all CIGAR operations that consume read bases.
-func readLengthFromCigar(cigars []CigarOperation) int32 {
+func readLengthFromCigar(cigars []sam.CigarOperation) int32 {
 	var length int32
 	for _, op := range cigars {
 		if operatorConsumesReadBases(op.Operation) {
@@ -63,7 +64,7 @@ func elementStradlessClippedRead(newCigar []byte, operator byte, relativeClippin
 	return strconv.AppendInt(append(newCigar, 'S'), int64(clippedBases), 10)
 }
 
-func softClipEndOfRead(clipFrom int32, cigars []CigarOperation) string {
+func softClipEndOfRead(clipFrom int32, cigars []sam.CigarOperation) string {
 	var pos int32
 	clipFrom--
 	newCigar := internal.ReserveByteBuffer()

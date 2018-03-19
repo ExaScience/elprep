@@ -59,20 +59,34 @@ type Header struct {
 	UserRecords map[string][]utils.StringMap
 }
 
+type (
+	// SortingOrder represents the possible values for the SO tag stored
+	// in the @HD line of a header.  See
+	// http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3, Tag
+	// @HD.
+	SortingOrder string
+
+	// GroupingOrder represents the possible values for the GO tag stored
+	// in the @HD line of a header.  See
+	// http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3, Tag
+	// @HD.
+	GroupingOrder string
+)
+
 // Sorting orders.
 const (
-	Keep       = "keep"
-	Unknown    = "unknown"
-	Unsorted   = "unsorted"
-	Queryname  = "queryname"
-	Coordinate = "coordinate"
+	Keep       SortingOrder = "keep"
+	Unknown    SortingOrder = "unknown"
+	Unsorted   SortingOrder = "unsorted"
+	Queryname  SortingOrder = "queryname"
+	Coordinate SortingOrder = "coordinate"
 )
 
 // Grouping orders.
 const (
-	None      = "none"
-	Query     = "query"
-	Reference = "reference"
+	None      GroupingOrder = "none"
+	Query     GroupingOrder = "query"
+	Reference GroupingOrder = "reference"
 )
 
 // SQLN returns he LN field value, assuming that the given record
@@ -124,10 +138,10 @@ func (hdr *Header) EnsureHD() utils.StringMap {
 //
 // If there is no @HD line, or the SO field is not set, returns
 // "unknown".
-func (hdr *Header) HDSO() string {
+func (hdr *Header) HDSO() SortingOrder {
 	hd := hdr.EnsureHD()
 	if sortingOrder, found := hd["SO"]; found {
-		return sortingOrder
+		return SortingOrder(sortingOrder)
 	}
 	return Unknown
 }
@@ -137,10 +151,10 @@ func (hdr *Header) HDSO() string {
 // Section 1.3, Tag @HD.
 //
 // This also deletes the value for the GO field if it is set.
-func (hdr *Header) SetHDSO(value string) {
+func (hdr *Header) SetHDSO(value SortingOrder) {
 	hd := hdr.EnsureHD()
 	delete(hd, "GO")
-	hd["SO"] = value
+	hd["SO"] = string(value)
 }
 
 // HDGO returns the grouping order (GO) stored in the @HD line of the
@@ -149,10 +163,10 @@ func (hdr *Header) SetHDSO(value string) {
 //
 // If there is no @HD line, or the GO field is not set, returns
 // "none".
-func (hdr *Header) HDGO() string {
+func (hdr *Header) HDGO() GroupingOrder {
 	hd := hdr.EnsureHD()
 	if groupingOrder, found := hd["GO"]; found {
-		return groupingOrder
+		return GroupingOrder(groupingOrder)
 	}
 	return None
 }
@@ -162,10 +176,10 @@ func (hdr *Header) HDGO() string {
 // Section 1.3, Tag @HD.
 //
 // This also deletes the value for the SO field if it is set.
-func (hdr *Header) SetHDGO(value string) {
+func (hdr *Header) SetHDGO(value GroupingOrder) {
 	hd := hdr.EnsureHD()
 	delete(hd, "SO")
-	hd["GO"] = value
+	hd["GO"] = string(value)
 }
 
 // EnsureUserRecords ensures that a map for user-defined @ tags exists

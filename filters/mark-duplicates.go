@@ -1,4 +1,4 @@
-package sam
+package filters
 
 import (
 	"log"
@@ -9,6 +9,7 @@ import (
 	"github.com/exascience/pargo/sync"
 
 	"github.com/exascience/elprep/internal"
+	"github.com/exascience/elprep/sam"
 	"github.com/exascience/elprep/utils"
 )
 
@@ -34,8 +35,8 @@ func init() {
 	}
 }
 
-// ComputePhredScore sums the adapted Phred qualities of an alignment.
-func (aln *Alignment) ComputePhredScore() (score int32) {
+// computePhredScore sums the adapted Phred qualities of an alignment.
+func computePhredScore(aln *sam.Alignment) (score int32) {
 	var error int32
 	for _, char := range aln.QUAL {
 		pos := char << 1
@@ -55,12 +56,12 @@ var (
 	referenceTable = map[byte]byte{'M': 1, 'D': 1, 'N': 1, '=': 1, 'X': 1}
 )
 
-// ComputeUnclippedPosition determines the unclipped position of an
+// computeUnclippedPosition determines the unclipped position of an
 // alignment, based on its FLAG, POS, and CIGAR string.
-func (aln *Alignment) ComputeUnclippedPosition() (result int32) {
-	cigar, err := ScanCigarString(aln.CIGAR)
+func computeUnclippedPosition(aln *sam.Alignment) (result int32) {
+	cigar, err := sam.ScanCigarString(aln.CIGAR)
 	if err != nil {
-		log.Fatal(err, ", while scanning CIGAR string for ", aln.QNAME, " in ComputeUnclippedPosition")
+		log.Fatal(err, ", while scanning CIGAR string for ", aln.QNAME, " in computeUnclippedPosition")
 	}
 
 	result = aln.POS
@@ -98,7 +99,7 @@ var (
 	score = utils.Intern("score")
 )
 
-func adaptedPos(aln *Alignment) int32 {
+func adaptedPos(aln *sam.Alignment) int32 {
 	p, ok := aln.Temps.Get(pos)
 	if !ok {
 		log.Fatal("Unclipped position not present in SAM alignment ", aln.QNAME)
@@ -106,11 +107,11 @@ func adaptedPos(aln *Alignment) int32 {
 	return p.(int32)
 }
 
-func setAdaptedPos(aln *Alignment, p int32) {
+func setAdaptedPos(aln *sam.Alignment, p int32) {
 	aln.Temps.Set(pos, p)
 }
 
-func adaptedScore(aln *Alignment) int32 {
+func adaptedScore(aln *sam.Alignment) int32 {
 	s, ok := aln.Temps.Get(score)
 	if !ok {
 		log.Fatal("Phred score not present in SAM alignment ", aln.QNAME)
@@ -118,13 +119,13 @@ func adaptedScore(aln *Alignment) int32 {
 	return s.(int32)
 }
 
-func setAdaptedScore(aln *Alignment, s int32) {
+func setAdaptedScore(aln *sam.Alignment, s int32) {
 	aln.Temps.Set(score, s)
 }
 
 // Adapt the sam-alignment: Fill in library id; fill in unclipped
 // position; fill in Phred score.
-func adaptAlignment(aln *Alignment, lbTable map[string]string) {
+func adaptAlignment(aln *sam.Alignment, lbTable map[string]string) {
 	rg := aln.RG()
 	if rg != nil {
 		lb, lbFound := lbTable[rg.(string)]
@@ -132,8 +133,8 @@ func adaptAlignment(aln *Alignment, lbTable map[string]string) {
 			aln.SetLIBID(lb)
 		}
 	}
-	setAdaptedPos(aln, aln.ComputeUnclippedPosition())
-	setAdaptedScore(aln, aln.ComputePhredScore())
+	setAdaptedPos(aln, computeUnclippedPosition(aln))
+	setAdaptedScore(aln, computePhredScore(aln))
 }
 
 // A handle wraps pointers in a box to enable using
@@ -142,26 +143,26 @@ type handle struct {
 	object unsafe.Pointer
 }
 
-func newAlignmentHandle(aln *Alignment) *handle {
+func newAlignmentHandle(aln *sam.Alignment) *handle {
 	return &handle{unsafe.Pointer(aln)}
 }
 
-func (h *handle) alignment() *Alignment {
-	return (*Alignment)(h.object)
+func (h *handle) alignment() *sam.Alignment {
+	return (*sam.Alignment)(h.object)
 }
 
-func (h *handle) compareAndSwapAlignment(old, new *Alignment) bool {
+func (h *handle) compareAndSwapAlignment(old, new *sam.Alignment) bool {
 	return atomic.CompareAndSwapPointer(&h.object, unsafe.Pointer(old), unsafe.Pointer(new))
 }
 
 // Is this alignment definitely not part of a pair?
-func isTrueFragment(aln *Alignment) bool {
-	return (aln.FLAG & (Multiple | NextUnmapped)) != Multiple
+func isTrueFragment(aln *sam.Alignment) bool {
+	return (aln.FLAG & (sam.Multiple | sam.NextUnmapped)) != sam.Multiple
 }
 
 // Is this alignment definitely part of pair?
-func isTruePair(aln *Alignment) bool {
-	return (aln.FLAG & (Multiple | NextUnmapped)) == Multiple
+func isTruePair(aln *sam.Alignment) bool {
+	return (aln.FLAG & (sam.Multiple | sam.NextUnmapped)) == sam.Multiple
 }
 
 // The portion of an alignment that indicates its unclipped position
@@ -190,7 +191,7 @@ func (f fragment) Hash() (hash uint64) {
 // true, all except the one with the lexicographically smallest QNAME
 // are marked as duplicates.  If deterministic is false, the choice
 // which of the tied fragments are marked as duplicates is random.
-func classifyFragment(aln *Alignment, fragments *sync.Map, deterministic bool) {
+func classifyFragment(aln *sam.Alignment, fragments *sync.Map, deterministic bool) {
 	entry, found := fragments.LoadOrStore(fragment{
 		aln.LIBID(),
 		aln.REFID(),
@@ -206,26 +207,26 @@ func classifyFragment(aln *Alignment, fragments *sync.Map, deterministic bool) {
 		alnScore := adaptedScore(aln)
 		for {
 			if bestAln := best.alignment(); isTruePair(bestAln) {
-				aln.FLAG |= Duplicate
+				aln.FLAG |= sam.Duplicate
 				break
 			} else if bestAlnScore := adaptedScore(bestAln); bestAlnScore > alnScore {
-				aln.FLAG |= Duplicate
+				aln.FLAG |= sam.Duplicate
 				break
 			} else if bestAlnScore == alnScore {
 				if deterministic {
 					if aln.QNAME > bestAln.QNAME {
-						aln.FLAG |= Duplicate
+						aln.FLAG |= sam.Duplicate
 						break
 					} else if best.compareAndSwapAlignment(bestAln, aln) {
-						bestAln.FLAG |= Duplicate
+						bestAln.FLAG |= sam.Duplicate
 						break
 					}
 				} else {
-					aln.FLAG |= Duplicate
+					aln.FLAG |= sam.Duplicate
 					break
 				}
 			} else if best.compareAndSwapAlignment(bestAln, aln) {
-				bestAln.FLAG |= Duplicate
+				bestAln.FLAG |= sam.Duplicate
 				break
 			}
 		}
@@ -234,7 +235,7 @@ func classifyFragment(aln *Alignment, fragments *sync.Map, deterministic bool) {
 			if bestAln := best.alignment(); isTruePair(bestAln) {
 				break
 			} else if best.compareAndSwapAlignment(bestAln, aln) {
-				bestAln.FLAG |= Duplicate
+				bestAln.FLAG |= sam.Duplicate
 				break
 			}
 		}
@@ -272,10 +273,10 @@ func (p pair) Hash() (hash uint64) {
 
 type samAlignmentPair struct {
 	score      int32
-	aln1, aln2 *Alignment
+	aln1, aln2 *sam.Alignment
 }
 
-func newPairHandle(score int32, aln1, aln2 *Alignment) *handle {
+func newPairHandle(score int32, aln1, aln2 *sam.Alignment) *handle {
 	return &handle{unsafe.Pointer(&samAlignmentPair{score, aln1, aln2})}
 }
 
@@ -295,15 +296,15 @@ func (h *handle) compareAndSwapPair(old, new *samAlignmentPair) bool {
 // true, all except the one with the lexicographically smallest QNAME
 // are marked as duplicates.  If deterministic is false, the choice
 // which of the tied pairs are marked as duplicates is random.
-func classifyPair(aln *Alignment, fragments, pairs *sync.Map, deterministic bool) {
+func classifyPair(aln *sam.Alignment, fragments, pairs *sync.Map, deterministic bool) {
 	if !isTruePair(aln) {
 		return
 	}
 
 	aln1 := aln
-	var aln2 *Alignment
+	var aln2 *sam.Alignment
 	if entry, deleted := fragments.DeleteOrStore(pairFragment{aln.LIBID(), aln.QNAME}, aln); deleted {
-		aln2 = entry.(*Alignment)
+		aln2 = entry.(*sam.Alignment)
 	} else {
 		return
 	}
@@ -338,28 +339,28 @@ func classifyPair(aln *Alignment, fragments, pairs *sync.Map, deterministic bool
 
 	for {
 		if bestPair := best.pair(); bestPair.score > score {
-			aln1.FLAG |= Duplicate
-			aln2.FLAG |= Duplicate
+			aln1.FLAG |= sam.Duplicate
+			aln2.FLAG |= sam.Duplicate
 			break
 		} else if bestPair.score == score {
 			if deterministic {
 				if aln1.QNAME > bestPair.aln1.QNAME {
-					aln1.FLAG |= Duplicate
-					aln2.FLAG |= Duplicate
+					aln1.FLAG |= sam.Duplicate
+					aln2.FLAG |= sam.Duplicate
 					break
 				} else if best.compareAndSwapPair(bestPair, newPair()) {
-					bestPair.aln1.FLAG |= Duplicate
-					bestPair.aln2.FLAG |= Duplicate
+					bestPair.aln1.FLAG |= sam.Duplicate
+					bestPair.aln2.FLAG |= sam.Duplicate
 					break
 				}
 			} else {
-				aln1.FLAG |= Duplicate
-				aln2.FLAG |= Duplicate
+				aln1.FLAG |= sam.Duplicate
+				aln2.FLAG |= sam.Duplicate
 				break
 			}
 		} else if best.compareAndSwapPair(bestPair, newPair()) {
-			bestPair.aln1.FLAG |= Duplicate
-			bestPair.aln2.FLAG |= Duplicate
+			bestPair.aln1.FLAG |= sam.Duplicate
+			bestPair.aln2.FLAG |= sam.Duplicate
 			break
 		}
 	}
@@ -373,8 +374,8 @@ func classifyPair(aln *Alignment, fragments, pairs *sync.Map, deterministic bool
 // ties, if deterministic is true, the QNAME is used as a
 // tie-breaker. Otherwise duplicate marking is random for alignments
 // tied for best score.
-func MarkDuplicates(deterministic bool) Filter {
-	return func(header *Header) AlignmentFilter {
+func MarkDuplicates(deterministic bool) sam.Filter {
+	return func(header *sam.Header) sam.AlignmentFilter {
 		splits := 16 * runtime.GOMAXPROCS(0)
 		fragments := sync.NewMap(splits)
 		pairsFragments := sync.NewMap(splits)
@@ -391,8 +392,8 @@ func MarkDuplicates(deterministic bool) Filter {
 				lbTable[id] = lb
 			}
 		}
-		return func(aln *Alignment) bool {
-			if aln.FlagNotAny(Unmapped | Secondary | Duplicate | Supplementary) {
+		return func(aln *sam.Alignment) bool {
+			if aln.FlagNotAny(sam.Unmapped | sam.Secondary | sam.Duplicate | sam.Supplementary) {
 				adaptAlignment(aln, lbTable)
 				classifyFragment(aln, fragments, deterministic)
 				classifyPair(aln, pairsFragments, pairs, deterministic)

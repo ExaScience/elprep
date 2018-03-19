@@ -29,7 +29,7 @@ type (
 	// such a sort. Any error should be reported to the pipeline by
 	// calling p.Err(err) with a non-nil error value.
 	PipelineOutput interface {
-		AddNodes(p *pipeline.Pipeline, header *Header, sortingOrder string)
+		AddNodes(p *pipeline.Pipeline, header *Header, sortingOrder SortingOrder)
 	}
 
 	// A PipelineInput arranges for a pargo pipeline to be properly
@@ -38,7 +38,7 @@ type (
 	// RunPipeline doesn't encounter an error of its own, it should
 	// return the error of its pargo pipeline, if any.
 	PipelineInput interface {
-		RunPipeline(output PipelineOutput, filters []Filter, sortingOrder string) error
+		RunPipeline(output PipelineOutput, filters []Filter, sortingOrder SortingOrder) error
 	}
 )
 
@@ -93,7 +93,7 @@ func StringToAlignment(p *pipeline.Pipeline, _ pipeline.NodeKind, _ *int) (recei
 
 // AddNodes implements the PipelineOutput interface for Sam values to
 // represent complete SAM files in memory.
-func (sam *Sam) AddNodes(p *pipeline.Pipeline, header *Header, sortingOrder string) {
+func (sam *Sam) AddNodes(p *pipeline.Pipeline, header *Header, sortingOrder SortingOrder) {
 	sam.Header = header
 	switch sortingOrder {
 	case Keep, Unknown:
@@ -117,7 +117,7 @@ func (sam *Sam) AddNodes(p *pipeline.Pipeline, header *Header, sortingOrder stri
 
 // AddNodes implements the PipelineOutput interface for Writer values
 // to produce output in the SAM file format.
-func (output *Writer) AddNodes(p *pipeline.Pipeline, header *Header, sortingOrder string) {
+func (output *Writer) AddNodes(p *pipeline.Pipeline, header *Header, sortingOrder SortingOrder) {
 	writer := (*bufio.Writer)(output)
 	if err := header.Format(writer); err != nil {
 		p.SetErr(fmt.Errorf("%v, while writing a SAM header to output", err))
@@ -202,7 +202,7 @@ func ComposeFilters(header *Header, hdrFilters []Filter) (receiver pipeline.Rece
 // Coordinate or Queryname, and the current sorting order already
 // fulfills it, then we can just return Keep to avoid any additional
 // sorting.
-func effectiveSortingOrder(sortingOrder string, header *Header, originalSortingOrder string) string {
+func effectiveSortingOrder(sortingOrder SortingOrder, header *Header, originalSortingOrder SortingOrder) SortingOrder {
 	if sortingOrder == Keep {
 		sortingOrder = originalSortingOrder
 	}
@@ -223,7 +223,7 @@ func effectiveSortingOrder(sortingOrder string, header *Header, originalSortingO
 
 // RunPipeline implements the PipelineInput interface for Sam values
 // that represent complete SAM files in memory.
-func (sam *Sam) RunPipeline(output PipelineOutput, hdrFilters []Filter, sortingOrder string) error {
+func (sam *Sam) RunPipeline(output PipelineOutput, hdrFilters []Filter, sortingOrder SortingOrder) error {
 	header := sam.Header
 	alns := sam.Alignments
 	sam.Header = NewHeader()
@@ -262,7 +262,7 @@ func (sam *Sam) RunPipeline(output PipelineOutput, hdrFilters []Filter, sortingO
 
 // RunPipeline implements the PipelineInput interface for Reader
 // values that produce input in the SAM file format.
-func (input *Reader) RunPipeline(output PipelineOutput, hdrFilters []Filter, sortingOrder string) error {
+func (input *Reader) RunPipeline(output PipelineOutput, hdrFilters []Filter, sortingOrder SortingOrder) error {
 	reader := (*bufio.Reader)(input)
 	header, _, err := ParseHeader(reader)
 	if err != nil {

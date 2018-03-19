@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/exascience/elprep/bed"
+	"github.com/exascience/elprep/filters"
 	"github.com/exascience/elprep/internal"
 	"github.com/exascience/elprep/sam"
 	"github.com/exascience/elprep/utils"
@@ -44,7 +45,7 @@ func timedRun(timed bool, profile, msg string, phase int64, f func() error) erro
 
 // Run the best practices pipeline. Version that uses an intermediate
 // slice so that sorting and mark-duplicates are supported.
-func runBestPracticesPipelineIntermediateSam(fileIn, fileOut, fai, fasta, sortingOrder string, filters, filters2 []sam.Filter, timed bool, profile string) error {
+func runBestPracticesPipelineIntermediateSam(fileIn, fileOut, fai, fasta string, sortingOrder sam.SortingOrder, filters, filters2 []sam.Filter, timed bool, profile string) error {
 	filteredReads := sam.NewSam()
 	err := timedRun(timed, profile, "Reading SAM into memory and applying filters.", 1, func() (err error) {
 		pathname, err := internal.FullPathname(fileIn)
@@ -95,7 +96,7 @@ func runBestPracticesPipelineIntermediateSam(fileIn, fileOut, fai, fasta, sortin
 // Run the best practices pipeline. Version that doesn't use an
 // intermediate slice when neither sorting nor mark-duplicates are
 // needed.
-func runBestPracticesPipeline(fileIn, fileOut, fai, fasta, sortingOrder string, filters []sam.Filter, timed bool, profile string) error {
+func runBestPracticesPipeline(fileIn, fileOut, fai, fasta string, sortingOrder sam.SortingOrder, filters []sam.Filter, timed bool, profile string) error {
 	return timedRun(timed, profile, "Running pipeline.", 1, func() (err error) {
 		pathname, err := internal.FullPathname(fileIn)
 		if err != nil {
@@ -164,7 +165,7 @@ func Filter() error {
 		markDuplicates, markDuplicatesDeterministic, removeDuplicates bool
 		removeOptionalFields                                          string
 		keepOptionalFields                                            string
-		sortingOrder                                                  string
+		sortingOrderString                                            string
 		cleanSam                                                      bool
 		nrOfThreads                                                   int
 		timed                                                         bool
@@ -188,7 +189,7 @@ func Filter() error {
 	flags.BoolVar(&removeDuplicates, "remove-duplicates", false, "remove duplicates")
 	flags.StringVar(&removeOptionalFields, "remove-optional-fields", "", "remove the given optional fields")
 	flags.StringVar(&keepOptionalFields, "keep-optional-fields", "", "remove all except for the given optional fields")
-	flags.StringVar(&sortingOrder, "sorting-order", sam.Keep, "determine output order of alignments, one of keep, unknown, unsorted, queryname, or coordinate")
+	flags.StringVar(&sortingOrderString, "sorting-order", string(sam.Keep), "determine output order of alignments, one of keep, unknown, unsorted, queryname, or coordinate")
 	flags.BoolVar(&cleanSam, "clean-sam", false, "clean the sam file")
 	flags.IntVar(&nrOfThreads, "nr-of-threads", 0, "number of worker threads")
 	flags.BoolVar(&timed, "timed", false, "measure the runtime")
@@ -223,6 +224,8 @@ func Filter() error {
 
 	referenceFai, referenceFasta, success := checkCramOutputOptions(filepath.Ext(output), referenceFai, referenceFasta)
 	sanityChecksFailed = !success
+
+	sortingOrder := sam.SortingOrder(sortingOrderString)
 
 	switch sortingOrder {
 	case sam.Keep, sam.Unknown, sam.Unsorted, sam.Queryname, sam.Coordinate:
@@ -263,29 +266,29 @@ func Filter() error {
 		fmt.Fprint(&command, " --reference-T ", referenceFasta)
 	}
 
-	var filters, filters2 []sam.Filter
+	var filters1, filters2 []sam.Filter
 
 	if filterUnmappedReadsStrict {
-		filters = append(filters, sam.FilterUnmappedReadsStrict)
+		filters1 = append(filters1, filters.RemoveUnmappedReadsStrict)
 		fmt.Fprint(&command, " --filter-unmapped-reads-strict")
 	} else if filterUnmappedReads {
-		filters = append(filters, sam.FilterUnmappedReads)
+		filters1 = append(filters1, filters.RemoveUnmappedReads)
 		fmt.Fprint(&command, " --filter-unmapped-reads")
 	}
 
 	if filterMappingQuality > 0 {
-		filterMappingQualityFilter := sam.FilterMappingQuality(filterMappingQuality)
-		filters = append(filters, filterMappingQualityFilter)
+		filterMappingQualityFilter := filters.RemoveMappingQualityLessThan(filterMappingQuality)
+		filters1 = append(filters1, filterMappingQualityFilter)
 		fmt.Fprint(&command, " --filter-mapping-quality ", filterMappingQuality)
 	}
 
 	if filterNonExactMappingReads {
-		filters = append(filters, sam.FilterNonExactMappingReads)
+		filters1 = append(filters1, filters.RemoveNonExactMappingReads)
 		fmt.Fprint(&command, " --filter-non-exact-mapping-reads")
 	}
 
 	if filterNonExactMappingReadsStrict {
-		filters = append(filters, sam.FilterNonExactMappingReadsStrict)
+		filters1 = append(filters1, filters.RemoveNonExactMappingReadsStrict)
 		fmt.Fprint(&command, " --filter-non-exact-mapping-reads-strict")
 	}
 
@@ -294,27 +297,27 @@ func Filter() error {
 		if err != nil {
 			return err
 		}
-		filterNonOverlappingReadsFilter := sam.FilterNonOverlappingReads(parsedBed)
-		filters = append(filters, filterNonOverlappingReadsFilter)
+		filterNonOverlappingReadsFilter := filters.RemoveNonOverlappingReads(parsedBed)
+		filters1 = append(filters1, filterNonOverlappingReadsFilter)
 		fmt.Fprint(&command, " --filter-non-overlapping-reads ", filterNonOverlappingReads)
 	}
 
 	if renameChromosomes {
-		filters = append(filters, sam.RenameChromosomes)
+		filters1 = append(filters1, filters.RenameChromosomes)
 		fmt.Fprint(&command, " --rename-chromosomes")
 	}
 
 	if cleanSam {
-		filters = append(filters, sam.CleanSam)
+		filters1 = append(filters1, filters.CleanSam)
 		fmt.Fprint(&command, " --clean-sam")
 	}
 
 	if replaceReferenceSequences != "" {
-		replaceReferenceSequencesFilter, err := sam.ReplaceReferenceSequenceDictionaryFromSamFile(replaceReferenceSequences)
+		replaceReferenceSequencesFilter, err := filters.ReplaceReferenceSequenceDictionaryFromSamFile(replaceReferenceSequences)
 		if err != nil {
 			return err
 		}
-		filters = append(filters, replaceReferenceSequencesFilter)
+		filters1 = append(filters1, replaceReferenceSequencesFilter)
 		fmt.Fprint(&command, " --replace-reference-sequences ", replaceReferenceSequences)
 	}
 
@@ -323,53 +326,53 @@ func Filter() error {
 		if err != nil {
 			return err
 		}
-		filters = append(filters, sam.AddOrReplaceReadGroup(record))
+		filters1 = append(filters1, filters.AddOrReplaceReadGroup(record))
 		fmt.Fprint(&command, " --replace-read-group ", replaceReadGroup)
 	}
 
 	if (replaceReferenceSequences != "") ||
 		markDuplicatesDeterministic || markDuplicates ||
 		(sortingOrder == sam.Coordinate) || (sortingOrder == sam.Queryname) {
-		filters = append(filters, sam.AddREFID)
+		filters1 = append(filters1, filters.AddREFID)
 	}
 
 	if markDuplicatesDeterministic {
-		filters = append(filters, sam.MarkDuplicates(true))
+		filters1 = append(filters1, filters.MarkDuplicates(true))
 		fmt.Fprint(&command, " --mark-duplicates-deterministic")
 	} else if markDuplicates {
-		filters = append(filters, sam.MarkDuplicates(false))
+		filters1 = append(filters1, filters.MarkDuplicates(false))
 		fmt.Fprint(&command, " --mark-duplicates")
 	}
 
-	filters = append(filters, sam.FilterOptionalReads)
+	filters1 = append(filters1, filters.RemoveOptionalReads)
 
 	if removeDuplicates {
-		filters2 = append(filters2, sam.FilterDuplicateReads)
+		filters2 = append(filters2, filters.RemoveDuplicateReads)
 		fmt.Fprint(&command, " --remove-duplicates")
 	}
 
 	if removeOptionalFields != "" {
 		if removeOptionalFields == "all" {
-			filters2 = append(filters2, sam.KeepOptionalFields(nil))
+			filters2 = append(filters2, filters.KeepOptionalFields(nil))
 		} else {
 			tags := strings.Split(removeOptionalFields, ",")
 			for i, tag := range tags {
 				tags[i] = strings.TrimSpace(tag)
 			}
-			filters2 = append(filters2, sam.RemoveOptionalFields(tags))
+			filters2 = append(filters2, filters.RemoveOptionalFields(tags))
 		}
 		fmt.Fprint(&command, " --remove-optional-fields \"", removeOptionalFields, "\"")
 	}
 
 	if keepOptionalFields != "" {
 		if keepOptionalFields == "none" {
-			filters2 = append(filters2, sam.KeepOptionalFields(nil))
+			filters2 = append(filters2, filters.KeepOptionalFields(nil))
 		} else {
 			tags := strings.Split(keepOptionalFields, ",")
 			for i, tag := range tags {
 				tags[i] = strings.TrimSpace(tag)
 			}
-			filters2 = append(filters2, sam.KeepOptionalFields(tags))
+			filters2 = append(filters2, filters.KeepOptionalFields(tags))
 		}
 		fmt.Fprint(&command, " --keep-optional-fields \"", keepOptionalFields, "\"")
 	}
@@ -391,13 +394,13 @@ func Filter() error {
 
 	commandString := command.String()
 
-	filters = append([]sam.Filter{sam.AddPGLine(utils.StringMap{
+	filters1 = append([]sam.Filter{filters.AddPGLine(utils.StringMap{
 		"ID": ProgramName + " " + ProgramVersion,
 		"PN": ProgramName,
 		"VN": ProgramVersion,
 		"DS": ProgramURL,
 		"CL": commandString,
-	})}, filters...)
+	})}, filters1...)
 
 	// executing command
 
@@ -406,7 +409,7 @@ func Filter() error {
 	if markDuplicatesDeterministic || markDuplicates ||
 		(sortingOrder == sam.Coordinate) || (sortingOrder == sam.Queryname) ||
 		((replaceReferenceSequences != "") && (sortingOrder == sam.Keep)) {
-		return runBestPracticesPipelineIntermediateSam(input, output, referenceFai, referenceFasta, sortingOrder, filters, filters2, timed, profile)
+		return runBestPracticesPipelineIntermediateSam(input, output, referenceFai, referenceFasta, sortingOrder, filters1, filters2, timed, profile)
 	}
-	return runBestPracticesPipeline(input, output, referenceFai, referenceFasta, sortingOrder, append(filters, filters2...), timed, profile)
+	return runBestPracticesPipeline(input, output, referenceFai, referenceFasta, sortingOrder, append(filters1, filters2...), timed, profile)
 }
