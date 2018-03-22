@@ -14,7 +14,7 @@ const (
 	// ProgramName is "elprep"
 	ProgramName = "elprep"
 	// ProgramVersion is the version of the elprep binary
-	ProgramVersion = "3.04"
+	ProgramVersion = "3.05"
 	// ProgramURL is the repository for the elprep source code
 	ProgramURL = "http://github.com/exascience/elprep"
 )
