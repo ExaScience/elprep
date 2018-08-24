@@ -1,4 +1,4 @@
-Copyright (c) 2017 imec vzw.
+Copyright (c) 2017,2018 imec vzw.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
