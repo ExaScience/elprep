@@ -42,6 +42,8 @@ type (
 	}
 )
 
+const maxTokenSize = 16 * 64 * 1024
+
 // AlignmentToString returns a pargo pipeline.Receiver that formats
 // slices of Alignment pointers into slices of strings representing
 // these alignments according to the SAM file format. See
@@ -288,7 +290,9 @@ func (input *Reader) RunPipeline(output PipelineOutput, hdrFilters []Filter, sor
 		return fmt.Errorf("%v, while writing SAM alignments to output", err)
 	}
 	var p pipeline.Pipeline
-	p.Source(pipeline.NewScanner(reader))
+	src := pipeline.NewScanner(reader)
+	src.Buffer(nil, maxTokenSize)
+	p.Source(src)
 	p.Add(pipeline.Par(StringToAlignment))
 	if alnFilter != nil {
 		p.Add(pipeline.Par(pipeline.Receive(alnFilter)))
