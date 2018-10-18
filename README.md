@@ -63,13 +63,7 @@ First checkout the elPrep sources using the following command:
 
 		go get github.com/exascience/elprep
 
-This downloads the elPrep Go source code.
-
-In the Go source folder, issue the following command:
-
-		go install
-
-This creates the elprep binary in your configure Go home folder, for example ~/go/bin/elprep. See the [GOPATH](https://golang.org/cmd/go/#hdr-GOPATH_environment_variable) variable for your Go home folder.
+This downloads the elPrep Go source code, and creates the elprep binary in your configured Go home folder, for example ~/go/bin/elprep. See the [GOPATH](https://golang.org/cmd/go/#hdr-GOPATH_environment_variable) variable for your Go home folder.
 
 Add the binary to your path, for example:
   
