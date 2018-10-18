@@ -1,2 +1,2 @@
-// Package filters defines filters for .sam/.bam/.cram sequencing pipelines.
+// Package filters defines filters for .sam/.bam sequencing pipelines.
 package filters

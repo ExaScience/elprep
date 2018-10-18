@@ -1,3 +1,21 @@
+// elPrep: a high-performance tool for preparing SAM/BAM files.
+// Copyright (c) 2017, 2018 imec vzw.
+
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version, and Additional Terms
+// (see below).
+
+// This program is distributed in the hope that it will be useful, but
+// WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+// Affero General Public License for more details.
+
+// You should have received a copy of the GNU Affero General Public
+// License and Additional Terms along with this program. If not, see
+// <https://github.com/ExaScience/elprep/blob/master/LICENSE.txt>.
+
 package sam
 
 import (
@@ -11,7 +29,8 @@ import (
 
 	psort "github.com/exascience/pargo/sort"
 
-	"github.com/exascience/elprep/utils"
+	"github.com/exascience/elprep/v4/utils"
+	"github.com/exascience/elprep/v4/utils/nibbles"
 )
 
 // The SAM file format version and date strings supported by this
@@ -20,15 +39,15 @@ import (
 // different version number. See
 // http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3.
 const (
-	FileFormatVersion = "1.5"
-	FileFormatDate    = "1 Jun 2017"
+	FileFormatVersion = "1.6"
+	FileFormatDate    = "22 May 2018"
 )
 
 // IsHeaderUserTag determins whether this tag string represent a
 // user-defined tag.
 func IsHeaderUserTag(code string) bool {
-	for _, c := range code {
-		if ('a' <= c) && (c <= 'z') {
+	for i := 0; i < len(code); i++ {
+		if c := code[i]; ('a' <= c) && (c <= 'z') {
 			return true
 		}
 	}
@@ -208,49 +227,91 @@ func (hdr *Header) AddUserRecord(code string, record utils.StringMap) {
 	}
 }
 
+var (
+	nibbleToBase = []byte("=ACMGRSVTWYHKDBN")
+	baseToNibble = make(map[byte]byte)
+)
+
+func init() {
+	for i, b := range nibbleToBase {
+		baseToNibble[b] = byte(i)
+	}
+}
+
+// Sequence encodes a SAM segment SEQuence as in the BAM format.
+// See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 4.2.
+type Sequence nibbles.Nibbles
+
+// Len returns the length of a SAM segment SEQuence.
+func (seq Sequence) Len() int {
+	return nibbles.Nibbles(seq).Len()
+}
+
+// Slice slices a SAM segment SEQuence.
+func (seq Sequence) Slice(low, high int) Sequence {
+	return Sequence(nibbles.Nibbles(seq).Slice(low, high))
+}
+
+// Base returns the base in a SAM segment SEQuence at the given position.
+func (seq Sequence) Base(i int) (base byte) {
+	return nibbleToBase[int(nibbles.Nibbles(seq).Get(i))]
+}
+
+// SetBase sets the base in a SAM segment SEQuence at the given position.
+func (seq Sequence) SetBase(i int, base byte) {
+	nibble, ok := baseToNibble[base]
+	if !ok {
+		nibble = 15
+	}
+	nibbles.Nibbles(seq).Set(i, nibble)
+}
+
 // An Alignment represents a single read alignment with mandatory and
 // optional fields that can be contained in a SAM file alignment
 // line. See http://samtools.github.io/hts-specs/SAMv1.pdf - Sections
-// 1.4 and 1.5.
+// 1.4 and 1.5. SEQ and QUAL are represented as in the BAM format, see
+// Section 4.2.
 type Alignment struct {
 	// The Query template NAME.
 	QNAME string
 
-	// The bitwise FLAG.
-	FLAG uint16
-
 	// The Reference sequence NAME.
 	RNAME string
 
-	// The 1-based leftmost mapping POSition.
+	// The 1-based leftmost mapping POSition (as in the SAM format).
 	POS int32
+
+	// The bitwise FLAG.
+	FLAG uint16
 
 	// The MAPping Quality.
 	MAPQ byte
 
-	// The CIGAR string.
-	CIGAR string
+	// The CIGAR string as a slice of CIGAR operations.
+	CIGAR []CigarOperation
 
 	// The Reference sequence name of the mate/NEXT read.
 	RNEXT string
 
-	// The 1-based leftmost mapping Position of the make/NEXT read.
+	// The 1-based leftmost mapping Position of the make/NEXT read (as in the SAM format).
 	PNEXT int32
 
 	// The observed Template LENgth.
 	TLEN int32
 
-	// The segment SEQuence.
-	SEQ string
+	// The segment SEQuence (as in the BAM format).
+	SEQ Sequence
 
 	// The ASCII of Phred-scaled base QUALity+33.
-	QUAL string
+	// A slice of the Phred-scaled base quality values (as in the BAM format,
+	// without the increment of 33 to turn the values into printable ASCII characters).
+	QUAL []byte
 
 	// The optional fields in a read alignment.
 	TAGS utils.SmallMap
 
 	// Additional optional fields which are not stored in SAM files, but
-	// resereved for temporary values in filters.
+	// reserved for temporary values in filters.
 	Temps utils.SmallMap
 }
 
@@ -311,12 +372,19 @@ func (aln *Alignment) SetLIBID(libid interface{}) {
 	aln.Temps.Set(LIBID, libid)
 }
 
-// NewAlignment allocates and initializes an empty alignment.
-func NewAlignment() *Alignment {
-	return &Alignment{
-		TAGS:  make(utils.SmallMap, 0, 16),
-		Temps: make(utils.SmallMap, 0, 4),
+var fi = utils.Intern("fi")
+
+func (aln *Alignment) setFileIndex(index int) {
+	aln.Temps.Set(fi, index)
+}
+
+// FileIndex returns the index of the alignment in the original input file.
+// May return -1 if unknown. This function may be deprecated in the future.
+func (aln *Alignment) FileIndex() int {
+	if value, ok := aln.Temps.Get(fi); ok {
+		return value.(int)
 	}
+	return -1
 }
 
 // CoordinateLess compares two alignments according to their
@@ -504,11 +572,12 @@ func (by By) ParallelStableSort(alns []*Alignment) {
 }
 
 // Sam represents a complete SAM data set that can be contained in a
-// SAM file. See http://samtools.github.io/hts-specs/SAMv1.pdf -
+// SAM or BAM file. See http://samtools.github.io/hts-specs/SAMv1.pdf -
 // Section 1.
 type Sam struct {
 	Header     *Header
 	Alignments []*Alignment
+	nofBatches int
 }
 
 // NewSam allocates and initializes an empty SAM data set.
@@ -519,13 +588,13 @@ func NewSam() *Sam { return &Sam{Header: NewHeader()} }
 // http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.5.
 type ByteArray []byte
 
-// CigarOperations contains all valid CIGAR operations.
-const CigarOperations = "MmIiDdNnSsHhPpXx="
+// cigarOperations contains all valid CIGAR operations.
+const cigarOperations = "MmIiDdNnSsHhPpXx="
 
-var cigarOperationsTable = make(map[byte]byte, len(CigarOperations))
+var cigarOperationsTable = make(map[byte]byte, len(cigarOperations))
 
 func init() {
-	for _, c := range CigarOperations {
+	for _, c := range cigarOperations {
 		cigarOperationsTable[byte(c)] = byte(unicode.ToUpper(c))
 	}
 }
@@ -564,12 +633,25 @@ var (
 )
 
 func slowScanCigarString(cigar string) (slice []CigarOperation, err error) {
-	for i := 0; i < len(cigar); {
-		cigarOperation, j, err := newCigarOperation(cigar, i)
+	if len(cigar) == 0 {
+		return nil, nil
+	}
+	cigarOperation, i, err := newCigarOperation(cigar, 0)
+	if err != nil {
+		return nil, fmt.Errorf("%v, while scanning CIGAR string %v", err, cigar)
+	}
+	slice = []CigarOperation{cigarOperation}
+	for i < len(cigar) {
+		nextCigarOperation, j, err := newCigarOperation(cigar, i)
 		if err != nil {
 			return nil, fmt.Errorf("%v, while scanning CIGAR string %v", err, cigar)
 		}
-		slice = append(slice, cigarOperation)
+		if nextCigarOperation.Operation == cigarOperation.Operation {
+			slice[len(slice)-1].Length += nextCigarOperation.Length
+		} else {
+			slice = append(slice, nextCigarOperation)
+		}
+		cigarOperation = nextCigarOperation
 		i = j
 	}
 	cigarSliceCacheMutex.Lock()

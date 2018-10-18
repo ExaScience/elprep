@@ -1,3 +1,21 @@
+// elPrep: a high-performance tool for preparing SAM/BAM files.
+// Copyright (c) 2017, 2018 imec vzw.
+
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version, and Additional Terms
+// (see below).
+
+// This program is distributed in the hope that it will be useful, but
+// WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+// Affero General Public License for more details.
+
+// You should have received a copy of the GNU Affero General Public
+// License and Additional Terms along with this program. If not, see
+// <https://github.com/ExaScience/elprep/blob/master/LICENSE.txt>.
+
 package cmd
 
 import (
@@ -5,14 +23,13 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 
-	"github.com/exascience/elprep/filters"
-	"github.com/exascience/elprep/sam"
-	"github.com/exascience/elprep/utils"
+	"github.com/exascience/elprep/v4/filters"
+	"github.com/exascience/elprep/v4/sam"
+	"github.com/exascience/elprep/v4/utils"
 )
 
 type commandLine []string
@@ -43,7 +60,7 @@ func appendIf(slice []sam.Filter, filters ...sam.Filter) []sam.Filter {
 }
 
 // DeprecatedFilterHelp is the help string for this command.
-const DeprecatedFilterHelp = "Filter parameters: (deprecated, please use the filter command instead)\n" +
+const DeprecatedFilterHelp = "\nFilter parameters: (deprecated, please use the filter command instead)\n" +
 	"elprep sam-file sam-output-file\n" +
 	"[--replace-reference-sequences sam-file]\n" +
 	"[--filter-unmapped-reads [strict]]\n" +
@@ -52,21 +69,19 @@ const DeprecatedFilterHelp = "Filter parameters: (deprecated, please use the fil
 	"[--sorting-order [keep | unknown | unsorted | queryname | coordinate]]\n" +
 	"[--clean-sam]\n" +
 	"[--nr-of-threads nr]\n" +
-	"[--timed]\n" +
-	"[--reference-t fai-file]\n" +
-	"[--reference-T fasta-file]\n"
+	"[--timed]\n"
 
 // DeprecatedFilter parses the command line for elprep filter in the
 // style of previous elprep versions (1.x and 2.x), for backwards
 // compatibility. This command is deprecated and will be removed at a
 // later stage.
 func DeprecatedFilter() error {
-	setLogOutput()
+	setLogOutput("")
 	log.Println("Warning: Calling elprep without a command to invoke the filter functionality is depecratead. Please use the filter command instead.")
 	cmdLine := commandLine(os.Args[1:])
 	sortingOrder := sam.Keep
 	nrOfThreads := 0
-	var markDuplicates, markDuplicatesDeterministic, timed bool
+	var markDuplicates, timed bool
 	var replaceRefSeqDictFilter,
 		removeUnmappedReadsFilter,
 		replaceReadGroupFilter,
@@ -74,7 +89,7 @@ func DeprecatedFilter() error {
 		removeDuplicatesFilter,
 		cleanSamFilter,
 		renameChromosomesFilter sam.Filter
-	var refSeqDict, filterUnmappedArg, readGroupString, referenceFai, referenceFasta, profile string
+	var refSeqDict, filterUnmappedArg, readGroupString, profile string
 	var filenames []string
 	for entry, found := cmdLine.pop(); found; entry, found = cmdLine.pop() {
 		switch entry {
@@ -110,12 +125,11 @@ func DeprecatedFilter() error {
 					removeDuplicatesFilter = filters.RemoveDuplicateReads
 				} else if next == "deterministic" {
 					cmdLine.pop()
-					markDuplicatesDeterministic = true
 				} else {
 					break
 				}
 			}
-			markDuplicatesFilter = filters.MarkDuplicates(markDuplicatesDeterministic)
+			markDuplicatesFilter, _, _ = filters.MarkDuplicates(false)
 		case "--sorting-order":
 			if so := cmdLine.peek(); (so == "") || strings.Contains(so, "--") {
 				sortingOrder = sam.Keep
@@ -161,22 +175,6 @@ func DeprecatedFilter() error {
 			timed = true
 		case "--profile":
 			profile, _ = cmdLine.pop()
-		case "--reference-t":
-			if ref := cmdLine.peek(); (ref == "") || strings.Contains(ref, "--") {
-				log.Println("Please provide reference file with --reference-t.")
-				fmt.Fprint(os.Stderr, DeprecatedFilterHelp)
-				os.Exit(1)
-			} else {
-				referenceFai, _ = cmdLine.pop()
-			}
-		case "--reference-T":
-			if ref := cmdLine.peek(); (ref == "") || strings.Contains(ref, "--") {
-				log.Println("Please provide reference file with --reference-T.")
-				fmt.Fprint(os.Stderr, DeprecatedFilterHelp)
-				os.Exit(1)
-			} else {
-				referenceFasta, _ = cmdLine.pop()
-			}
 		case "--rename-chromosomes":
 			renameChromosomesFilter = filters.RenameChromosomes
 		case "--split-file":
@@ -193,19 +191,8 @@ func DeprecatedFilter() error {
 	if (replaceRefSeqDictFilter != nil) && (sortingOrder == sam.Keep) {
 		log.Print("Warning: Requesting to keep the order of the input file while replacing the reference sequence dictionary may force an additional sorting phase to ensure the original sorting order is respected.")
 	}
-	if (filepath.Ext(filenames[1]) == sam.CramExt) && (referenceFai == "") && (referenceFasta == "") {
-		log.Println("Error: Attempting to output to cram without specifying a reference file. Please add --reference-t or --reference-T to your call.")
-		fmt.Fprint(os.Stderr, DeprecatedFilterHelp)
-		os.Exit(1)
-	}
 	var s bytes.Buffer
 	fmt.Fprint(&s, os.Args[0], " filter ", filenames[0], " ", filenames[1])
-	if referenceFai != "" {
-		fmt.Fprint(&s, " --reference-t ", referenceFai)
-	}
-	if referenceFasta != "" {
-		fmt.Fprint(&s, " --reference-T ", referenceFasta)
-	}
 	if removeUnmappedReadsFilter != nil {
 		switch filterUnmappedArg {
 		case "strict":
@@ -229,11 +216,7 @@ func DeprecatedFilter() error {
 		fmt.Fprint(&s, " --replace-read-group ", readGroupString)
 	}
 	if markDuplicatesFilter != nil {
-		if markDuplicatesDeterministic {
-			fmt.Fprint(&s, " --mark-duplicates-deterministic")
-		} else {
-			fmt.Fprint(&s, " --mark-duplicates")
-		}
+		fmt.Fprint(&s, " --mark-duplicates")
 		if removeDuplicatesFilter != nil {
 			fmt.Fprint(&s, " --remove-duplicates")
 		}
@@ -269,7 +252,7 @@ func DeprecatedFilter() error {
 	log.Println("Executing command:\n", cmdString)
 	if markDuplicates || (sortingOrder == sam.Coordinate) || (sortingOrder == sam.Queryname) ||
 		((replaceRefSeqDictFilter != nil) && (sortingOrder == sam.Keep)) {
-		return runBestPracticesPipelineIntermediateSam(filenames[0], filenames[1], referenceFai, referenceFasta, sortingOrder, filters1, filters2, timed, profile)
+		return runBestPracticesPipelineIntermediateSam(filenames[0], filenames[1], sortingOrder, filters1, filters2, nil, false, timed, profile)
 	}
-	return runBestPracticesPipeline(filenames[0], filenames[1], referenceFai, referenceFasta, sortingOrder, filters1, timed, profile)
+	return runBestPracticesPipeline(filenames[0], filenames[1], sortingOrder, filters1, timed, profile)
 }

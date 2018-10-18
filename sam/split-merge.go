@@ -1,102 +1,72 @@
+// elPrep: a high-performance tool for preparing SAM/BAM files.
+// Copyright (c) 2017, 2018 imec vzw.
+
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version, and Additional Terms
+// (see below).
+
+// This program is distributed in the hope that it will be useful, but
+// WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+// Affero General Public License for more details.
+
+// You should have received a copy of the GNU Affero General Public
+// License and Additional Terms along with this program. If not, see
+// <https://github.com/ExaScience/elprep/blob/master/LICENSE.txt>.
+
 package sam
 
 import (
-	"bufio"
+	"context"
+	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 
-	"github.com/exascience/elprep/internal"
-	"github.com/exascience/elprep/utils"
+	"github.com/exascience/pargo/pipeline"
+
+	"github.com/exascience/elprep/v4/internal"
+	"github.com/exascience/elprep/v4/utils"
 )
 
-const (
-	// _qname = 1
-	// _flag  = 2
-	_rname = 3
-	_pos   = 4
-	// _mapq  = 5
-	// _cigar = 6
-	_rnext = 7
-	// _pnext = 8
-	// _tlen  = 9
-	// _seq   = 10
-	// _qual  = 11
-)
+var sr = utils.Intern("sr")
 
-type lineScanner struct {
-	_err          error
-	reader        *bufio.Reader
-	nfield, index int
-	bytes         []byte
-	line          int
-	filename      string
-}
-
-func newLineScanner(reader *bufio.Reader, filename string, line int) *lineScanner {
-	return &lineScanner{
-		reader:   reader,
-		filename: filename,
-		line:     line,
-	}
-}
-
-func (s *lineScanner) scan() bool {
-	if s._err != nil {
-		return false
-	}
-	s.nfield, s.index = 0, 0
-	s.bytes, s._err = s.reader.ReadSlice('\n')
-	switch {
-	case s._err == nil:
-		s.bytes = s.bytes[:len(s.bytes)-1]
-		fallthrough
-	case s._err == io.EOF:
-		if len(s.bytes) == 0 {
-			return false
-		}
-		s.line++
-		return true
-	default:
-		s._err = fmt.Errorf("%v, while scanning line %v in file %v", s._err, s.line, s.filename)
-		return false
-	}
-}
-
-func (s *lineScanner) field(n int) string {
-	if s.nfield < n {
-		start := s.index
-		for end := start; end < len(s.bytes); end++ {
-			if s.bytes[end] == '\t' {
-				s.nfield++
-				if s.nfield == n {
-					s.index = end + 1
-					return string(s.bytes[start:end])
+func computeContigGroups(SQ []utils.StringMap, contigGroupSize int) (groups []string, contigMap map[string]string, err error) {
+	if contigGroupSize <= 0 {
+		for _, sn := range SQ {
+			if ln32, err := SQLN(sn); err == nil {
+				if ln := int(ln32); ln > contigGroupSize {
+					contigGroupSize = ln
 				}
-				start = end + 1
 			}
 		}
+		if contigGroupSize <= 0 {
+			return nil, nil, errors.New("no valid contig group size")
+		}
 	}
-	s._err = fmt.Errorf("invalid index %v, while scanning line %v in file %v", n, s.line, s.filename)
-	return ""
-}
-
-func (s *lineScanner) parseInt(n int) int64 {
-	field := s.field(n)
-	value, err := strconv.ParseInt(field, 10, 32)
-	if (err != nil) && ((s._err == nil) || (s._err == io.EOF)) {
-		s._err = fmt.Errorf("%v, while parsing integer %v in line %v of file %v", err, field, s.line, s.filename)
+	contigMap = make(map[string]string)
+	contigMap["*"] = "unmapped"
+	groups = []string{"unmapped"}
+	currentContigGroupIndex := 1
+	currentContigGroupSize := 0
+	currentContigGroup := fmt.Sprintf("group%v", currentContigGroupIndex)
+	for _, sn := range SQ {
+		ln32, _ := SQLN(sn)
+		ln := int(ln32)
+		if currentContigGroupSize > 0 && currentContigGroupSize+ln > contigGroupSize {
+			currentContigGroupIndex++
+			currentContigGroupSize = 0
+			currentContigGroup = fmt.Sprintf("group%v", currentContigGroupIndex)
+		}
+		contigMap[sn["SN"]] = currentContigGroup
+		if groups[len(groups)-1] != currentContigGroup {
+			groups = append(groups, currentContigGroup)
+		}
+		currentContigGroupSize += ln
 	}
-	return value
-}
-
-func (s *lineScanner) err() error {
-	if s._err == io.EOF {
-		return nil
-	}
-	return s._err
+	return groups, contigMap, nil
 }
 
 // SplitFilePerChromosome splits a SAM file into: a file containing
@@ -104,94 +74,107 @@ func (s *lineScanner) err() error {
 // different chromosomes, and a file per chromosome containing all
 // pairs where the reads map to that chromosome. There are no
 // requirements on the input file for splitting.
-func SplitFilePerChromosome(input, outputPath, outputPrefix, outputExtension, fai, fasta string) (err error) {
+func SplitFilePerChromosome(input, outputPath, outputPrefix, outputExtension string, contigGroupSize int) (funcErr error) {
 	files, err := internal.Directory(input)
 	if err != nil {
 		return fmt.Errorf("%v, while attempting to fetch file(s) %v in SplitFilePerChromosome", err, input)
 	}
 	inputPath := filepath.Dir(input)
 	firstFile := filepath.Join(inputPath, files[0])
-	firstIn, err := Open(firstFile, false)
+	firstIn, err := Open(firstFile)
 	if err != nil {
 		return err
 	}
-	header, lines, err := ParseHeader(firstIn.Reader)
+	header, err := firstIn.ParseHeader()
 	if err != nil {
 		return fmt.Errorf("%v, while parsing header of %v in SplitFilePerChromosome", err, firstFile)
 	}
+	groups, contigMap, err := computeContigGroups(header.SQ, contigGroupSize)
+	if err != nil {
+		return fmt.Errorf("%v, while splitting file %v", err, input)
+	}
 	splitsPath := filepath.Join(outputPath, "splits")
-	chromsEncountered := make(map[string]*OutputFile)
 	if err = os.MkdirAll(splitsPath, 0700); err != nil {
 		return err
 	}
 	header.AddUserRecord("@sr", utils.StringMap{"co": "This file was created using elprep split."})
-	out, err := Create(filepath.Join(splitsPath, outputPrefix+"-unmapped."+outputExtension), fai, fasta)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if nerr := out.Close(); err == nil {
-			err = nerr
-		}
-	}()
-	if err = header.Format(out.Writer); err != nil {
-		return err
-	}
-	chromsEncountered["*"] = out
-	for _, sn := range header.SQ {
-		chrom := sn["SN"]
-		out, nerr := Create(filepath.Join(splitsPath, outputPrefix+"-"+chrom+"."+outputExtension), fai, fasta)
-		if nerr != nil {
-			return nerr
-		}
-		defer func() {
-			if nerr := out.Close(); err == nil {
-				err = nerr
-			}
-		}()
-		if err = header.Format(out.Writer); err != nil {
+	groupFiles := make(map[string]*OutputFile)
+	for _, group := range groups {
+		groupname := filepath.Join(splitsPath, outputPrefix+"-"+group+"."+outputExtension)
+		out, err := Create(groupname)
+		if err != nil {
 			return err
 		}
-		chromsEncountered[chrom] = out
+		defer func() {
+			if err := out.Close(); funcErr == nil {
+				funcErr = err
+			}
+		}()
+		if err = out.FormatHeader(header); err != nil {
+			return fmt.Errorf("%v, while writing header to %v", err, groupname)
+		}
+		groupFiles[group] = out
 	}
-	spreadReads, err := Create(filepath.Join(outputPath, outputPrefix+"-spread."+outputExtension), fai, fasta)
+	spreadname := filepath.Join(outputPath, outputPrefix+"-spread."+outputExtension)
+	spreadReads, err := Create(spreadname)
 	if err != nil {
 		return err
 	}
 	defer func() {
-		if nerr := spreadReads.Close(); err == nil {
-			err = nerr
+		if err := spreadReads.Close(); funcErr == nil {
+			funcErr = err
 		}
 	}()
-	if err = header.Format(spreadReads.Writer); err != nil {
-		return err
+	if err = spreadReads.FormatHeader(header); err != nil {
+		return fmt.Errorf("%v, while writing header to %v", err, spreadname)
 	}
-	processFile := func(in *bufio.Reader, filename string, lines int) error {
-		s := newLineScanner(in, filename, lines)
-		var oerr, serr error
-		for s.scan() {
-			rname := s.field(_rname)
-			rnext := s.field(_rnext)
-			out := chromsEncountered[rname]
-			if (rnext == "=") || (rname == rnext) || (rname == "*") {
-				_, _ = out.Write(s.bytes)
-				oerr = out.WriteByte('\n')
-			} else {
-				_, _ = spreadReads.Write(s.bytes)
-				serr = spreadReads.WriteByte('\n')
-				_, _ = out.Write(s.bytes)
-				_, oerr = out.WriteString("\tsr:i:1\n")
-			}
-		}
-		if oerr != nil {
-			return oerr
-		} else if serr != nil {
-			return serr
-		} else {
-			return s.err()
-		}
+
+	var buf []byte
+
+	processFile := func(in *InputFile) error {
+		var p pipeline.Pipeline
+		p.Source(in)
+		p.SetVariableBatchSize(512, 4096)
+		p.Add(
+			pipeline.LimitedPar(0, BytesToAlignment(in)),
+			pipeline.StrictOrd(pipeline.Receive(func(_ int, data interface{}) interface{} {
+				for _, aln := range data.([]*Alignment) {
+					group := contigMap[aln.RNAME]
+					out := groupFiles[group]
+					untagged, err := out.FormatAlignment(aln, buf[:0])
+					if err != nil {
+						p.SetErr(err)
+						return nil
+					}
+					if aln.RNEXT == "=" || aln.RNAME == "*" || contigMap[aln.RNEXT] == group {
+						if _, err := out.Write(untagged); err != nil {
+							p.SetErr(err)
+							return nil
+						}
+					} else {
+						if _, err := spreadReads.Write(untagged); err != nil {
+							p.SetErr(err)
+							return nil
+						}
+						aln.TAGS.Set(sr, int64(1))
+						tagged, err := out.FormatAlignment(aln, buf[:0])
+						if err != nil {
+							p.SetErr(err)
+							return nil
+						}
+						if _, err := out.Write(tagged); err != nil {
+							p.SetErr(err)
+							return nil
+						}
+					}
+				}
+				return nil
+			})),
+		)
+		p.Run()
+		return p.Err()
 	}
-	if err = processFile(firstIn.Reader, firstFile, lines); err != nil {
+	if err = processFile(firstIn); err != nil {
 		return fmt.Errorf("%v, while processing file %v in SplitFilePerChromosome", err, firstFile)
 	}
 	if err = firstIn.Close(); err != nil {
@@ -199,19 +182,19 @@ func SplitFilePerChromosome(input, outputPath, outputPrefix, outputExtension, fa
 	}
 	for _, name := range files[1:] {
 		inFile := filepath.Join(inputPath, name)
-		err = func() (err error) {
-			in, err := Open(inFile, false)
+		err = func() (funcErr error) {
+			in, err := Open(inFile)
 			if err != nil {
 				return err
 			}
 			defer func() {
-				if nerr := in.Close(); err == nil {
-					err = nerr
+				if err := in.Close(); funcErr == nil {
+					funcErr = err
 				}
 			}()
-			if lines, err := SkipHeader(in.Reader); err != nil {
+			if err = in.SkipHeader(); err != nil {
 				return fmt.Errorf("%v, while skipping header of file %v in SplitFilePerChromosome", err, inFile)
-			} else if err = processFile(in.Reader, inFile, lines); err != nil {
+			} else if err = processFile(in); err != nil {
 				return fmt.Errorf("%v, while processing file %v in SplitFilePerChromosome", err, inFile)
 			}
 			return nil
@@ -225,7 +208,7 @@ func SplitFilePerChromosome(input, outputPath, outputPrefix, outputExtension, fa
 
 // MergeSortedFilesSplitPerChromosome merges files that were split
 // with SplitFilePerChromosome and sorted in coordinate order.
-func MergeSortedFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPrefix, inputExtension string, header *Header) (err error) {
+func MergeSortedFilesSplitPerChromosome(inputPath, output, inputPrefix, inputExtension string, header *Header, contigGroupSize int) (funcErr error) {
 
 	// Extract the header to identify the files names.  Assume that all
 	// files are sorted per cooordinate order, i.e. first sorted on
@@ -245,69 +228,88 @@ func MergeSortedFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPref
 	// from the list of files to merge. Loop for identifying and
 	// opening the files to merge.
 
+	_, contigMap, err := computeContigGroups(header.SQ, contigGroupSize)
+	if err != nil {
+		return fmt.Errorf("%v, while merging files from %v", err, inputPath)
+	}
+
+	dictTable := make(map[string]int32)
+	dictTable["*"] = -1
+	for index, entry := range header.SQ {
+		dictTable[entry["SN"]] = int32(index)
+	}
+
+	coordinateLess := func(aln1, aln2 *Alignment) bool {
+		refid1, ok := dictTable[aln1.RNAME]
+		if !ok {
+			refid1 = -1
+		}
+		refid2, ok := dictTable[aln2.RNAME]
+		if !ok {
+			refid2 = -1
+		}
+		switch {
+		case refid1 < refid2:
+			return refid1 >= 0
+		case refid2 < refid1:
+			return refid2 < 0
+		default:
+			return aln1.POS < aln2.POS
+		}
+	}
+
 	spreadReadsName := filepath.Join(inputPath, inputPrefix+"-spread."+inputExtension)
-	spreadReads, err := Open(spreadReadsName, false)
+	spreadReads, err := Open(spreadReadsName)
 	if err != nil {
 		return err
 	}
 	defer func() {
-		if nerr := spreadReads.Close(); err == nil {
-			err = nerr
+		if err := spreadReads.Close(); funcErr == nil {
+			funcErr = err
 		}
 	}()
-	spreadReadsLines, err := SkipHeader(spreadReads.Reader)
+	err = spreadReads.SkipHeader()
 	if err != nil {
 		return fmt.Errorf("%v, while skipping header of file %v", err, spreadReadsName)
 	}
 
-	spreadReadsScanner := newLineScanner(spreadReads.Reader, spreadReadsName, spreadReadsLines)
-	spreadReadsReady := spreadReadsScanner.scan()
+	spreadReads.Prepare(context.Background())
 
-	var spreadReadRname string
+	var spreadRead *Alignment
 
-	if spreadReadsReady {
-		spreadReadRname = spreadReadsScanner.field(_rname)
-	} else if err = spreadReadsScanner.err(); err != nil {
+	fetchSpreadRead := func() (err error) {
+		spreadRead = nil
+		if spreadReads.Fetch(1) == 0 {
+			return spreadReads.Err()
+		}
+		if spreadRead, err = spreadReads.ParseAlignment(spreadReads.Data().([][]byte)[0]); err != nil {
+			spreadRead = nil
+		}
 		return err
 	}
 
-	out, err := Create(output, fai, fasta)
+	if err = fetchSpreadRead(); err != nil {
+		return fmt.Errorf("%v, while fetching a read from %v", err, spreadReadsName)
+	}
+
+	out, err := Create(output)
 	if err != nil {
 		return err
 	}
 	defer func() {
-		if nerr := out.Close(); err == nil {
-			err = nerr
+		if err := out.Close(); funcErr == nil {
+			funcErr = err
 		}
 	}()
 
-	if err = header.Format(out.Writer); err != nil {
-		return err
+	if err = out.FormatHeader(header); err != nil {
+		return fmt.Errorf("%v, while writing header to %v", err, output)
 	}
 
-	finishSpreadReads := func(chrom string) (err error) {
-		_, _ = out.Write(spreadReadsScanner.bytes)
-		err = out.WriteByte('\n')
-		for {
-			spreadReadsReady = spreadReadsScanner.scan()
-			if !spreadReadsReady {
-				break
-			}
-			spreadReadRname = spreadReadsScanner.field(_rname)
-			if spreadReadRname != chrom {
-				return nil
-			}
-			_, _ = out.Write(spreadReadsScanner.bytes)
-			err = out.WriteByte('\n')
-		}
-		if err != nil {
-			return err
-		}
-		return spreadReadsScanner.err()
-	}
+	var buf []byte
 
-	processSN := func(chrom, fullInputPath string) (err error) {
-		file, err := Open(fullInputPath, false)
+	processGroup := func(group, fullInputPath string) (funcErr error) {
+		file, err := Open(fullInputPath)
 		if err != nil {
 			if os.IsNotExist(err) {
 				return nil
@@ -315,158 +317,164 @@ func MergeSortedFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPref
 			return err
 		}
 		defer func() {
-			if nerr := file.Close(); err == nil {
-				err = nerr
+			if err := file.Close(); funcErr == nil {
+				funcErr = err
 			}
 		}()
 
-		chromosomeLines, err := SkipHeader(file.Reader)
-		if err != nil {
+		if err = file.SkipHeader(); err != nil {
 			return fmt.Errorf("%v, while skipping SAM file header in file %v", err, fullInputPath)
 		}
 
-		if !spreadReadsReady || (spreadReadRname != chrom) {
-			_, err = file.WriteTo(out)
-			return err
-		}
+		var p pipeline.Pipeline
 
-		chromosomeScanner := newLineScanner(file.Reader, fullInputPath, chromosomeLines)
-		chromosomeReady := chromosomeScanner.scan()
-
-		if !chromosomeReady {
-			if err = chromosomeScanner.err(); err != nil {
-				return err
-			}
-			return finishSpreadReads(chrom)
-		}
-
-		finishChromosomeReads := func() (err error) {
-			_, _ = out.Write(chromosomeScanner.bytes)
-			err = out.WriteByte('\n')
-			if err != nil {
-				return err
-			}
-			_, err = file.WriteTo(out)
-			return err
-		}
-
-		chromosomeReadRname := chromosomeScanner.field(_rname)
-		if chromosomeReadRname != chrom {
-			return fmt.Errorf("invalid RNAME %v, expected %v, in file %v", chromosomeReadRname, chrom, fullInputPath)
-		}
-
-		spreadReadPos := spreadReadsScanner.parseInt(_pos)
-		if err = spreadReadsScanner.err(); err != nil {
-			return err
-		}
-
-		chromosomeReadPos := chromosomeScanner.parseInt(_pos)
-		if err = chromosomeScanner.err(); err != nil {
-			return err
-		}
-
-		for {
-			if spreadReadPos < chromosomeReadPos {
-				_, err = out.Write(spreadReadsScanner.bytes)
-				err = out.WriteByte('\n')
-				if err != nil {
-					return err
+		p.Source(file)
+		p.SetVariableBatchSize(512, 4096)
+		p.Add(
+			pipeline.LimitedPar(0, BytesToAlignment(file)),
+			pipeline.StrictOrd(pipeline.Receive(func(serial int, data interface{}) interface{} {
+				if spreadRead == nil || contigMap[spreadRead.RNAME] != group {
+					return data
 				}
-				spreadReadsReady = spreadReadsScanner.scan()
-				if spreadReadsReady {
-					spreadReadRname = spreadReadsScanner.field(_rname)
-					if spreadReadRname == chrom {
-						spreadReadPos = spreadReadsScanner.parseInt(_pos)
-						if err = spreadReadsScanner.err(); err != nil {
-							return err
+				alns := data.([]*Alignment)
+				for i := 0; i < len(alns); i++ {
+					if coordinateLess(spreadRead, alns[i]) {
+						alns = append(alns[:i+1], alns[i:]...)
+						alns[i] = spreadRead
+						if err := fetchSpreadRead(); err != nil {
+							p.SetErr(err)
+							return nil
 						}
-					} else {
-						return finishChromosomeReads()
+						if spreadRead == nil || contigMap[spreadRead.RNAME] != group {
+							return alns
+						}
 					}
-				} else if err = spreadReadsScanner.err(); err != nil {
-					return err
-				} else {
-					return finishChromosomeReads()
 				}
-			} else {
-				_, err = out.Write(chromosomeScanner.bytes)
-				err = out.WriteByte('\n')
+				return alns
+			})),
+			pipeline.LimitedPar(0, AlignmentToBytes(out)),
+			pipeline.StrictOrd(pipeline.Receive(func(serial int, data interface{}) interface{} {
+				var err error
+				for _, aln := range data.([][]byte) {
+					_, err = out.Write(aln)
+				}
 				if err != nil {
-					return err
+					p.SetErr(err)
 				}
-				chromosomeReady = chromosomeScanner.scan()
-				if chromosomeReady {
-					chromosomeReadRname = chromosomeScanner.field(_rname)
-					chromosomeReadPos = chromosomeScanner.parseInt(_pos)
-				}
-				if err = chromosomeScanner.err(); err != nil {
-					return err
-				}
-				if !chromosomeReady {
-					return finishSpreadReads(chrom)
-				}
-				if chromosomeReadRname != chrom {
-					return fmt.Errorf("invalid RNAME %v, expected %v, in file %v", chromosomeReadRname, chrom, fullInputPath)
-				}
+				return nil
+			})),
+		)
+		p.Run()
+		if err = p.Err(); err != nil {
+			return err
+		}
+		for spreadRead != nil && contigMap[spreadRead.RNAME] == group {
+			if buf, err = out.FormatAlignment(spreadRead, buf[:0]); err != nil {
+				return err
+			}
+			if _, err = out.Write(buf); err != nil {
+				return err
+			}
+			if err = fetchSpreadRead(); err != nil {
+				return err
 			}
 		}
+		return nil
 	}
+
+	groupsEncountered := make(map[string]bool)
 
 	for _, sn := range header.SQ {
-		chrom := sn["SN"]
-		fullInputPath := filepath.Join(inputPath, inputPrefix+"-"+chrom+"."+inputExtension)
-		if err = processSN(chrom, fullInputPath); err != nil {
-			return err
+		group := contigMap[sn["SN"]]
+		if groupsEncountered[group] {
+			continue
 		}
+		fullInputPath := filepath.Join(inputPath, inputPrefix+"-"+group+"."+inputExtension)
+		if err = processGroup(group, fullInputPath); err != nil {
+			return fmt.Errorf("%v, while processing %v", err, fullInputPath)
+		}
+		groupsEncountered[group] = true
 	}
 
-	if spreadReadsReady {
-		_, err = out.Write(spreadReadsScanner.bytes)
-		err = out.WriteByte('\n')
-		if err != nil {
-			return err
+	for spreadRead != nil {
+		if buf, err = out.FormatAlignment(spreadRead, buf[:0]); err != nil {
+			break
 		}
-		if _, err = spreadReads.WriteTo(out); err != nil {
-			return err
+		if _, err = out.Write(buf); err != nil {
+			break
 		}
+		if err = fetchSpreadRead(); err != nil {
+			break
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("%v, while writing alignments to %v", err, output)
 	}
 
 	unmappedName := filepath.Join(inputPath, inputPrefix+"-unmapped."+inputExtension)
-	unmappedFile, err := Open(unmappedName, false)
+	unmappedFile, err := Open(unmappedName)
 	if err != nil {
 		return err
 	}
 	defer func() {
-		if nerr := unmappedFile.Close(); err == nil {
-			err = nerr
+		if err := unmappedFile.Close(); funcErr == nil {
+			funcErr = err
 		}
 	}()
-	if _, err = SkipHeader(unmappedFile.Reader); err != nil {
+	if err = unmappedFile.SkipHeader(); err != nil {
 		return fmt.Errorf("%v, while skipping header of file %v", err, unmappedName)
 	}
-	_, err = unmappedFile.WriteTo(out)
-	return err
+
+	var p pipeline.Pipeline
+
+	p.Source(unmappedFile)
+	p.SetVariableBatchSize(512, 4096)
+	p.Add(
+		pipeline.LimitedPar(0, BytesToAlignment(unmappedFile)),
+		pipeline.LimitedPar(0, AlignmentToBytes(out)),
+		pipeline.StrictOrd(pipeline.Receive(func(_ int, data interface{}) interface{} {
+			var err error
+			for _, aln := range data.([][]byte) {
+				_, err = out.Write(aln)
+			}
+			if err != nil {
+				p.SetErr(err)
+			}
+			return nil
+		})),
+	)
+	p.Run()
+	if err = p.Err(); err != nil {
+		return fmt.Errorf("%v, while processing %v", err, unmappedName)
+	}
+	return nil
 }
 
 // MergeUnsortedFilesSplitPerChromosome merges files that were split
 // with SplitFilePerChromosome and are unsorted.
-func MergeUnsortedFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPrefix, inputExtension string, header *Header) (err error) {
-	out, err := Create(output, fai, fasta)
+func MergeUnsortedFilesSplitPerChromosome(inputPath, output, inputPrefix, inputExtension string, header *Header, contigGroupSize int) (funcErr error) {
+
+	_, contigMap, err := computeContigGroups(header.SQ, contigGroupSize)
+	if err != nil {
+		return fmt.Errorf("%v, while merging files from %v", err, inputPath)
+	}
+
+	out, err := Create(output)
 	if err != nil {
 		return err
 	}
 	defer func() {
-		if nerr := out.Close(); err == nil {
-			err = nerr
+		if err := out.Close(); funcErr == nil {
+			funcErr = err
 		}
 	}()
 
-	if err = header.Format(out.Writer); err != nil {
-		return err
+	if err = out.FormatHeader(header); err != nil {
+		return fmt.Errorf("%v, while writing header to %v", err, output)
 	}
 
-	processFile := func(filename string, missingOK bool) (err error) {
-		file, err := Open(filename, false)
+	processFile := func(filename string, missingOK bool) (funcErr error) {
+		file, err := Open(filename)
 		if err != nil {
 			if missingOK && os.IsNotExist(err) {
 				return nil
@@ -474,29 +482,59 @@ func MergeUnsortedFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPr
 			return err
 		}
 		defer func() {
-			if nerr := file.Close(); err == nil {
-				err = nerr
+			if err := file.Close(); funcErr == nil {
+				funcErr = err
 			}
 		}()
-		if _, err = SkipHeader(file.Reader); err != nil {
+		if err = file.SkipHeader(); err != nil {
 			return err
 		}
-		_, err = file.WriteTo(out)
-		return err
+
+		var p pipeline.Pipeline
+
+		p.Source(file)
+		p.SetVariableBatchSize(512, 4096)
+		p.Add(
+			pipeline.LimitedPar(0, BytesToAlignment(file)),
+			pipeline.LimitedPar(0, AlignmentToBytes(out)),
+			pipeline.Seq(pipeline.Receive(func(_ int, data interface{}) interface{} {
+				var err error
+				for _, aln := range data.([][]byte) {
+					_, err = out.Write(aln)
+				}
+				if err != nil {
+					p.SetErr(err)
+				}
+				return nil
+			})),
+		)
+		p.Run()
+		return p.Err()
 	}
 
-	if err = processFile(filepath.Join(inputPath, inputPrefix+"-unmapped."+inputExtension), false); err != nil {
-		return err
+	unmappedName := filepath.Join(inputPath, inputPrefix+"-unmapped."+inputExtension)
+	if err = processFile(unmappedName, false); err != nil {
+		return fmt.Errorf("%v, while processing %v", err, unmappedName)
 	}
-	if err = processFile(filepath.Join(inputPath, inputPrefix+"-spread."+inputExtension), false); err != nil {
-		return err
+	spreadName := filepath.Join(inputPath, inputPrefix+"-spread."+inputExtension)
+	if err = processFile(spreadName, false); err != nil {
+		return fmt.Errorf("%v, while processing %v", err, spreadName)
 	}
+
+	groupsEncountered := make(map[string]bool)
+
 	for _, sn := range header.SQ {
-		chrom := sn["SN"]
-		if err = processFile(filepath.Join(inputPath, inputPrefix+"-"+chrom+"."+inputExtension), true); err != nil {
-			return err
+		group := contigMap[sn["SN"]]
+		if groupsEncountered[group] {
+			continue
 		}
+		groupName := filepath.Join(inputPath, inputPrefix+"-"+group+"."+inputExtension)
+		if err = processFile(groupName, true); err != nil {
+			return fmt.Errorf("%v, while processing %v", err, groupName)
+		}
+		groupsEncountered[group] = true
 	}
+
 	return nil
 }
 
@@ -504,66 +542,73 @@ func MergeUnsortedFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPr
 // single-end reads into a file for the unmapped reads, and a file per
 // chromosome, containing all reads that map to that chromosome. There
 // are no requirements on the input file for splitting.
-func SplitSingleEndFilePerChromosome(input, outputPath, outputPrefix, outputExtension, fai, fasta string) (err error) {
+func SplitSingleEndFilePerChromosome(input, outputPath, outputPrefix, outputExtension string, contigGroupSize int) (funcErr error) {
+
 	files, err := internal.Directory(input)
 	if err != nil {
 		return fmt.Errorf("%v, while attempting to fetch file(s) %v in SplitSingleEndFilePerChromosome", err, input)
 	}
 	inputPath := filepath.Dir(input)
 	firstFile := filepath.Join(inputPath, files[0])
-	firstIn, err := Open(firstFile, false)
+	firstIn, err := Open(firstFile)
 	if err != nil {
 		return err
 	}
-	header, lines, err := ParseHeader(firstIn.Reader)
+	header, err := firstIn.ParseHeader()
 	if err != nil {
 		return fmt.Errorf("%v, while parsing header of %v in SplitSingleEndFilePerChromosome", err, firstFile)
 	}
-	chromsEncountered := make(map[string]*OutputFile)
-	header.AddUserRecord("@sr", utils.StringMap{"co": "This file was created using elprep split --single-end."})
-	out, err := Create(filepath.Join(outputPath, outputPrefix+"-unmapped."+outputExtension), fai, fasta)
+	groups, contigMap, err := computeContigGroups(header.SQ, contigGroupSize)
 	if err != nil {
-		return err
+		return fmt.Errorf("%v, while splitting file %v", err, input)
 	}
-	defer func() {
-		if nerr := out.Close(); err == nil {
-			err = nerr
-		}
-	}()
-	if err = header.Format(out.Writer); err != nil {
-		return err
-	}
-	chromsEncountered["*"] = out
-	for _, sn := range header.SQ {
-		chrom := sn["SN"]
-		out, nerr := Create(filepath.Join(outputPath, outputPrefix+"-"+chrom+"."+outputExtension), fai, fasta)
-		if nerr != nil {
-			return nerr
-		}
-		defer func() {
-			if nerr := out.Close(); err == nil {
-				err = nerr
-			}
-		}()
-		if err = header.Format(out.Writer); err != nil {
-			return err
-		}
-		chromsEncountered[chrom] = out
-	}
-	processFile := func(in *bufio.Reader, filename string, lines int) (err error) {
-		s := newLineScanner(in, filename, lines)
-		for s.scan() {
-			rname := s.field(_rname)
-			out := chromsEncountered[rname]
-			_, _ = out.Write(s.bytes)
-			err = out.WriteByte('\n')
-		}
+	groupFiles := make(map[string]*OutputFile)
+	header.AddUserRecord("@sr", utils.StringMap{"co": "This file was created using elprep split --single-end."})
+	for _, group := range groups {
+		groupname := filepath.Join(outputPath, outputPrefix+"-"+group+"."+outputExtension)
+		out, err := Create(groupname)
 		if err != nil {
 			return err
 		}
-		return s.err()
+		defer func() {
+			if err := out.Close(); funcErr == nil {
+				funcErr = err
+			}
+		}()
+		if err = out.FormatHeader(header); err != nil {
+			return fmt.Errorf("%v, while writing header to %v", err, groupname)
+		}
+		groupFiles[group] = out
 	}
-	if err = processFile(firstIn.Reader, firstFile, lines); err != nil {
+
+	var buf []byte
+
+	processFile := func(in *InputFile) (funcErr error) {
+		var p pipeline.Pipeline
+		p.Source(in)
+		p.SetVariableBatchSize(512, 4096)
+		p.Add(
+			pipeline.LimitedPar(0, BytesToAlignment(in)),
+			pipeline.StrictOrd(pipeline.Receive(func(_ int, data interface{}) interface{} {
+				for _, aln := range data.([]*Alignment) {
+					out := groupFiles[contigMap[aln.RNAME]]
+					untagged, err := out.FormatAlignment(aln, buf[:0])
+					if err != nil {
+						p.SetErr(err)
+						return nil
+					}
+					if _, err = out.Write(untagged); err != nil {
+						p.SetErr(err)
+						return nil
+					}
+				}
+				return nil
+			})),
+		)
+		p.Run()
+		return p.Err()
+	}
+	if err = processFile(firstIn); err != nil {
 		return fmt.Errorf("%v, while processing file %v in SplitSingleEndFilePerChromosome", err, firstFile)
 	}
 	if err = firstIn.Close(); err != nil {
@@ -571,19 +616,19 @@ func SplitSingleEndFilePerChromosome(input, outputPath, outputPrefix, outputExte
 	}
 	for _, name := range files[1:] {
 		inFile := filepath.Join(inputPath, name)
-		err = func() (err error) {
-			in, err := Open(inFile, false)
+		err = func() (funcErr error) {
+			in, err := Open(inFile)
 			if err != nil {
 				return err
 			}
 			defer func() {
-				if nerr := in.Close(); err == nil {
-					err = nerr
+				if err := in.Close(); funcErr == nil {
+					funcErr = err
 				}
 			}()
-			if lines, err := SkipHeader(in.Reader); err != nil {
+			if err := in.SkipHeader(); err != nil {
 				return fmt.Errorf("%v, while skipping header of file %v in SplitSingleEndFilePerChromosome", err, inFile)
-			} else if err = processFile(in.Reader, inFile, lines); err != nil {
+			} else if err = processFile(in); err != nil {
 				return fmt.Errorf("%v, while processing file %v in SplitSingleEndFilePerChromosome", err, inFile)
 			}
 			return nil
@@ -598,56 +643,112 @@ func SplitSingleEndFilePerChromosome(input, outputPath, outputPrefix, outputExte
 // MergeSingleEndFilesSplitPerChromosome merges files containing
 // single-end reads that were split with
 // SplitSingleEndFilePerChromosome.
-func MergeSingleEndFilesSplitPerChromosome(inputPath, output, fai, fasta, inputPrefix, inputExtension string, header *Header) (err error) {
+func MergeSingleEndFilesSplitPerChromosome(inputPath, output, inputPrefix, inputExtension string, header *Header, contigGroupSize int) (funcErr error) {
 
-	out, err := Create(output, fai, fasta)
+	_, contigMap, err := computeContigGroups(header.SQ, contigGroupSize)
+	if err != nil {
+		return fmt.Errorf("%v, while merging files from %v", err, inputPath)
+	}
+
+	out, err := Create(output)
 	if err != nil {
 		return err
 	}
 	defer func() {
-		if nerr := out.Close(); err == nil {
-			err = nerr
+		if err := out.Close(); funcErr == nil {
+			funcErr = err
 		}
 	}()
 
-	if err = header.Format(out.Writer); err != nil {
-		return err
+	if err = out.FormatHeader(header); err != nil {
+		return fmt.Errorf("%v, while writing header to %v", err, output)
 	}
 
-	for _, sn := range header.SQ {
-		chrom := sn["SN"]
-		chromName := filepath.Join(inputPath, inputPrefix+"-"+chrom+"."+inputExtension)
-		chromFile, nerr := Open(chromName, false)
-		if nerr != nil {
-			return nerr
-		}
-		defer func() {
-			if nerr := chromFile.Close(); err == nil {
-				err = nerr
-			}
-		}()
-		if _, err = SkipHeader(chromFile.Reader); err != nil {
-			return fmt.Errorf("%v, while skipping header of file %v", err, chromName)
-		}
-		_, err = chromFile.WriteTo(out)
+	processGroup := func(group, fullInputPath string) (funcErr error) {
+		file, err := Open(fullInputPath)
 		if err != nil {
 			return err
 		}
+		defer func() {
+			if err := file.Close(); funcErr == nil {
+				funcErr = err
+			}
+		}()
+
+		if err = file.SkipHeader(); err != nil {
+			return fmt.Errorf("%v, while skipping header of file %v", err, fullInputPath)
+		}
+
+		var p pipeline.Pipeline
+		p.Source(file)
+		p.SetVariableBatchSize(512, 4096)
+		p.Add(
+			pipeline.LimitedPar(0, BytesToAlignment(file)),
+			pipeline.LimitedPar(0, AlignmentToBytes(out)),
+			pipeline.StrictOrd(pipeline.Receive(func(_ int, data interface{}) interface{} {
+				var err error
+				for _, aln := range data.([][]byte) {
+					_, err = out.Write(aln)
+				}
+				if err != nil {
+					p.SetErr(err)
+				}
+				return nil
+			})),
+		)
+		p.Run()
+		return p.Err()
+	}
+
+	groupsEncountered := make(map[string]bool)
+
+	for _, sn := range header.SQ {
+		group := contigMap[sn["SN"]]
+		if groupsEncountered[group] {
+			continue
+		}
+		fullInputPath := filepath.Join(inputPath, inputPrefix+"-"+group+"."+inputExtension)
+		if err = processGroup(group, fullInputPath); err != nil {
+			return fmt.Errorf("%v, while processing %v", err, fullInputPath)
+		}
+		groupsEncountered[group] = true
 	}
 
 	unmappedName := filepath.Join(inputPath, inputPrefix+"-unmapped."+inputExtension)
-	unmappedFile, err := Open(unmappedName, false)
+	unmappedFile, err := Open(unmappedName)
 	if err != nil {
 		return err
 	}
 	defer func() {
-		if nerr := unmappedFile.Close(); err == nil {
-			err = nerr
+		if err := unmappedFile.Close(); funcErr == nil {
+			funcErr = err
 		}
 	}()
-	if _, err = SkipHeader(unmappedFile.Reader); err != nil {
+	if err = unmappedFile.SkipHeader(); err != nil {
 		return fmt.Errorf("%v, while skipping header of file %v", err, unmappedName)
 	}
-	_, err = unmappedFile.WriteTo(out)
-	return err
+
+	var p pipeline.Pipeline
+
+	p.Source(unmappedFile)
+	p.SetVariableBatchSize(512, 4096)
+	p.Add(
+		pipeline.LimitedPar(0, BytesToAlignment(unmappedFile)),
+		pipeline.LimitedPar(0, AlignmentToBytes(out)),
+		pipeline.StrictOrd(pipeline.Receive(func(_ int, data interface{}) interface{} {
+			var err error
+			for _, aln := range data.([][]byte) {
+				_, err = out.Write(aln)
+			}
+			if err != nil {
+				p.SetErr(err)
+			}
+			return nil
+		})),
+	)
+	p.Run()
+	if err = p.Err(); err != nil {
+		return fmt.Errorf("%v, while processing %v", err, unmappedName)
+	}
+	return nil
 }

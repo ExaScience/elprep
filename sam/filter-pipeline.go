@@ -1,15 +1,30 @@
+// elPrep: a high-performance tool for preparing SAM/BAM files.
+// Copyright (c) 2017, 2018 imec vzw.
+
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version, and Additional Terms
+// (see below).
+
+// This program is distributed in the hope that it will be useful, but
+// WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+// Affero General Public License for more details.
+
+// You should have received a copy of the GNU Affero General Public
+// License and Additional Terms along with this program. If not, see
+// <https://github.com/ExaScience/elprep/blob/master/LICENSE.txt>.
+
 package sam
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"runtime"
 	"sort"
 
 	"github.com/exascience/pargo/pipeline"
-
-	"github.com/exascience/elprep/internal"
 )
 
 type (
@@ -42,64 +57,94 @@ type (
 	}
 )
 
-const maxTokenSize = 16 * 64 * 1024
-
-// AlignmentToString returns a pargo pipeline.Receiver that formats
-// slices of Alignment pointers into slices of strings representing
-// these alignments according to the SAM file format. See
-// http://samtools.github.io/hts-specs/SAMv1.pdf - Sections 1.4 and
-// 1.5.
-func AlignmentToString(p *pipeline.Pipeline, _ pipeline.NodeKind, _ *int) (receiver pipeline.Receiver, _ pipeline.Finalizer) {
-	receiver = func(_ int, data interface{}) interface{} {
-		alns := data.([]*Alignment)
-		strings := make([]string, 0, len(alns))
-		buf := internal.ReserveByteBuffer()
-		defer internal.ReleaseByteBuffer(buf)
-		var err error
-		for _, aln := range alns {
-			*buf, err = aln.Format(*buf)
-			if err != nil {
-				p.SetErr(fmt.Errorf("%v in AlignmentToString", err))
+// AlignmentToBytes returns a pargo pipeline.Filter that formats
+// slices of Alignment pointers into slices of bytes representing
+// these alignments according to the SAM/BAM file format.
+func AlignmentToBytes(writer *OutputFile) pipeline.Filter {
+	return func(p *pipeline.Pipeline, _ pipeline.NodeKind, _ *int) (receiver pipeline.Receiver, _ pipeline.Finalizer) {
+		receiver = func(_ int, data interface{}) interface{} {
+			alns := data.([]*Alignment)
+			records := make([][]byte, 0, len(alns))
+			var buf []byte
+			var err error
+			for _, aln := range alns {
+				buf, err = writer.FormatAlignment(aln, buf)
+				if err != nil {
+					p.SetErr(fmt.Errorf("%v in AlignmentToBytes", err))
+				}
+				records = append(records, append([]byte(nil), buf...))
+				buf = buf[:0]
 			}
-			strings = append(strings, string(*buf))
-			*buf = (*buf)[:0]
+			return records
 		}
-		return strings
+		return
 	}
-	return
 }
 
-// StringToAlignment returns a pargo pipeline.Receiver that parses
-// slices of strings representing alignments according to the SAM file
+const (
+	minBatchSize = 4096
+	maxBatchSize = 262144
+)
+
+// BytesToAlignment returns a pargo pipeline.Filter that parses
+// slices of bytes representing alignments according to the SAM/BAM file
 // format into slices of pointers to freshly allocated Alignment
-// values. See http://samtools.github.io/hts-specs/SAMv1.pdf -
-// Sections 1.4 and 1.5.
-func StringToAlignment(p *pipeline.Pipeline, _ pipeline.NodeKind, _ *int) (receiver pipeline.Receiver, _ pipeline.Finalizer) {
-	receiver = func(_ int, data interface{}) interface{} {
-		strings := data.([]string)
-		alns := make([]*Alignment, 0, len(strings))
-		var sc StringScanner
-		for _, str := range strings {
-			sc.Reset(str)
-			aln := sc.ParseAlignment()
-			if err := sc.Err(); err != nil {
-				p.SetErr(fmt.Errorf("%v, while parsing SAM alignment %v", err, str))
+// values.
+func BytesToAlignment(reader *InputFile) pipeline.Filter {
+	return BytesToAlignmentFI(reader, false)
+}
+
+// BytesToAlignmentFI returns a pargo pipeline.Filter that parses
+// slices of bytes representing alignments according to the SAM/BAM file
+// format into slices of pointers to freshly allocated Alignment
+// values, with an additional option to indicate whether a file index should
+// be recorded with each alignment or not.
+func BytesToAlignmentFI(reader *InputFile, setFileIndex bool) pipeline.Filter {
+	if setFileIndex {
+		return func(p *pipeline.Pipeline, _ pipeline.NodeKind, _ *int) (receiver pipeline.Receiver, _ pipeline.Finalizer) {
+			receiver = func(serial int, data interface{}) interface{} {
+				records := data.([][]byte)
+				alns := make([]*Alignment, 0, len(records))
+				offset := serial * maxBatchSize
+				for index, record := range records {
+					aln, err := reader.ParseAlignment(record)
+					if err != nil {
+						p.SetErr(fmt.Errorf("%v, while parsing SAM alignment %v", err, record))
+						return alns
+					}
+					aln.setFileIndex(offset + index)
+					alns = append(alns, aln)
+				}
 				return alns
 			}
-			alns = append(alns, aln)
+			return
 		}
-		return alns
 	}
-	return
+	return func(p *pipeline.Pipeline, _ pipeline.NodeKind, _ *int) (receiver pipeline.Receiver, _ pipeline.Finalizer) {
+		receiver = func(_ int, data interface{}) interface{} {
+			records := data.([][]byte)
+			alns := make([]*Alignment, 0, len(records))
+			for _, record := range records {
+				aln, err := reader.ParseAlignment(record)
+				if err != nil {
+					p.SetErr(fmt.Errorf("%v, while parsing SAM alignment %v", err, record))
+					return alns
+				}
+				alns = append(alns, aln)
+			}
+			return alns
+		}
+		return
+	}
 }
 
 // AddNodes implements the PipelineOutput interface for Sam values to
-// represent complete SAM files in memory.
+// represent complete SAM/BAM files in memory.
 func (sam *Sam) AddNodes(p *pipeline.Pipeline, header *Header, sortingOrder SortingOrder) {
 	sam.Header = header
 	switch sortingOrder {
 	case Keep, Unknown:
-		p.Add(pipeline.Ord(pipeline.Slice(&sam.Alignments)))
+		p.Add(pipeline.StrictOrd(pipeline.Slice(&sam.Alignments)))
 	case Coordinate:
 		p.Add(pipeline.Seq(
 			pipeline.Slice(&sam.Alignments),
@@ -117,33 +162,31 @@ func (sam *Sam) AddNodes(p *pipeline.Pipeline, header *Header, sortingOrder Sort
 	}
 }
 
-// AddNodes implements the PipelineOutput interface for Writer values
-// to produce output in the SAM file format.
-func (output *Writer) AddNodes(p *pipeline.Pipeline, header *Header, sortingOrder SortingOrder) {
-	writer := (*bufio.Writer)(output)
-	if err := header.Format(writer); err != nil {
+// AddNodes implements the PipelineOutput interface for SAM/BAM OutputFile values.
+func (f *OutputFile) AddNodes(p *pipeline.Pipeline, header *Header, sortingOrder SortingOrder) {
+	if err := f.FormatHeader(header); err != nil {
 		p.SetErr(fmt.Errorf("%v, while writing a SAM header to output", err))
 		return
 	}
-	var kind pipeline.NodeKind
+	var nodeCons func(...pipeline.Filter) pipeline.Node
 	switch sortingOrder {
 	case Keep, Unknown:
-		kind = pipeline.Ordered
+		nodeCons = pipeline.StrictOrd
 	case Coordinate, Queryname:
 		p.SetErr(errors.New("sorting on files not supported"))
 		return
 	case Unsorted:
-		kind = pipeline.Sequential
+		nodeCons = pipeline.Seq
 	default:
 		p.SetErr(fmt.Errorf("unknown sorting order %v", sortingOrder))
 		return
 	}
 	p.Add(
-		pipeline.Par(AlignmentToString),
-		pipeline.NewNode(kind, pipeline.Receive(func(_ int, data interface{}) interface{} {
+		pipeline.LimitedPar(0, AlignmentToBytes(f)),
+		nodeCons(pipeline.Receive(func(_ int, data interface{}) interface{} {
 			var err error
-			for _, aln := range data.([]string) {
-				_, err = writer.WriteString(aln)
+			for _, aln := range data.([][]byte) {
+				_, err = f.Write(aln)
 			}
 			if err != nil {
 				p.SetErr(fmt.Errorf("%v, while writing SAM alignment strings to output", err))
@@ -223,8 +266,21 @@ func effectiveSortingOrder(sortingOrder SortingOrder, header *Header, originalSo
 	return sortingOrder
 }
 
+// NofBatches sets or gets the number of batches that are created from
+// this Sam value for the next call of RunPipeline.
+//
+// NofBatches can be called safely by user programs before RunPipeline
+// is called.
+//
+// If user programs do not call NofBatches, or call them with a value
+// < 1, then the pipeline will choose a reasonable default value that
+// takes runtime.GOMAXPROCS(0) into account.
+func (sam *Sam) NofBatches(n int) {
+	sam.nofBatches = n
+}
+
 // RunPipeline implements the PipelineInput interface for Sam values
-// that represent complete SAM files in memory.
+// that represent complete SAM/BAM files in memory.
 func (sam *Sam) RunPipeline(output PipelineOutput, hdrFilters []Filter, sortingOrder SortingOrder) error {
 	header := sam.Header
 	alns := sam.Alignments
@@ -254,48 +310,44 @@ func (sam *Sam) RunPipeline(output PipelineOutput, hdrFilters []Filter, sortingO
 	}
 	var p pipeline.Pipeline
 	p.Source(alns)
+	alns = nil
 	if alnFilter != nil {
-		p.Add(pipeline.Par(pipeline.Receive(alnFilter)))
+		p.Add(pipeline.LimitedPar(0, pipeline.Receive(alnFilter)))
 	}
 	output.AddNodes(&p, header, sortingOrder)
+	p.NofBatches(sam.nofBatches)
+	sam.nofBatches = 0
 	p.Run()
 	return p.Err()
 }
 
-// RunPipeline implements the PipelineInput interface for Reader
-// values that produce input in the SAM file format.
-func (input *Reader) RunPipeline(output PipelineOutput, hdrFilters []Filter, sortingOrder SortingOrder) error {
-	reader := (*bufio.Reader)(input)
-	header, _, err := ParseHeader(reader)
+// RunPipeline implements the PipelineInput interface for SAM/BAM InputFile values.
+func (f *InputFile) RunPipeline(output PipelineOutput, hdrFilters []Filter, sortingOrder SortingOrder) error {
+	return f.RunPipelineFI(output, hdrFilters, sortingOrder, false)
+}
+
+// RunPipelineFI implements a variant of the PipelineInput interface for SAM/BAM InputFile
+// values, with an additional option to indicate whether a file index should be recorded with
+// each alignment or not.
+func (f *InputFile) RunPipelineFI(output PipelineOutput, hdrFilters []Filter, sortingOrder SortingOrder, setFileIndex bool) error {
+	header, err := f.ParseHeader()
 	if err != nil {
 		return err
 	}
 	originalSortingOrder := header.HDSO()
 	alnFilter := ComposeFilters(header, hdrFilters)
 	sortingOrder = effectiveSortingOrder(sortingOrder, header, originalSortingOrder)
-	if out, ok := output.(*Writer); ok && (alnFilter == nil) {
-		switch sortingOrder {
-		case Coordinate, Queryname:
-			return errors.New("sorting on files not supported")
-		case Keep, Unknown, Unsorted:
-			// nothing to do
-		default:
-			return fmt.Errorf("unknown sorting order %v", sortingOrder)
-		}
-		writer := (*bufio.Writer)(out)
-		if err := header.Format(writer); err != nil {
-			return fmt.Errorf("%v, while writing a SAM header to output", err)
-		}
-		_, err := reader.WriteTo(writer)
-		return fmt.Errorf("%v, while writing SAM alignments to output", err)
-	}
 	var p pipeline.Pipeline
-	src := pipeline.NewScanner(reader)
-	src.Buffer(nil, maxTokenSize)
-	p.Source(src)
-	p.Add(pipeline.Par(StringToAlignment))
+	p.Source(f)
+	if setFileIndex {
+		// needed so that BytesToAlignment can compute file indexes for alignments
+		p.SetVariableBatchSize(maxBatchSize, maxBatchSize)
+	} else {
+		p.SetVariableBatchSize(minBatchSize, maxBatchSize)
+	}
+	p.Add(pipeline.LimitedPar(0, BytesToAlignmentFI(f, setFileIndex)))
 	if alnFilter != nil {
-		p.Add(pipeline.Par(pipeline.Receive(alnFilter)))
+		p.Add(pipeline.LimitedPar(0, pipeline.Receive(alnFilter)))
 	}
 	output.AddNodes(&p, header, sortingOrder)
 	p.Run()

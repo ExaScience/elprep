@@ -1,14 +1,33 @@
+// elPrep: a high-performance tool for preparing SAM/BAM files.
+// Copyright (c) 2017, 2018 imec vzw.
+
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version, and Additional Terms
+// (see below).
+
+// This program is distributed in the hope that it will be useful, but
+// WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+// Affero General Public License for more details.
+
+// You should have received a copy of the GNU Affero General Public
+// License and Additional Terms along with this program. If not, see
+// <https://github.com/ExaScience/elprep/blob/master/LICENSE.txt>.
+
 package filters
 
 import (
 	"log"
-	"strconv"
 
-	"github.com/exascience/elprep/internal"
-	"github.com/exascience/elprep/sam"
+	"github.com/exascience/elprep/v4/sam"
 )
 
-var cigarConsumesReferenceBases = map[byte]int32{'M': 1, 'D': 1, 'N': 1, '=': 1, 'X': 1}
+var (
+	cigarConsumesReadBases      = map[byte]int32{'M': 1, 'I': 1, 'S': 1, '=': 1, 'X': 1}
+	cigarConsumesReferenceBases = map[byte]int32{'M': 1, 'D': 1, 'N': 1, '=': 1, 'X': 1}
+)
 
 // Sums the lengths of all CIGAR operations that consume reference
 // bases.
@@ -20,40 +39,28 @@ func end(aln *sam.Alignment, cigars []sam.CigarOperation) int32 {
 	return aln.POS + length - 1
 }
 
-func operatorConsumesReadBases(operator byte) bool {
-	switch operator {
-	case 'M', 'I', 'S', '=', 'X':
-		return true
-	default:
-		return false
-	}
-}
-
-func operatorConsumesReferenceBases(operator byte) bool {
-	switch operator {
-	case 'M', 'D', 'N', '=', 'X':
-		return true
-	default:
-		return false
-	}
-}
+var (
+	operatorConsumesReadBases      = map[byte]bool{'M': true, 'I': true, 'S': true, '=': true, 'X': true}
+	operatorConsumesReferenceBases = map[byte]bool{'M': true, 'D': true, 'N': true, '=': true, 'X': true}
+)
 
 // Sums the lengths of all CIGAR operations that consume read bases.
 func readLengthFromCigar(cigars []sam.CigarOperation) int32 {
 	var length int32
 	for _, op := range cigars {
-		if operatorConsumesReadBases(op.Operation) {
-			length += op.Length
-		}
+		length += cigarConsumesReadBases[op.Operation] * op.Length
 	}
 	return length
 }
 
-func elementStradlessClippedRead(newCigar []byte, operator byte, relativeClippingPosition, clippedBases int32) []byte {
-	if operatorConsumesReadBases(operator) {
-		if operatorConsumesReferenceBases(operator) {
+func elementStradlessClippedRead(newCigar []sam.CigarOperation, operator byte, relativeClippingPosition, clippedBases int32) []sam.CigarOperation {
+	if operatorConsumesReadBases[operator] {
+		if operatorConsumesReferenceBases[operator] {
 			if relativeClippingPosition > 0 {
-				newCigar = strconv.AppendInt(append(newCigar, operator), int64(relativeClippingPosition), 10)
+				newCigar = append(newCigar, sam.CigarOperation{
+					Length:    relativeClippingPosition,
+					Operation: operator,
+				})
 			}
 		} else {
 			clippedBases += relativeClippingPosition
@@ -61,27 +68,27 @@ func elementStradlessClippedRead(newCigar []byte, operator byte, relativeClippin
 	} else if relativeClippingPosition != 0 {
 		log.Fatal("Unexpected non-0 relative clipping position in CleanSam.")
 	}
-	return strconv.AppendInt(append(newCigar, 'S'), int64(clippedBases), 10)
+	return append(newCigar, sam.CigarOperation{
+		Length:    clippedBases,
+		Operation: 'S',
+	})
 }
 
-func softClipEndOfRead(clipFrom int32, cigars []sam.CigarOperation) string {
+func softClipEndOfRead(clipFrom int32, cigars []sam.CigarOperation) []sam.CigarOperation {
 	var pos int32
 	clipFrom--
-	newCigar := internal.ReserveByteBuffer()
-	defer internal.ReleaseByteBuffer(newCigar)
+	var newCigar []sam.CigarOperation
 	for _, op := range cigars {
 		endPos := pos
-		if operatorConsumesReadBases(op.Operation) {
-			endPos += op.Length
-		}
+		endPos += cigarConsumesReadBases[op.Operation] * op.Length
 		if endPos < clipFrom {
-			*newCigar = strconv.AppendInt(append(*newCigar, op.Operation), int64(op.Length), 10)
+			newCigar = append(newCigar, op)
 		} else {
 			clippedBases := readLengthFromCigar(cigars) + clipFrom
-			*newCigar = elementStradlessClippedRead(*newCigar, op.Operation, clipFrom-pos, clippedBases)
+			newCigar = elementStradlessClippedRead(newCigar, op.Operation, clipFrom-pos, clippedBases)
 			break
 		}
 		pos += endPos
 	}
-	return string(*newCigar)
+	return newCigar
 }

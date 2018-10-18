@@ -1,15 +1,32 @@
+// elPrep: a high-performance tool for preparing SAM/BAM files.
+// Copyright (c) 2017, 2018 imec vzw.
+
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version, and Additional Terms
+// (see below).
+
+// This program is distributed in the hope that it will be useful, but
+// WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+// Affero General Public License for more details.
+
+// You should have received a copy of the GNU Affero General Public
+// License and Additional Terms along with this program. If not, see
+// <https://github.com/ExaScience/elprep/blob/master/LICENSE.txt>.
+
 package filters
 
 import (
-	"log"
 	"math"
 	"math/rand"
 	"strconv"
-	"strings"
 
-	"github.com/exascience/elprep/bed"
-	"github.com/exascience/elprep/sam"
-	"github.com/exascience/elprep/utils"
+	"github.com/exascience/elprep/v4/bed"
+	"github.com/exascience/elprep/v4/intervals"
+	"github.com/exascience/elprep/v4/sam"
+	"github.com/exascience/elprep/v4/utils"
 )
 
 // ReplaceReferenceSequenceDictionary returns a filter for replacing
@@ -45,7 +62,7 @@ func ReplaceReferenceSequenceDictionary(dict []utils.StringMap) sam.Filter {
 // replacing the reference sequence dictionary in a Header with one
 // parsed from the given SAM/DICT file.
 func ReplaceReferenceSequenceDictionaryFromSamFile(samFile string) (f sam.Filter, err error) {
-	input, err := sam.Open(samFile, true)
+	input, err := sam.Open(samFile)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +72,7 @@ func ReplaceReferenceSequenceDictionaryFromSamFile(samFile string) (f sam.Filter
 			err = nerr
 		}
 	}()
-	header, _, err := sam.ParseHeader(input.Reader)
+	header, err := input.ParseHeader()
 	if err != nil {
 		return nil, err
 	}
@@ -76,11 +93,20 @@ func RemoveUnmappedReadsStrict(_ *sam.Header) sam.AlignmentFilter {
 	}
 }
 
+var nonExactMappingOperator = map[byte]bool{'I': true, 'D': true, 'N': true, 'H': true, 'P': true, 'X': true, '=': true}
+
 // RemoveNonExactMappingReads is a filter that removes all reads that
 // are not exact matches with the reference (soft-clipping ok), based
 // on CIGAR string (only M and S allowed).
 func RemoveNonExactMappingReads(_ *sam.Header) sam.AlignmentFilter {
-	return func(aln *sam.Alignment) bool { return !strings.ContainsAny(aln.CIGAR, "IDNHPX=") }
+	return func(aln *sam.Alignment) bool {
+		for _, op := range aln.CIGAR {
+			if nonExactMappingOperator[op.Operation] {
+				return false
+			}
+		}
+		return true
+	}
 }
 
 // Symbols for optional fields used for determining exact matches. See
@@ -99,19 +125,19 @@ var (
 // XM=0 (no mismatch), XO=0 (no gap opening), XG=0 (no gap extension).
 func RemoveNonExactMappingReadsStrict(header *sam.Header) sam.AlignmentFilter {
 	return func(aln *sam.Alignment) bool {
-		if x0, ok := aln.TAGS.Get(X0); !ok || x0.(int32) != 1 {
+		if x0, ok := aln.TAGS.Get(X0); !ok || x0.(int64) != 1 {
 			return false
 		}
-		if x1, ok := aln.TAGS.Get(X1); !ok || x1.(int32) != 0 {
+		if x1, ok := aln.TAGS.Get(X1); !ok || x1.(int64) != 0 {
 			return false
 		}
-		if xm, ok := aln.TAGS.Get(XM); !ok || xm.(int32) != 0 {
+		if xm, ok := aln.TAGS.Get(XM); !ok || xm.(int64) != 0 {
 			return false
 		}
-		if xo, ok := aln.TAGS.Get(XO); !ok || xo.(int32) != 0 {
+		if xo, ok := aln.TAGS.Get(XO); !ok || xo.(int64) != 0 {
 			return false
 		}
-		if xg, ok := aln.TAGS.Get(XG); !ok || xg.(int32) != 0 {
+		if xg, ok := aln.TAGS.Get(XG); !ok || xg.(int64) != 0 {
 			return false
 		}
 		return true
@@ -192,6 +218,7 @@ func RenameChromosomes(header *sam.Header) sam.AlignmentFilter {
 // sequence dictionary) to alignments as temporary values.
 func AddREFID(header *sam.Header) sam.AlignmentFilter {
 	dictTable := make(map[string]int32)
+	dictTable["*"] = -1
 	for index, entry := range header.SQ {
 		dictTable[entry["SN"]] = int32(index)
 	}
@@ -263,7 +290,7 @@ func KeepOptionalFields(tags []string) sam.Filter {
 }
 
 // CleanSam is a filter for soft-clipping an alignment at the end of a
-// reference sequence, and set MAPQ to 0 if unmapped.
+// reference sequence, and setting MAPQ to 0 if unmapped.
 func CleanSam(header *sam.Header) sam.AlignmentFilter {
 	referenceSequenceTable := make(map[string]int32)
 	for _, sn := range header.SQ {
@@ -272,11 +299,9 @@ func CleanSam(header *sam.Header) sam.AlignmentFilter {
 	return func(aln *sam.Alignment) bool {
 		if aln.IsUnmapped() {
 			aln.MAPQ = 0
-		} else if cigar, err := sam.ScanCigarString(aln.CIGAR); err != nil {
-			log.Fatal(err, ", while scanning a CIGAR string for ", aln.QNAME, " in CleanSam")
-		} else if length := referenceSequenceTable[aln.RNAME]; end(aln, cigar) > length {
+		} else if length := referenceSequenceTable[aln.RNAME]; end(aln, aln.CIGAR) > length {
 			clipFrom := length - aln.POS + 1
-			aln.CIGAR = softClipEndOfRead(clipFrom, cigar)
+			aln.CIGAR = softClipEndOfRead(clipFrom, aln.CIGAR)
 		}
 		return true
 	}
@@ -285,35 +310,21 @@ func CleanSam(header *sam.Header) sam.AlignmentFilter {
 // RemoveNonOverlappingReads returns a filter for removing all reads
 // that do not overlap with a set of regions specified by a bed file.
 func RemoveNonOverlappingReads(bed *bed.Bed) sam.Filter {
+	ivals := intervals.FromBed(bed)
+	for chrom, ival := range ivals {
+		intervals.ParallelSortByStart(ival)
+		ivals[chrom] = intervals.ParallelFlatten(ival)
+	}
 	return func(header *sam.Header) sam.AlignmentFilter {
 		return func(aln *sam.Alignment) bool {
 			alnStart := aln.POS
-			cigar, err := sam.ScanCigarString(aln.CIGAR)
-			if err != nil {
-				log.Fatal(err, ", while scanning a CIGAR string for", aln.QNAME, " in FilterNonOverlappingReads")
-			}
-			var alnEnd int32
-			if aln.IsUnmapped() || readLengthFromCigar(cigar) <= 0 {
-				alnEnd = aln.POS
-			} else {
-				alnEnd = end(aln, cigar)
-			}
-			regions := bed.RegionMap[utils.Intern(aln.RNAME)]
-			left := 0
-			right := len(regions) - 1
-			for left <= right {
-				mid := (left + right) / 2
-				regionStart := regions[mid].Start
-				regionEnd := regions[mid].End
-				if regionStart > alnEnd-1 {
-					right = mid - 1
-				} else if regionEnd <= alnStart-1 {
-					left = mid + 1
-				} else {
-					return true
+			alnEnd := aln.POS
+			if !aln.IsUnmapped() {
+				if readLengthFromCigar(aln.CIGAR) > 0 {
+					alnEnd = end(aln, aln.CIGAR)
 				}
 			}
-			return false
+			return intervals.Overlap(ivals[aln.RNAME], alnStart, alnEnd)
 		}
 	}
 }

@@ -1,3 +1,21 @@
+// elPrep: a high-performance tool for preparing SAM/BAM files.
+// Copyright (c) 2017, 2018 imec vzw.
+
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version, and Additional Terms
+// (see below).
+
+// This program is distributed in the hope that it will be useful, but
+// WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+// Affero General Public License for more details.
+
+// You should have received a copy of the GNU Affero General Public
+// License and Additional Terms along with this program. If not, see
+// <https://github.com/ExaScience/elprep/blob/master/LICENSE.txt>.
+
 package filters
 
 import (
@@ -8,9 +26,9 @@ import (
 
 	"github.com/exascience/pargo/sync"
 
-	"github.com/exascience/elprep/internal"
-	"github.com/exascience/elprep/sam"
-	"github.com/exascience/elprep/utils"
+	"github.com/exascience/elprep/v4/internal"
+	"github.com/exascience/elprep/v4/sam"
+	"github.com/exascience/elprep/v4/utils"
 )
 
 // Map Phred qualities to a reasonable range and an error flag
@@ -20,11 +38,11 @@ var phredScoreTable [512]byte
 func init() {
 	for char := 0; char < 256; char++ {
 		pos := char << 1
-		if (char < 33) || (char > 126) {
+		if char > 126-33 {
 			phredScoreTable[pos] = 0
 			phredScoreTable[pos+1] = 1
 		} else {
-			qual := char - 33
+			qual := char
 			if qual >= 15 {
 				phredScoreTable[pos] = byte(qual)
 			} else {
@@ -59,10 +77,8 @@ var (
 // computeUnclippedPosition determines the unclipped position of an
 // alignment, based on its FLAG, POS, and CIGAR string.
 func computeUnclippedPosition(aln *sam.Alignment) (result int32) {
-	cigar, err := sam.ScanCigarString(aln.CIGAR)
-	if err != nil {
-		log.Fatal(err, ", while scanning CIGAR string for ", aln.QNAME, " in computeUnclippedPosition")
-	}
+
+	cigar := aln.CIGAR
 
 	result = aln.POS
 
@@ -123,9 +139,8 @@ func setAdaptedScore(aln *sam.Alignment, s int32) {
 	aln.Temps.Set(score, s)
 }
 
-// Adapt the sam-alignment: Fill in library id; fill in unclipped
-// position; fill in Phred score.
-func adaptAlignment(aln *sam.Alignment, lbTable map[string]string) {
+// Fill in the library id.
+func addLIBID(aln *sam.Alignment, lbTable map[string]string) {
 	rg := aln.RG()
 	if rg != nil {
 		lb, lbFound := lbTable[rg.(string)]
@@ -133,6 +148,10 @@ func adaptAlignment(aln *sam.Alignment, lbTable map[string]string) {
 			aln.SetLIBID(lb)
 		}
 	}
+}
+
+// Adapt the sam-alignment: Fill in unclipped position and Phred score.
+func adaptAlignment(aln *sam.Alignment) {
 	setAdaptedPos(aln, computeUnclippedPosition(aln))
 	setAdaptedScore(aln, computePhredScore(aln))
 }
@@ -148,7 +167,7 @@ func newAlignmentHandle(aln *sam.Alignment) *handle {
 }
 
 func (h *handle) alignment() *sam.Alignment {
-	return (*sam.Alignment)(h.object)
+	return (*sam.Alignment)(atomic.LoadPointer(&h.object))
 }
 
 func (h *handle) compareAndSwapAlignment(old, new *sam.Alignment) bool {
@@ -187,11 +206,9 @@ func (f fragment) Hash() (hash uint64) {
 // part of pairs, all the true fragments are marked as duplicates and
 // the pairs are left untouched.
 //
-// If multiple framents are tied for best score, and deterministic is
-// true, all except the one with the lexicographically smallest QNAME
-// are marked as duplicates.  If deterministic is false, the choice
-// which of the tied fragments are marked as duplicates is random.
-func classifyFragment(aln *sam.Alignment, fragments *sync.Map, deterministic bool) {
+// If multiple framents are tied for best score, all except the one with
+// the lexicographically smallest QNAME are marked as duplicates.
+func classifyFragment(aln *sam.Alignment, fragments *sync.Map) {
 	entry, found := fragments.LoadOrStore(fragment{
 		aln.LIBID(),
 		aln.REFID(),
@@ -213,16 +230,11 @@ func classifyFragment(aln *sam.Alignment, fragments *sync.Map, deterministic boo
 				aln.FLAG |= sam.Duplicate
 				break
 			} else if bestAlnScore == alnScore {
-				if deterministic {
-					if aln.QNAME > bestAln.QNAME {
-						aln.FLAG |= sam.Duplicate
-						break
-					} else if best.compareAndSwapAlignment(bestAln, aln) {
-						bestAln.FLAG |= sam.Duplicate
-						break
-					}
-				} else {
+				if aln.QNAME > bestAln.QNAME {
 					aln.FLAG |= sam.Duplicate
+					break
+				} else if best.compareAndSwapAlignment(bestAln, aln) {
+					bestAln.FLAG |= sam.Duplicate
 					break
 				}
 			} else if best.compareAndSwapAlignment(bestAln, aln) {
@@ -272,31 +284,50 @@ func (p pair) Hash() (hash uint64) {
 }
 
 type samAlignmentPair struct {
-	score      int32
-	aln1, aln2 *sam.Alignment
+	score             int32
+	aln1, aln2        *sam.Alignment
+	opticalDuplicates unsafe.Pointer
 }
 
 func newPairHandle(score int32, aln1, aln2 *sam.Alignment) *handle {
-	return &handle{unsafe.Pointer(&samAlignmentPair{score, aln1, aln2})}
+	return &handle{unsafe.Pointer(&samAlignmentPair{score: score, aln1: aln1, aln2: aln2})}
 }
 
 func (h *handle) pair() *samAlignmentPair {
-	return (*samAlignmentPair)(h.object)
+	return (*samAlignmentPair)(atomic.LoadPointer(&h.object))
 }
 
 func (h *handle) compareAndSwapPair(old, new *samAlignmentPair) bool {
 	return atomic.CompareAndSwapPointer(&h.object, unsafe.Pointer(old), unsafe.Pointer(new))
 }
 
+type alnCons struct {
+	aln1, aln2 *sam.Alignment
+	next       *alnCons
+}
+
+func (pair *samAlignmentPair) getOpticalDuplicates() *alnCons {
+	return (*alnCons)(atomic.LoadPointer(&pair.opticalDuplicates))
+}
+
+func (pair *samAlignmentPair) addOpticalDuplicate(aln1, aln2 *sam.Alignment) {
+	entry := &alnCons{aln1: aln1, aln2: aln2}
+	for {
+		head := atomic.LoadPointer(&pair.opticalDuplicates)
+		entry.next = (*alnCons)(head)
+		if atomic.CompareAndSwapPointer(&pair.opticalDuplicates, head, unsafe.Pointer(entry)) {
+			break
+		}
+	}
+}
+
 // For each set of pairs with the same unclipped positions and
 // directions, all except the one with the highest score are marked as
 // duplicates.
 //
-// If multiple pairs are tied for best score, and deterministic is
-// true, all except the one with the lexicographically smallest QNAME
-// are marked as duplicates.  If deterministic is false, the choice
-// which of the tied pairs are marked as duplicates is random.
-func classifyPair(aln *sam.Alignment, fragments, pairs *sync.Map, deterministic bool) {
+// If multiple pairs are tied for best score, all except the one with
+// the lexicographically smallest QNAME are marked as duplicates.
+func classifyPair(aln *sam.Alignment, fragments, pairs *sync.Map) {
 	if !isTruePair(aln) {
 		return
 	}
@@ -310,16 +341,21 @@ func classifyPair(aln *sam.Alignment, fragments, pairs *sync.Map, deterministic 
 	}
 
 	score := adaptedScore(aln1) + adaptedScore(aln2)
+	aln1refid := aln1.REFID()
+	aln2refid := aln2.REFID()
 	aln1Pos := adaptedPos(aln1)
 	aln2Pos := adaptedPos(aln2)
-	if aln1Pos > aln2Pos {
+	if aln1refid > aln2refid ||
+		(aln1refid == aln2refid && (aln1Pos > aln2Pos ||
+			(aln1Pos == aln2Pos && aln1.IsReversed() && !aln2.IsReversed()))) {
 		aln1, aln2 = aln2, aln1
+		aln1refid, aln2refid = aln2refid, aln1refid
 		aln1Pos, aln2Pos = aln2Pos, aln1Pos
 	}
 	entry, found := pairs.LoadOrStore(pair{
 		aln1.LIBID(),
-		aln1.REFID(),
-		aln2.REFID(),
+		aln1refid,
+		aln2refid,
 		(int64(aln1Pos) << 32) + int64(aln2Pos),
 		aln1.IsReversed(),
 		aln2.IsReversed(),
@@ -332,7 +368,7 @@ func classifyPair(aln *sam.Alignment, fragments, pairs *sync.Map, deterministic 
 	var np *samAlignmentPair
 	newPair := func() *samAlignmentPair {
 		if np == nil {
-			np = &samAlignmentPair{score, aln1, aln2}
+			np = &samAlignmentPair{score: score, aln1: aln1, aln2: aln2}
 		}
 		return np
 	}
@@ -343,19 +379,13 @@ func classifyPair(aln *sam.Alignment, fragments, pairs *sync.Map, deterministic 
 			aln2.FLAG |= sam.Duplicate
 			break
 		} else if bestPair.score == score {
-			if deterministic {
-				if aln1.QNAME > bestPair.aln1.QNAME {
-					aln1.FLAG |= sam.Duplicate
-					aln2.FLAG |= sam.Duplicate
-					break
-				} else if best.compareAndSwapPair(bestPair, newPair()) {
-					bestPair.aln1.FLAG |= sam.Duplicate
-					bestPair.aln2.FLAG |= sam.Duplicate
-					break
-				}
-			} else {
+			if aln1.QNAME > bestPair.aln1.QNAME {
 				aln1.FLAG |= sam.Duplicate
 				aln2.FLAG |= sam.Duplicate
+				break
+			} else if best.compareAndSwapPair(bestPair, newPair()) {
+				bestPair.aln1.FLAG |= sam.Duplicate
+				bestPair.aln2.FLAG |= sam.Duplicate
 				break
 			}
 		} else if best.compareAndSwapPair(bestPair, newPair()) {
@@ -371,15 +401,13 @@ func classifyPair(aln *sam.Alignment, fragments, pairs *sync.Map, deterministic 
 // fill in the refid.
 //
 // Duplicate marking is based on an adapted Phred score. In case of
-// ties, if deterministic is true, the QNAME is used as a
-// tie-breaker. Otherwise duplicate marking is random for alignments
-// tied for best score.
-func MarkDuplicates(deterministic bool) sam.Filter {
+// ties, the QNAME is used as a tie-breaker.
+func MarkDuplicates(alsoOpticals bool) (sam.Filter, *sync.Map, *sync.Map) {
+	splits := 16 * runtime.GOMAXPROCS(0)
+	fragments := sync.NewMap(splits)
+	pairsFragments := sync.NewMap(splits)
+	pairs := sync.NewMap(splits)
 	return func(header *sam.Header) sam.AlignmentFilter {
-		splits := 16 * runtime.GOMAXPROCS(0)
-		fragments := sync.NewMap(splits)
-		pairsFragments := sync.NewMap(splits)
-		pairs := sync.NewMap(splits)
 		// map read groups to library ids
 		lbTable := make(map[string]string)
 		for _, rgEntry := range header.RG {
@@ -392,13 +420,25 @@ func MarkDuplicates(deterministic bool) sam.Filter {
 				lbTable[id] = lb
 			}
 		}
+		if alsoOpticals {
+			return func(aln *sam.Alignment) bool {
+				addLIBID(aln, lbTable) // need this for all reads when marking optical duplicates
+				if aln.FlagNotAny(sam.Unmapped | sam.Secondary | sam.Duplicate | sam.Supplementary) {
+					adaptAlignment(aln)
+					classifyFragment(aln, fragments)
+					classifyPair(aln, pairsFragments, pairs)
+				}
+				return true
+			}
+		}
 		return func(aln *sam.Alignment) bool {
 			if aln.FlagNotAny(sam.Unmapped | sam.Secondary | sam.Duplicate | sam.Supplementary) {
-				adaptAlignment(aln, lbTable)
-				classifyFragment(aln, fragments, deterministic)
-				classifyPair(aln, pairsFragments, pairs, deterministic)
+				addLIBID(aln, lbTable) // don't need this for all reads when not marking optical duplicates
+				adaptAlignment(aln)
+				classifyFragment(aln, fragments)
+				classifyPair(aln, pairsFragments, pairs)
 			}
 			return true
 		}
-	}
+	}, fragments, pairs
 }

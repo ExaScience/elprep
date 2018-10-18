@@ -1,28 +1,37 @@
 # Overview
 
-elPrep is a high-performance tool for preparing .sam/.bam/.cram files for variant calling in sequencing pipelines. It can be used as a drop-in replacement for SAMtools/Picard, and was extensively tested with different pipelines for variant analysis with GATK. The key advantage of elPrep is that it only performs a single-pass to process a .sam/.bam/.cram file, independent of the number of filters that need to be applied in a particular pipeline.
+elPrep is a high-performance tool for preparing .sam/.bam files for variant calling in sequencing pipelines. It can be used as a drop-in replacement for SAMtools/Picard/GATK4, and was extensively tested with different pipelines for variant analysis with GATK. The key advantage of elPrep is that it only performs a single-pass to process a .sam/.bam file, independent of the number of processing steps that need to be applied in a particular pipeline, greatly improving runtime performance.
 
-elPrep is designed as an in-memory and multi-threaded application to fully take advantage of the processing power available with modern servers. Its software architecture is based on functional programming techniques, which allows easy composition of multiple alignment filters and optimizations such as loop merging. To make this possible, elPrep proposes a couple of new algorithms. For example, for duplicate marking we devised an algorithm that expresses the operation as a single-pass filter using memoization techniques and hierarchical hash tables for efficient parallel synchronisation.
+elPrep is designed as an in-memory and multi-threaded application to fully take advantage of the processing power available with modern servers. Its software architecture is based on functional programming techniques, which allows easy composition of multiple alignment filters and optimizations such as loop merging. To make this possible, elPrep proposes a couple of new algorithms. For example, for duplicate marking we devised an algorithm that expresses the operation as a single-pass filter using memoization techniques and hierarchical hash tables for efficient parallel synchronisation. For base quality score recalibration (BQSR) we designed a parallel range-reduce algorithm.
 
-In our [PLOS one paper](http://journals.plos.org/plosone/article?id=10.1371/journal.pone.0132868) we showed that elPrep executes a 5-step preparation pipeline between 6-10 times faster than Picard/SAMtools for whole-exome data, and 5x faster for whole-genome data. Please see the demo scripts we include for benchmark tests.
+Our benchmarks show that elPrep executes a 4-step pipeline from the GATK Best Practices (sorting, duplicate marking, and base quality score recalibration and application) between 6-13 times faster than Picard/GATK4 for whole-exome data, and 7.5x faster for whole-genome data.
 
-The main advantage of elPrep is very fast execution times on high-end backend servers, as is available for example through Amazon cloud computing services or custom server setups. We do not recommend using elPrep on laptops, desktops, or low-end servers. Please consult the system requirements below for more details. 
+The main advantage of elPrep is very fast execution times on high-end backend servers, as is available for example through Amazon AWS Cloud Computing Services or custom server setups. We do not recommend using elPrep on laptops, desktops, or low-end servers. Please consult the system requirements below for more details. 
 
-elPrep is being developed at the [ExaScience Life Lab](http://www.exascience.com) at Imec. For questions, use our mailing list (below) or contact [Charlotte Herzeel](https://github.com/caherzee) directly.
+elPrep is being developed at the [ExaScience Life Lab](http://www.exascience.com) at Imec. For questions, use our mailing list (below) or contact us via exascience@imec.be.
+
+
+Comparison of elPrep4.0 and GATK4.0 in terms of runtime, RAM use, and disk use for 50x WGS Illumina Platinum NA12878 aligned against hg38. elPrep combines the execution of the 4 pipeline steps for efficient parallel execution.
+
+![NA12878 Platinum Genome run](https://github.com/ExaScience/elprep/blob/master/images/wgs-benchmarks-elprep-vs-gatk4.pdf)
+
+For more benchmark details, please consult our publication list.
 
 # Advantages
 
 The advantages of elPrep include:
 
 * efficient multi-threaded execution
-* operates completely in-memory, no intermediate files are generated
-* 100% equivalent output to output produced by SAMtools and Picard for overlapping functionality
+* operates mainly in-memory, few intermediate files are generated
+* 100% equivalent output to output produced by SAMtools, Picard and GATK for overlapping functionality
 * compatible with existing tools such as GATK, SAMtools, and Picard
-* modular implementation
+* modular, easy to add and remove pipeline steps
 
 # Availability
 
-elPrep is released as an open-source project under a BSD 3-Clause License (BSD 2.0). We also provide a download of a precompiled binary.
+elPrep is released and distributed as an open-source project under the terms of the GNU Affero General Public License version 3 as published by the Free Software Foundation, with Additional Terms. Please see the file LICENSE.txt for a copy of the GNU Affero Public License and the Additional Terms.
+
+We also provide a download of a precompiled binary.
 
 ## Binaries
 
@@ -32,22 +41,17 @@ You can download a precompiled binary of elPrep [here](https://github.com/ExaSci
 
 The elPrep source code is freely available on GitHub. elPrep is implemented in Go and tested for Linux.
 
-	elPrep GitHub clone URL:
+	elPrep GitHub URL:
 
-		https://github.com/ExaScience/elprep.git
+		https://github.com/exascience/elprep
 
 ## Dependencies
 
-elPrep works with the .sam, .bam, and .cram formats as input/output. To use .bam or .cram, SAMtools must be installed in addition to the elPrep binary:
+elPrep works with the .sam and .bam formats as input/output. Previously, there was a dependency on samtools to read and write .bam files, but since elPrep4.0, .bam files are directly supported by elPrep, with no need for samtools to be present anymore.
 
+elPrep relies on its own .elsites file format for representing known sites during base quality score recalibration. Such .elsites files can be generated from .vcf files using the elprep vcf-to-elsites command. elPrep can also read .bcf, .vcf.gz, and .bcf.gz files, but then needs to be able to call [bcftools](http://www.htslib.org/download/) for reading those formats. For this purpose, bcftools must be visible through the PATH environment variable. For plain .vcf files, bcftools does not have to be present. (We plan to also support .bcf, .vcf.gz, and .bcf.gz directly in the future.)
 
-		http://www.htslib.org
-
-The .cram format is only supported for samtools-1.0 and up. It is in principle possible to use another tool for .bam and .cram compression, see our example scripts for more details.
-
-We provide example scripts of how to combine elPrep with GNU parallel, for example for distributed execution. Please install GNU parallel to run these scripts:
-
-		http://www.gnu.org/software/parallel/
+There are no dependencies on other tools.
 
 ## Building
 
@@ -59,25 +63,23 @@ First checkout the elPrep sources using the following command:
 
 		go get github.com/exascience/elprep
 
-This downloads the elPrep Go source code in your configured Go home folder, for example /home/username/go/src/github.com/exascience/elprep/. See the [GOPATH](https://golang.org/cmd/go/#hdr-GOPATH_environment_variable) variable for your Go home folder. 
+This downloads the elPrep Go source code.
 
-Build elPrep by issuing the following command:
+In the Go source folder, issue the following command:
 
-		go build github.com/exascience/elprep
+		go install
 
-This creates the elprep binary where the command is executed. Add the binary to your path. For example, fill in your username and working directory and execute:
+This creates the elprep binary in your configure Go home folder, for example ~/go/bin/elprep. See the [GOPATH](https://golang.org/cmd/go/#hdr-GOPATH_environment_variable) variable for your Go home folder.
+
+Add the binary to your path, for example:
   
-          export PATH=$PATH:/home/username/path/to/elprep/elprep:
-
-There are a number of Python wrapper scripts that illustrate the combined use of the elprep split, filter, and merge tools, which is downloaded with the source code. See the subfolder /scripts/. You may want to add this folder to your path as well:
-	
-	export PATH=$PATH:/home/username/go/github.com/exascience/elprep/scripts/:
+          export PATH=$PATH:~/go/bin
 
 ## Compatibility
 
 The output of elPrep is compatible (as input) with:
 
-* gatk 3.1-1, 3.7, 3.8
+* gatk 3.1-1, 3.7, 3.8, 4.0.8.1
 * gatk 2.7.2
 * gatk 1.6
 * samtools-1.0, samtools-1.1, samtools-1.2, samtools-1.5
@@ -92,18 +94,24 @@ elPrep has been developed for Linux and has not been tested for other operating 
 * Ubuntu 14.04.5 LTS
 * Manjaro Linux
 * Red Hat Enterprise Linux 6.4 and 6.5
+* Amazon Linux 2
 
 # Memory Requirements
 
 ## RAM
 
-elPrep is designed to operate in memory, i.e. data is stored in RAM during computation. As long as you do not use the in-memory sort or mark duplicates filter, elPrep operates as a streaming tool, and peak memory use is limited to a few GB.
+elPrep is designed to operate in memory, i.e. data is stored in RAM during computation. As long as you do not use the in-memory sort, mark duplicates filter or base recalibration, elPrep operates as a streaming tool, and peak memory use is limited to a few GB.
 
-The in-memory sort and mark duplicates filter require keeping the entire input file in memory, and therefore use an amount of RAM that is proportional to the size of the input file. As a rule of thumb, elPrep requires 6x times more RAM memory than the size of the input file in .sam format when it is used for sorting or marking duplicates. 
+elPrep also provides a tool for splitting .sam files "per chromosome," and guarantees that processing these split files and then merging the results does not lose information when compared to processing a .sam file as a whole. Using the split/merge tool greatly reduces the RAM required to process a .sam file, but it comes at the cost of an additional processing step.
 
-elPrep provides a tool for splitting .sam files "per chromosome," and guarantees that processing these split files and then merging the results does not lose information when compared to processing a .sam file as a whole. Using the split/merge tool greatly reduces the RAM required to process a .sam file, but it comes at the cost of an additional processing step. For example, for the hg19 reference, the amount of RAM required is roughly a factor 0.6 of the input file in .sam format when using the split and merge tools.
+We recommend the following minimum of RAM when executing memory-intensive operations such as sorting, duplicate marking and base quality score recalibration:
 
-For example, in our experience, for whole-genome sequencing (+500GB .sam or 99GB .bam), a server with at least 256GB and splitting the data per chromosome is required. For exome sequencing (+-40GB .sam or +-8GB .bam), processing the data per chromsome requires a server with 24GB RAM.
+* whole-genome 30x: 128 GB RAM using the elprep split/filter/merge mode (sfm)
+* whole-genome 50x: 200 GB RAM using the elprep split/filter/merge mode (sfm)
+* whole-exome  30x: 22GB RAM using the elprep split/filter/merge mode (sfm)
+* whole-exome  30x: 80GB RAM using the elprep in memory mode
+
+These numbers are only estimates, and the actual RAM use may look different for your data sets.
 
 ## Disk Space
 
@@ -113,7 +121,7 @@ elPrep by default does not write any intermediate files, and therefore does not 
 
 Use the Google [forum](https://groups.google.com/d/forum/elprep) for discussions. You need a Google account to subscribe through the forum URL. You can also subscribe without a Google account by sending an email to elprep+subscribe@googlegroups.com.
 
-You can also contact [Charlotte Herzeel](https://github.com/caherzee) directly.
+You can also contact us via exascience@imec.be directly.
 
 # Citing elPrep
 
@@ -125,29 +133,27 @@ If performance is below your expectations, please contact us first before report
 
 # Demo
 
-This repository includes demo scripts that use elPrep for procesing a NA12878 WES sample, as well as a subset of NA12878 WGS that maps to chromosome 22.
+This repository includes demo scripts that use elPrep for procesing a NA12878 WES sample, as well as a subset of NA12878 WES that maps to chromosome 22.
 
 # Manual Reference Pages
 
 ## Name
 
-### elprep filter - a commandline tool for filtering and updating .sam/.bam/.cram files in preparation for variant calling
+### elprep filter - a commandline tool for filtering and updating .sam/.bam files in preparation for variant calling
 
 ## Synopsis
 
-	elprep filter input.sam output.sam --filter-unmapped-reads --filter-unmapped-reads-strict --replace-reference-sequences $gatkdict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --remove-duplicates --sorting-order coordinate --nr-of-threads $threads
+	elprep filter input.sam output.sam --mark-duplicates --mark-optical-duplicates output.metrics --sorting-order coordinate --bqsr output.recal --bqsr-reference hg38.elfasta --known-sites dbsnp_138.hg38.elsites 
 
-	elprep filter input.bam output.bam --filter-unmapped-reads --filter-unmapped-reads-strict --replace-reference-sequences $gatkdict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --remove-duplicates --sorting-order coordinate --nr-of-threads $threads
+	elprep filter input.bam output.bam --mark-duplicates --mark-optical-duplicates output.metrics --sorting-order coordinate --bqsr output.recal --bqsr-reference hg38.elfasta --known-sites dbsnp_138.hg38.elsites 
 
-	elprep filter input.cram output.cram --filter-unmapped-reads --filter-unmapped-reads-strict --replace-reference-sequences $gatkdict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --remove-duplicates --sorting-order coordinate --nr-of-threads $threads --reference-t fai --reference-T fasta
-
-	elprep filter /dev/stdin /dev/stdout --filter-unmapped-reads --filter-unmapped-reads-strict --replace-reference-sequences $gatkdict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --remove-duplicates --sorting-order coordinate --nr-of-threads $threads
+	elprep filter /dev/stdin /dev/stdout --mark-duplicates --mark-optical-duplicates output.metrics --sorting-order coordinate --bqsr output.recal --bqsr-reference hg38.elfasta --known-sites dbsnp_138.hg38.elsites	
 
 ## Description
 
-The elprep filter command requires two arguments: the input file and the output file. The input/output format can be .sam, .bam. or .cram. To use .bam or .cram, SAMtools must be installed. elPrep determines the format by looking at the file extension. elPrep also allows to use /dev/stdin and /dev/stdout as respective input or output sources for using Unix pipes. When doing so, elPrep assumes the input and output are in .sam format.
+The elprep filter command requires two arguments: the input file and the output file. The input/output format can be .sam or .bam. elPrep determines the format by looking at the file extension. elPrep also allows to use /dev/stdin and /dev/stdout as respective input or output sources for using Unix pipes. When doing so, elPrep assumes the input and output are in .sam format.
 
-The elprep filter commandline tool has three types of command options: filters, which implement actual .sam/.bam/.cram manipulations, sorting options, and execution-related options, for example for setting the number of threads. For optimal performance, issue a single elprep filter call that combines all filters you wish to apply.
+The elprep filter commandline tool has three types of command options: filters, which implement actual .sam/.bam manipulations, sorting options, and execution-related options, for example for setting the number of threads. For optimal performance, issue a single elprep filter call that combines all filters you wish to apply.
 
 The order in which command options are passed is ignored. For optimal performance, elPrep always applies filters in the following order:
 
@@ -159,77 +165,29 @@ The order in which command options are passed is ignored. For optimal performanc
 6. replace-reference-sequences
 7. replace-read-group
 8. mark-duplicates
-9. remove-duplicates
-10. remove-optional-fields
-11. keep-optional-fields
+9. mark-optical-duplicates
+10. bqsr
+11. remove-duplicates
+12. remove-optional-fields
+13. keep-optional-fields
 
 Sorting is done after filtering.
 
-The command-line interface changed in version 3.0 compared to elPrep versions 2.61 and earlier. Please consult the Changes section for a comparison.
+Please also see the **elprep sfm** command.
 
 ### Unix pipes
 
 elPrep is compatible with Unix pipes and allows using /dev/stdin and /dev/stdout as input or output sources. elPrep assumes that input and output on /dev/stdin and /dev/stdout are in .sam format.
 
-### Using .bam or .cram
-
-elPrep by default uses SAMtools for compression and decompression of .bam and .cram files. When the user specifies the input or ouput to be in .bam or .cram, a call to SAMtools is generated to compress or decompress the data. The SAMtools and elPrep commands are connected via Unix pipes to avoid generating intermediate files.
-
-For example, when the user executes the following elPrep command:
-
-	 elprep filter input.bam output.bam
-
-The actual command that is executed is similar to the following:
-
-	samtools view -h input.bam /dev/stdout | elprep filter /dev/stdin /dev/stdout | samtools view -b -o output.bam /dev/stdin
-
-elPrep may pass additional parameters to SAMtools which are not shown above, for example for setting the number of compression threads. You are, of course, free to specify the SAMtools commands for .bam/.cram conversion manually in your own scripts. The elPrep download includes the Python scripts elprep\_io\_wrapper.py and elprep.py that illustrate how to do this.
-
-### .cram Conversion Options
-
-When specifying that the output is in .cram format, it is required to specify the reference file to be used for the .cram compression via one of the --reference-t or --reference-T options.
-
-### --reference-T reference-fasta
-
-A fasta format reference file used by SAMtools for .cram compression, optionally compressed with bgzip and indexed by samtools faidx. elPrep uses it to fill in the "-T" option when calling the samtools view command for converting to .cram.
-
-For example, when the user executes the following elPrep command:
-
-	 elprep filter input.sam output.cram --reference-T ucsc.hg19.fasta
-
-The actual command that is executed is similar to the following:
-
-	 elprep filter input.sam /dev/stdout | samtools view -C -T ucsc.hg19.fasta -o output.cram /dev/stdin
-
-elPrep may pass additional options to the SAMtools command shown above.
-
-See the [SAMtools manual](http://www.htslib.org/doc/samtools.html) for more documentation on .cram conversion and the "-T" option to the view command in particular.
-
-### --reference-t reference-fai
-
-A tab-delimited file, where a first column lists the reference names and a second column lists the lengths of those references; for example, a .fai file generated with samtools faidx. elPrep uses it to fill in the "-t" option when calling the samtools view command for converting to .cram.
-
-For example, when the user executes the following elPrep command:
-
-	 elprep filter input.sam output.cram --reference-t ucsc.hg19.fai
-
-The actual command that is executed is similar to the following:
-
-	 elprep filter input.sam /dev/stdout | samtools view -C -t ucsc.hg19.fai -o output.cram /dev/stdin
-
-elPrep may pass additional options to the SAMtools command shown above.
-
-See the [SAMtools manual](http://www.htslib.org/doc/samtools.html) for more documentation on .cram conversion and the "-t" option to the view command in particular.
-
 ## Filter Command Options
 
 ### --replace-reference-sequences file
 
-This filter is used for replacing the header of a .sam/.bam/.cram file by a new header. The new header is passed as a single argument following the command option. The format of the new header can either be a .dict file, for example ucsc.hg19.dict from the GATK bundle, or another .sam/.bam/.cram file from which you wish to extract the new header.
+This filter is used for replacing the header of a .sam/.bam file by a new header. The new header is passed as a single argument following the command option. The format of the new header can either be a .dict file, for example ucsc.hg19.dict from the GATK bundle, or another .sam/.bam file from which you wish to extract the new header.
 
 All alignments in the input file that do not map to a chromosome that is present in the new header are removed. Therefore, there should be some overlap between the old and the new header for this command option to be meaningful. The option is typically used to reorder the reference sequence dictionary in the header, for example to reflect the order required by GATK.
 
-Replacing the header of a .sam/.bam/.cram file may destroy the sorting order of the file. In this case, the sorting order in the header is set to "unknown" by elPrep in the output file (cf. the 'so' tag).
+Replacing the header of a .sam/.bam file may destroy the sorting order of the file. In this case, the sorting order in the header is set to "unknown" by elPrep in the output file (cf. the 'so' tag).
 
 ### --filter-unmapped-reads
 
@@ -246,7 +204,7 @@ Remove all alignments with mapping quality lower than given mapping quality.
 
 ### --filter-non-exact-mapping-reads
 
-Removes all alignments where the mapping is not an exact match with the reference, albeit soft-clipping is allowed. This filter checks the CIGAR string and only allow occurences of M and S.
+Removes all alignments where the mapping is not an exact match with the reference, albeit soft-clipping is allowed. This filter checks the CIGAR string and only allows occurences of M and S.
 
 ### --filter-non-exact-mapping-reads-strict
 
@@ -262,7 +220,13 @@ This filter replaces or adds read groups to the alignments in the input file. Th
 
 ### --mark-duplicates
 
-This filter marks the duplicate reads in the input file by setting bit 0x400 of their FLAG conforming to the SAM specification. The criteria underlying this option are the same as the ones used in Picard.
+This filter marks the duplicate reads in the input file by setting bit 0x400 of their FLAG conforming to the SAM specification. The criteria underlying this option are the same as the ones used in Picard/GATK4.
+
+### --mark-optical-duplicates file
+
+When the --mark-duplicates filter is passed, one can also pass --mark-optical-duplicates. This option makes sure that optical duplicate marking is performed and a metrics file is generated that contains read statistics such as number of unmapped reads, secondary reads, duplicate reads, optical duplicates, library size estimate, etc. The criteria underlying this option are the same as the ones used in Picard/GATK4.
+
+The metrics file generated by --mark-optical-duplicates is compatible with MultiQC for visualisation.
 
 ### --remove-duplicates
 
@@ -285,6 +249,46 @@ This filter fixes alignments in two ways:
 
 This filter is similar to the CleanSam command of Picard.
 
+### --bqsr recal-file
+
+This filter performs base quality score recalibration, producing the same outcome as the GATK4 algorithm. The recal-file is used for logging the recalibration tables computed during base recalibration. This file is compatible with MultiQC for visualisation.
+
+There are additional elprep options that can be used for configuring the base quality score recalibration:
+
+* --bqsr-reference elfasta (required)
+* --known-sites list (optional)
+* --quantize-levels  nr (optional)
+* --sqq list (optional)
+
+See detailed descriptions of these options next.
+
+### --bqsr-reference elfasta-file
+
+This option is used to pass a reference file for base quality score recalibration (--bqsr). The reference file must be in the .elfasta format, specific to elPrep. 
+
+You can create an .elfasta file from a .fasta file using the elprep command fasta-to-elfasta. For example:
+
+	elprep fasta-to-elfasta ucsc.hg19.fasta ucsc.hg19.elfasta
+	
+
+### --known-sites list 
+
+This option is used to pass a number of known polymorphic sites that will be excluded during base recalibration (--bqsr).  The list is a list of files in the .elsites format, specific to elPrep. For example:
+
+	--known-sites Mills_and_1000G_gold_standard.indels.hg19.elsites,dbsnp_137.hg19.elsites
+
+You can create .elsites files from .vcf or .bed files using the vcf-to-elsites and bed-to-elsites parameters respectively. For example:
+
+	elprep vcf-to-elsites dbsnp_137.hg19.vcf dbsnp_137.hg19.elsites
+
+### --quantize-levels nr
+
+This option is used to specify the number of levels for quantizing quality scores during base quality score recalibration (--bqsr). The default value is 0.
+
+### --sqq list
+
+This option is used to indicate to use static quantized quality scores to a given number of levels during base quality score recalibration (--bqsr). This list should be of the form "[nr, nr, nr]". The default value is [].
+
 ## Sorting Command Options
 
 ### --sorting-order [keep | unknown | unsorted | queryname | coordinate]
@@ -303,17 +307,129 @@ This command option determines the order of the alignments in the output file. T
 
 This command option sets the number of threads that elPrep uses during execution. The default number of threads is equal to the number of cpu threads.
 
+It is normally not necessary to set this option. elPrep by default allocates the optimal number of threads.
+
+### --timed
+
+This command option is used to time the different phases of the execution of the elprep command, e.g. time spent on reading from file into memory, filtering, sorting, etc.
+
+It is normally not necessary to set this option. It is only useful to get some details on where execution time is spent.
+
+### --log-path path
+
+This command option is used to specify a path where elPrep can store log files. The default path is the logs folder in your home path (~/logs).
+
+## Format conversion tools
+
+elPrep uses internal formats for representing .vcf, .bed, or .fasta files used by specific filter/sfm options. elPrep provides commands for creating these files from existing .vcf, .bed or .fasta files.
+
+## Name
+
+### elprep vcf-to-elsites - a commandline tool for converting a .vcf file to an .elsites file
+
+## Synposis
+
+	elprep vcf-to-elsites input.vcf output.elsites --log-path /home/user/logs
+
+## Description
+
+Converts a .vcf file to an .elsites file. Such a file can be passed to the --known-sites suboption of the --bqsr option.
+
+## Options
+
+### --log-path path
+
+Sets the path for writing a log file.
+
+## Name
+
+### elprep bed-to-elsites - a commandline tool for converting a .bed file to an .elsites file
+
+## Synposis
+
+	elprep bed-to-elsites input.bed output.elsites --log-path /home/user/logs
+	
+## Description
+
+Converts a .bed file to an .elsites file. Such a file can be passed to the --known-sites suboption of the --bqsr option.
+
+## Options
+
+### --log-path path
+
+Sets the path for writing a log file.
+
+## Name
+
+### elprep fasta-to-elfasta - a commandline tool for converting a .fasta file to an .elfasta file
+
+## Synopsis
+
+	elprep fasta-to-elfasta input.fasta output.elfasta --log-path /home/user/logs
+	
+## Description
+
+Converts a .fasta file to an .elfasta file. The --bqsr-reference suboption of the --bqsr option requires an .elfasta file.
+
+## Options
+
+### --log-path path
+
+Sets the path for writing a log file.
+
 ## Split and Merge tools
 
 The elprep split command can be used to split up .sam files into smaller files that store the reads "per chromosome". elPrep determines the "chromosomes" by analyzing the sequence dictionary in the header of the input file and generates a split file for each chromosome that stores all read pairs that map to that chromosome. elPrep additionally creates a file for storing the unmapped reads, and in the case of paired-end data, also a file for storing the pairs where reads map to different chromosomes. elPrep also duplicates the latter pairs across chromosome files so that preparation pipelines have access to all information they need to run correctly. Once processed, use the elprep merge command to merge the split files back into a single .sam file.
 
 Splitting the .sam file into smaller files for processing "per chromosome" is useful for reducing the memory pressure as these split files are typically significantly smaller than the  input file as a whole. Splitting also makes it possible to parallelize the processing of a single .sam file by distributing the different split files across different processing nodes.
 
-We provide an example python script "elprep-sfm.py" that illustrates how to use the split and merge commands to process a .sam file. We also provide an example python scrip "elprep-sfm-gnupar.py" that uses GNU parallel for optimal execution on multi-socket servers. For a detailed description, see below.
+We provide an sfm command that executes a pipeline while silently using the elprep filter and split/merge tools. It is of course possible to write scripts to combine the filter and split/merge tools yourself.
 
 ## Name
 
-### elprep split - a commandline tool for splitting .sam/.bam/.cram files per chromosome so they can be processed without information loss
+### elprep sfm - a commandline tool for filtering and updating .sam/.bam files "per chromosome"
+
+## Synopsis
+
+	elprep sfm input.sam output.sam --mark-duplicates --mark-optical-duplicates output.metrics --sorting-order coordinate --bqsr output.recal --bqsr-reference hg38.elfasta --known-sites dbsnp_138.hg38.elsites 
+
+	elprep sfm input.bam output.bam --mark-duplicates --mark-optical-duplicates output.metrics --sorting-order coordinate --bqsr output.recal --bqsr-reference hg38.elfasta --known-sites dbsnp_138.hg38.elsites 
+
+	elprep sfm --mark-duplicates --mark-optical-duplicates output.metrics --sorting-order coordinate --bqsr output.recal --bqsr-reference hg38.elfasta --known-sites dbsnp_138.hg38.elsites 
+
+## Description
+
+The elprep sfm command is a drop-in replacement for the elprep filter command that minimises the use of RAM. For this, it silently calls the elprep split and merge tools to split up the data "per chromosome" for processing, which requires less RAM than processing a .sam/.bam file as a whole (see Split and Merge tools).
+
+## Options
+
+The elprep sfm command has the same options as the elprep filter command, with the following additions.
+
+### --intermediate-files-output-type [sam | bam]
+
+This command option sets the format of the split files. By default, elprep uses the same format as the input file for the split files. Changing the intermediate file output type may improve either runtime (.sam) or reduce peak disk usage (.bam).
+
+### --single-end
+
+Use this command option to indicate the sfm command is processing single-end data. This information is important for the split/merge tools to operate correcly. For more details, see the description of the elprep split and elprep merge commands.
+
+### --contig-group-size number
+
+This command option is passed to both the split and merge tools.
+
+The elprep split command groups the sequence dictionary entries for deciding how to split up the input data. The goal is to end up with groups of sequence dictionary entries (contigs) for which the total length (sum of LN tags) is roughly the same among all groups. By default, the elprep split command identifies the sequence dictionary entry with the largest length (LN) and chooses this as a target size for the groups. 
+
+The --contig-group-size option allows configuring a specific group size. This size may be smaller than some of the sequence dictionary entries: elprep split will attempt to create as many groups of contigs of the chosen size, and contigs which are "too long" will be put in their own group.
+
+Configuring the contig group size has an impact on how large the split files are that are generated by the elprep split command. Consequently, this also impacts how much RAM elprep uses for processing the split files. The default group size determines the minimum amount of RAM that is necessary to process a .sam/.bam file without information loss. 
+
+The default value for the --contig-group-size option is 0. For this, elprep split makes groups based on the sequence dictionary entry with the biggest length (LN).
+
+Choosing the value 1 for the --contig-group-size tells elprep split to split the data "per chromosome", i.e. a split file is created for each entry in the sequence dictionary.
+
+## Name
+
+### elprep split - a commandline tool for splitting .sam/.bam files per chromosome so they can be processed without information loss
 
 ## Synopsis
 
@@ -321,7 +437,7 @@ We provide an example python script "elprep-sfm.py" that illustrates how to use 
 
 ## Description
 
-The elprep split command requires two arguments: 1) the input file or a path to multiple input files and 2) a path to a directory where elPrep can store the split files. The input file(s) can be .sam, .bam, or .cram. It is also possible to use /dev/stdin as the input for using Unix pipes. There are no structural requirements on the input file(s) for using elprep split. For example, it is not necessary to sort the input file, nor is it necessary to convert to .bam or index the input file.
+The elprep split command requires two arguments: 1) the input file or a path to multiple input files and 2) a path to a directory where elPrep can store the split files. The input file(s) can be .sam or .bam. It is also possible to use /dev/stdin as the input for using Unix pipes. There are no structural requirements on the input file(s) for using elprep split. For example, it is not necessary to sort the input file, nor is it necessary to convert to .bam or index the input file.
 
 elPrep creates the output directory denoted by the output path, unless the directory already exists, in which case elPrep may override the existing files in that directory. Please make sure elPrep has the correct permissions for writing that directory.
 
@@ -331,40 +447,56 @@ By default, the elprep split command assumes it is processing pair-end data. The
 
 The split command outputs two types of files:
 
-1. a subdirectory "/path/to/output/splits/" containing a file per entry in the sequence dictionary of the input file that contains all reads that map to that entry.
+1. a subdirectory "/path/to/output/splits/". The split command groups the entries in the sequence dictionary of the input file and creates a file for each of these groups containing all reads that map to that group.
 2. a "/path/to/output/output-prefix-spread.output-type" file containing all reads of which the mate maps to a different entry in the sequence dictionary of the input file.
 
-To process the files created by the elprep split command, one needs to call the elprep filter command for each entry in the path/to/output/splits/ directory as well as the /path/to/output/output-prefix-spread.output-type file. The output files produced this way, need to be merged with the elprep merge command. For example scripts see "elprep-sfm.py" and "elprep-sfm-gnupar.py".
+To process the files created by the elprep split command, one needs to call the elprep filter command for each entry in the path/to/output/splits/ directory as well as the /path/to/output/output-prefix-spread.output-type file. The output files produced this way, need to be merged with the elprep merge command. This is implemented by the elprep sfm command.
 
 ### Single-end data (--single-end)
 
-The split command creates a file per entry in the sequence dictionary of the input file that contains all reads that map to that entry, and writes those files to the /path/to/output/ directory.
+The split command groups entries in the sequence dictionary of the input file and creates a file for each of these groups that contain all reads that map to that group, and writes those files to the /path/to/output/ directory.
 
-To process the files created by the elprep split --single-end command, one needs to call the elprep filter command for each entry in the /path/to/output/ directory. The output files produces this way, need to be merged with the elprep merge command. For example scripts see "elprep-sfm.py" and "elprep-sfm-gnupar.py". 
+To process the files created by the elprep split --single-end command, one needs to call the elprep filter command for each entry in the /path/to/output/ directory. The output files produces this way, need to be merged with the elprep merge command. This is implemented by the elprep sfm command.
 
 ## Options
 
 ### --output-prefix name
 
-The names of the split files created by elprep split are generated by combing a prefix and a chromosome name. The --output-prefix option sets that prefix. For example, if the prefix is "NA12878", and sequence dictionary of the input file contains the chromosomes "chr1", "chr2", and "chr3", and so on, then the names of the split files will be "NA12878-chr1.output-type", "NA12878-chr2.output-type", "NA12878-chr3.output-type", and so on.
+The split command groups entries in the sequence dictionary. The purpose of this grouping is to create groups of which the lengths of the entries (LN tags) add up to roughly the same size. 
+
+The names of the split files created by elprep split are generated by combing a prefix and a chromosome group name. The --output-prefix option sets that prefix. 
+
+For example, if the prefix is "NA12878", and the sfm command creates N groups for the sequence dictionary of the input file, then the names of the split files will be "NA12878-group1.output-type", "NA12878-group2.output-type", "NA12878-group3.output-type", and so on. A seperate file for the unmapped reads is created, e.g. "NA12878-unmapped.output-type".
 
 If the user does not specify the --output-prefix option, the name of the input file, minus the file extension, is used as a prefix.
 
-### --output-type [sam | bam | cram]
+### --output-type [sam | bam]
 
 This command option sets the format of the split files. By default, elprep uses the same format as the input file for the split files.
 
 ### --nr-of-threads number
 
-This command option sets the number of threads that elPrep uses during execution for converting between .bam/.sam formats. The default number of threads is equal to the number of cpu threads. This option is only useful when the input file is in .bam format or when the --output-type of the split files is chosen to be .bam.
+This command option sets the number of threads that elPrep uses during execution for parsing/outputting .sam/.bam data. The default number of threads is equal to the number of cpu threads.
+
+It is normally not necessary to set this option. elPrep by default allocates the optimal number of threads.
 
 ### --single-end
 
 When this command option is set, the elprep split command will treat the data as single-end data. When the option is not used, the elprep split command will treat the data as paired-end data.
 
+### --log-path path
+
+Sets the path for writing a log file.
+
+### --contig-group-size number
+
+The elprep split command groups the sequence dictionary entries for deciding how to split up the input data. The --contig-group-size options allows configuring a specific group size. See the description of --contig-group-size for the elprep sfm command for more details.
+
+The --contig-group-size parameter passed to the elprep merge command must be exactly the same as the one passed to the elprep split commend. The elprep sfm command ensures that this is the case.
+
 ## Name
 
-### elprep merge - a commandline tool for merging .sam/.bam/.cram files created by elprep split
+### elprep merge - a commandline tool for merging .sam/.bam files created by elprep split
 
 ## Synopsis
 
@@ -372,167 +504,29 @@ When this command option is set, the elprep split command will treat the data as
 
 ## Description
 
-The elprep merge command requires two arguments: a path to the files that need to be merged, and an output file. Use this command to merge files created with elprep split. The output file can be .sam, .bam, or .cram. It is also possible to use /dev/stdout as output when using Unix pipes for connecting other tools.
+The elprep merge command requires two arguments: a path to the files that need to be merged, and an output file. Use this command to merge files created with elprep split. The output file can be .sam or .bam. It is also possible to use /dev/stdout as output when using Unix pipes for connecting other tools.
 
 ## Options
 
 ### --nr-of-threads number
 
-This command option sets the number of threads that elPrep uses during execution for converting between .bam/.sam formats. The default number of threads is equal to the number of cpu threads. This option is only useful when the files to be marged are in .bam format or when the output-file is in .bam format.
+This command option sets the number of threads that elPrep uses during execution for parsing/outputting .sam/.bam data. The default number of threads is equal to the number of cpu threads.
+
+It is normally not necessary to set this option. elPrep by default allocates the optimal number of threads.
 
 ### --single-end
 
 This command option tells the elprep merge command to treat the data as single-end data. When this option is not used, elprep merge assumes the data is paired-end, expecting the data is merging to be generated by the elprep split command accordingly.
 
-# Python Scripts
+### --log-path path
 
-The Python scripts have been tested with Python 2.7.6. Please add the elPrep and SAMtools binaries to your PATH for using these scripts.
+Sets the path for writing a log file.
 
-## Name
+### --contig-group-size number
 
-### elprep-sfm.py - a Python script that illustrates the use of elprep split and merge
+The elprep split command groups the sequence dictionary entries for deciding how to split up the input data. The --contig-group-size options allows configuring a specific group size. See the description of --contig-group-size for the elprep sfm command for more details.
 
-## Synopsis
-
-	./elprep-sfm.py $input $output --filter-unmapped-reads --filter-unmapped-reads-strict --replace-reference-sequences ucsc.hg19.dict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --remove-duplicates --sorting-order coordinate --nr-of-threads $threads --intermediate-files-output-type [sam | bam | cram] --refernce-T fasta reference-t fai --intermediate-files-output-prefix name --single-end
-
-## Description
-
-A Python script that combines the elprep split, filter, and merge commands. The script may be used as a drop-in replacement for the elprep filter command, except that:
-
-* It first calls elprep split to split up the input file per chromosome. The script creates a temp folder in the current working directory for storing the split files created this way.
-* It then calls the elprep filter command for processing the split files one by one.
-* Finally, it calls the elprep merge command to create the output file from the split files.
-
-## Special Options
-
-### --intermediate-files-output-type [sam | bam | cram]
-
-The output type that will be used for the intermediate split files. The default output type for intermediate files is the file type of the input file, .sam when the input file has no extension (e.g. for /dev/stdin), or in case the input is a directory, it is the same type as the output type of the files in the input directory.
-
-### --intermediate-files-output-prefix name
-
-The output prefix that will be default used for the intermediate split files. The default output prefix is the file name of the input file.
-
-### --single-end
-
-The elprep split and merge commands will treat the data as single-end data. When this option is not used, the elprep split and merge commands will be called to treat the data as paired-end data.
-
-### --reference-T reference-fasta
-
-A fasta format reference file used by SAMtools for .cram compression, optionally compressed with bgzip and indexed by samtools faidx. elPrep uses it to fill in the "-T" option when calling the samtools view command for converting to .cram. This option (or --reference-t) is required when setting --intermediate-files-output-type to cram.
-
-### --reference-t reference-fai
-
-A tab-delimited file, where a first column lists the reference names and a second column lists the lengths of those references; for example, a .fai file generated with samtools faidx. elPrep uses it to fill in the "-t" option when calling the samtools view command for converting to .cram. This option (or --reference-T) is required when setting --intermediate-files-output-type to cram.
-
-### Name
-
-### elprep-sfm-gnupar.py - a Python script that illustrates the use of elprep split and merge and GNU parallel for optimal execution on a multi-socket server
-
-## Synopsis
-
-	./elprep-sfm-gnupar.py $input $output --filter-unmapped-reads --filter-unmapped-reads-strict --replace-reference-sequences ucsc.hg19.dict --replace-read-group "ID:group1 LB:lib1 PL:illumina PU:unit1 SM:sample1" --mark-duplicates --remove-duplicates --sorting-order coordinate --nr-of-threads $threads --nr-of-jobs $jobs --intermediate-files-output-type [sam | bam | cram] --intermediate-files-output-prefix name --single-end
-
-## Description
-
-A Python script that combines the elprep split, filter, and merge commands with GNU parallel. The script may be used as a drop-in replacement for the elprep filter command, except that it adds a --nr-of-jobs option, which is used to set the number of elprep calls that can be processed in parallel. It also supports the --intermediate-files-output-type and --intermediate-files-output-prefix options for setting the matching elprep split options.
-
-The script is structured as follows:
-
-* It first calls elprep split to split up the input file per chromosome. The script creates a temp folder in the current working directory for storing the split files created this way.
-* It then calls the elprep filter command for processing the split files in parallel using GNU parallel. There will be [--nr-of-jobs] split files executed in parallel, which each use [--nr-of-threads] threads for their execution.
-* It then calls the elprep filter command for processing the spread reads file created by the elprep split command.
-* Finally, the script calls the elprep merge command to combine the results of processing the split files and the spread reads file into a single output.
-
-Using this script is useful when using a multi-socket server. For example, when using a server with two sockets and two 12 core processors, running up to two elprep commands in parallel with each 12 threads may be optimal from a performance perspective. The command could thus look as follows:
-
-	./elprep-sfm-gnupar.py input.bam output.bam ... --nr-of-threads 12 --nr-of-jobs 2
-
-## Special Options
-
-### --nr-of-jobs number
-
-The number of elprep commands that will be executed in parallel.
-
-### --intermediate-files-output-type [sam | bam | cram]
-
-The output type that will be used for the intermediate split files. The default output type for intermediate files is the file type of the input file, .sam when the input file has no extension (e.g. for /dev/stdin), or in case the input is a directory, it is the same type as the output type of the files in t
-he input directory.
-
-### --intermediate-files-output-prefix name
-
-The output prefix that will be default used for the intermediate split files. The default output prefix is the file name of the input file.
-
-### --single-end
-
-The data will be treated as single-end data. When this option is not used, the data will be treated as paired-end data.
-
-## Name
-
-### elprep\_io\_wrapper.py - a Python script that illustrates how to use piping with elPrep
-
-A Python script that implements the .bam/.cram conversion through piping to SAMtools. The script is loaded by the elprep-sfm.py and elprep.py scripts. You can edit the SAMtools calls to tweak the parameters to fit your needs, or use this script as a starting point for piping to other .bam/.cram conversion tools than SAMtools.
-
-## Name
-
-### elprep.py - a Python script that wraps the elPrep binary
-
-A Python script that wraps the elPrep binary and loads the elprep\_io\_wrapper.py script for .bam/.cram conversion using SAMtools rather than using the internal piping of elPrep. You can use this script as a drop-in replacement for the elprep binary. 
-
-## Name
-
-### elprep\_entrypoint.py - A Python scripts that can be used as an entrypoint for Docker.
-
-A Python scripts that wraps the elprep.py, elprep-sfm.py and elprep-sfm-gnupar.py scripts. It can for example be used as an entrypoint to Docker.
-
-# Command-line changes compared to elprep-2.61 and earlier
-
-The elPrep command-line interface changed in version 3.0 compared to versions 2.61 and earlier. elPrep version 3.0 still executes commands formulated using the old interface, but the plan is to no longer support this in future releases of elPrep. Below we list the changes in detail.
-
-## elprep command:
-
-The elprep command itself must now be followed by "filter" to express a filter command. Before, just "elprep" was used to specify a filter command.
-
-elprep-2.61 and earlier:
-
-	elprep input.sam output.sam ...
-
-Now:
-
-	elprep filter input.sam output.sam ...
-
-## Optional parameters no longer allowed
-
-Since elprep-3.0, command options no longer allow optional parameters. All parameters must be passed explicitly. This affects the following command options: 
-
-### --filter-unmapped-reads [strict]
-
-This command option is replaced by two command options: --filter-unmapped-reads and --filter-unmapped-reads-strict.
-
-### --mark-duplicates [deterministic]
-
-This command option is replaced by two command options: --mark-duplicates and mark-duplicates-deterministic.
-
-## Removed command options
-
-elprep-3.0 removes the following command options because they specify information that is now managed by the elPrep implementation itself:
-
-### --gc-on [0 | 1 | 2]
-
-The user no longer needs to specify garbage collection options. The elPrep implementation takes care of this internally.
-
-### -split-file
-
-The user no longer needs to specify the --split-file option for processing files created by the elprep split command.
-
-## Defaults
-
-The following defaults for unused command options have changed:
-
-### --nr-of-threads
-
-When the command invocation does not specify the --nr-of-threads option, the default number of threads is set equal to the number of cpu threads. Before the default number of threads was 1.
+The --contig-group-size parameter passed to the elprep merge command must be exactly the same as the one passed to the elprep split commend. The elprep sfm command ensures that this is the case.
 
 # Extending elPrep
 
