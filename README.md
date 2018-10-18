@@ -13,7 +13,7 @@ elPrep is being developed at the [ExaScience Life Lab](http://www.exascience.com
 
 Comparison of elPrep4.0 and GATK4.0 in terms of runtime, RAM use, and disk use for 50x WGS Illumina Platinum NA12878 aligned against hg38. elPrep combines the execution of the 4 pipeline steps for efficient parallel execution.
 
-![NA12878 Platinum Genome run](https://github.com/ExaScience/elprep/blob/master/images/wgs-benchmarks-elprep-vs-gatk4.pdf)
+![NA12878 Platinum Genome run](https://github.com/ExaScience/elprep/raw/master/images/wgs-benchmarks-elprep-vs-gatk4.pdf)
 
 For more benchmark details, please consult our publication list.
 
