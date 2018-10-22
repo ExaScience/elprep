@@ -530,6 +530,8 @@ If you wish to extend elPrep, for example by adding your own filters, please con
 
 Many thanks for testing, bug reports, or contributions:
 
+Amin Ardeshirdavani
+
 Richard Corbett
 
 Matthias De Smet
