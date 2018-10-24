@@ -77,7 +77,7 @@ const DeprecatedFilterHelp = "\nFilter parameters: (deprecated, please use the f
 // later stage.
 func DeprecatedFilter() error {
 	setLogOutput("")
-	log.Println("Warning: Calling elprep without a command to invoke the filter functionality is depecratead. Please use the filter command instead.")
+	log.Println("Warning: Calling elprep without a command to invoke the filter functionality is deprecated. Please use the filter command instead.")
 	cmdLine := commandLine(os.Args[1:])
 	sortingOrder := sam.Keep
 	nrOfThreads := 0
@@ -164,7 +164,7 @@ func DeprecatedFilter() error {
 			} else {
 				switch val {
 				case 0, 1, 2:
-					log.Println("Warning: The gc-on option is not supported anymore in this version of elPrep.")
+					log.Println("Warning: The gc-on option is not supported any more in this version of elPrep.")
 				default:
 					log.Printf("Invalid gc-on option %v.\n", lvl)
 					fmt.Fprint(os.Stderr, DeprecatedFilterHelp)
@@ -178,7 +178,7 @@ func DeprecatedFilter() error {
 		case "--rename-chromosomes":
 			renameChromosomesFilter = filters.RenameChromosomes
 		case "--split-file":
-			log.Println("Warning: The split-file option is not necessary anymore in this version of elPrep.")
+			log.Println("Warning: The split-file option is not necessary any more in this version of elPrep.")
 		default:
 			filenames = append(filenames, entry)
 		}
