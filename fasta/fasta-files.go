@@ -94,10 +94,16 @@ func ParseFai(filename string) (fai map[string]FaiReference, err error) {
 
 func contigFromHeader(b []byte) string {
 	i := 1
-	for ; (i < len(b)) && b[i] == ' '; i++ {
+	for ; i < len(b); i++ {
+		if c := b[i]; c >= '!' && c <= '~' {
+			break
+		}
 	}
 	j := i + 1
-	for ; (j < len(b)) && b[j] != ' '; j++ {
+	for ; j < len(b); j++ {
+		if c := b[j]; c < '!' || c > '~' {
+			break
+		}
 	}
 	return string(b[i:j])
 }
