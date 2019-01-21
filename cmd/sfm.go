@@ -66,6 +66,7 @@ const SfmHelp = "\nsfm parameters:\n" +
 	"[--log-path path]\n" +
 	"[--intermediate-files-output-prefix name]\n" +
 	"[--intermediate-files-output-type [sam | bam]]\n" +
+	"[--tmp-path path]\n"+
 	"[--single-end]\n" +
 	"[--contig-group-size nr]\n"
 
@@ -97,6 +98,7 @@ const CombinedSfmFilterHelp = "filter/sfm parameters:\n" +
 	"[--log-path path]\n" +
 	"[--intermediate-files-output-prefix name] (sfm only)\n" +
 	"[--intermediate-files-output-type [sam | bam]] (sfm only)\n" +
+	"[--tmp-path path]\n" +
 	"[--single-end] (sfm only)\n" +
 	"[--contig-group-size nr] (sfm only)\n"
 
@@ -125,7 +127,7 @@ func Sfm() error {
 		nrOfThreads                                         int
 		timed                                               bool
 		profile                                             string
-		logPath                                             string
+		logPath, tmpPath                                    string
 		renameChromosomes                                   bool
 		outputPrefix, outputType                            string
 		contigGroupSize                                     int
@@ -161,6 +163,7 @@ func Sfm() error {
 	flags.BoolVar(&timed, "timed", false, "measure the runtime")
 	flags.StringVar(&profile, "profile", "", "write a runtime profile to the specified file(s)")
 	flags.StringVar(&logPath, "log-path", "", "write log files to the specified directory")
+	flags.StringVar(&tmpPath, "tmp-path", "", "write split files to a specified directory")
 	flags.BoolVar(&renameChromosomes, "rename-chromosomes", false, "")
 	//split/merge flags
 	flags.StringVar(&outputPrefix, "intermediate-files-output-prefix", "", "prefix for the output files")
@@ -399,6 +402,17 @@ func Sfm() error {
 		splitArgs = append(splitArgs, "--log-path", logPath)
 		mergeArgs = append(mergeArgs, "--log-path", logPath)
 	}
+	if tmpPath != "" {
+		fmt.Fprint(&command, " --tmp-path ", tmpPath)
+		//filterArgs = append(filterArgs, "--log-path", logPath)
+		//filterArgs2 = append(filterArgs2, "--log-path", logPath)
+		//splitArgs = append(splitArgs, "--tmp-path", tmpPath)
+		//mergeArgs = append(mergeArgs, "--tmp-path", tmpPath)
+		if err := os.MkdirAll(tmpPath,0700);err != nil {
+			log.Fatal(err, ", while trying to create directories for split files ",tmpPath)
+		}
+	}
+
 
 	ext := filepath.Ext(input)
 	if outputPrefix == "" {
@@ -438,6 +452,9 @@ func Sfm() error {
 	if err != nil {
 		return err
 	}
+	if tmpPath != "" {
+		splitsDir = tmpPath + string(filepath.Separator) + splitsDir
+	}
 	splitsDir = splitsDir + string(filepath.Separator)
 	splitOpt := []string{"split", os.Args[2], splitsDir}
 	splitArgs = append(splitOpt, splitArgs...)
@@ -457,6 +474,9 @@ func Sfm() error {
 		if err != nil {
 			return err
 		}
+		if tmpPath != "" {
+			metricsDir = tmpPath + string(filepath.Separator) + metricsDir
+		}
 		metricsDir = metricsDir + string(filepath.Separator)
 		err = os.MkdirAll(filepath.Dir(metricsDir), 0700)
 		if err != nil {
@@ -469,6 +489,9 @@ func Sfm() error {
 	mergeDir, err := filepath.Abs(mergeName)
 	if err != nil {
 		return err
+	}
+	if tmpPath != "" {
+		mergeDir = tmpPath + string(filepath.Separator) + mergeDir
 	}
 	mergeDir = mergeDir + string(filepath.Separator)
 	splitFilesDir := splitsDir
@@ -485,6 +508,9 @@ func Sfm() error {
 		tabsDir, err := filepath.Abs("elprep-tabs-" + timeStamp)
 		if err != nil {
 			return err
+		}
+		if tmpPath != "" {
+			tabsDir = tmpPath + string(filepath.Separator) + tabsDir
 		}
 		tabsDir = tabsDir + string(filepath.Separator)
 		err = os.MkdirAll(filepath.Dir(tabsDir), 0700)
@@ -590,6 +616,9 @@ func Sfm() error {
 		tabsDir, err := filepath.Abs("elprep-tabs-" + timeStamp)
 		if err != nil {
 			return err
+		}
+		if tmpPath != "" {
+			tabsDir = tmpPath + string(filepath.Separator) + tabsDir
 		}
 		tabsDir = tabsDir + string(filepath.Separator)
 		filterArgs2 = append(filterArgs2, "--bqsr-apply", tabsDir, "--recal-file", bqsr)
