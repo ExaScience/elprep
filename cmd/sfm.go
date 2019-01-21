@@ -66,7 +66,7 @@ const SfmHelp = "\nsfm parameters:\n" +
 	"[--log-path path]\n" +
 	"[--intermediate-files-output-prefix name]\n" +
 	"[--intermediate-files-output-type [sam | bam]]\n" +
-	"[--tmp-path path]\n"+
+	"[--tmp-path path]\n" +
 	"[--single-end]\n" +
 	"[--contig-group-size nr]\n"
 
@@ -448,12 +448,12 @@ func Sfm() error {
 	// split command
 	timeStamp := time.Now().Format(time.RFC3339)
 	splitsName := fmt.Sprintf("elprep-splits-%s", timeStamp)
+	if tmpPath != "" {
+		splitsName = tmpPath + string(filepath.Separator) + splitsName
+	}
 	splitsDir, err := filepath.Abs(splitsName)
 	if err != nil {
 		return err
-	}
-	if tmpPath != "" {
-		splitsDir = tmpPath + string(filepath.Separator) + splitsDir
 	}
 	splitsDir = splitsDir + string(filepath.Separator)
 	splitOpt := []string{"split", os.Args[2], splitsDir}
@@ -468,14 +468,14 @@ func Sfm() error {
 
 	// set up directory for metrics
 	metricsName := fmt.Sprintf("elprep-metrics-%s", timeStamp)
+	if tmpPath != "" {
+		metricsName = tmpPath + string(filepath.Separator) + metricsName
+	}
 	metricsDir := ""
 	if markOpticalDuplicates != "" {
 		metricsDir, err = filepath.Abs(metricsName)
 		if err != nil {
 			return err
-		}
-		if tmpPath != "" {
-			metricsDir = tmpPath + string(filepath.Separator) + metricsDir
 		}
 		metricsDir = metricsDir + string(filepath.Separator)
 		err = os.MkdirAll(filepath.Dir(metricsDir), 0700)
@@ -486,12 +486,12 @@ func Sfm() error {
 
 	// filter commands
 	mergeName := fmt.Sprintf("elprep-splits-processed-%s", timeStamp) + string(filepath.Separator)
+	if tmpPath != "" {
+		mergeName = tmpPath + string(filepath.Separator) + mergeName
+	}
 	mergeDir, err := filepath.Abs(mergeName)
 	if err != nil {
 		return err
-	}
-	if tmpPath != "" {
-		mergeDir = tmpPath + string(filepath.Separator) + mergeDir
 	}
 	mergeDir = mergeDir + string(filepath.Separator)
 	splitFilesDir := splitsDir
@@ -505,12 +505,13 @@ func Sfm() error {
 	log.Println("Filtering...")
 	if bqsr != "" {
 		// phase 1: Recalibration
-		tabsDir, err := filepath.Abs("elprep-tabs-" + timeStamp)
+		tabsName := fmt.Sprintf("elprep-tabs-%s", timeStamp) + string(filepath.Separator)
+		if tmpPath != "" {
+			tabsName = tmpPath + string(filepath.Separator) + tabsName
+		}
+		tabsDir, err := filepath.Abs(tabsName)
 		if err != nil {
 			return err
-		}
-		if tmpPath != "" {
-			tabsDir = tmpPath + string(filepath.Separator) + tabsDir
 		}
 		tabsDir = tabsDir + string(filepath.Separator)
 		err = os.MkdirAll(filepath.Dir(tabsDir), 0700)
@@ -613,12 +614,13 @@ func Sfm() error {
 		log.Println("Filtering...")
 		filterOpt2 := []string{"filter", "/dev/stdin", output}
 		filterArgs2 = append(filterOpt2, filterArgs2...)
-		tabsDir, err := filepath.Abs("elprep-tabs-" + timeStamp)
+		tabsName := fmt.Sprintf("elprep-tabs-%s", timeStamp) + string(filepath.Separator)
+		if tmpPath != "" {
+			tabsName = tmpPath + string(filepath.Separator) + tabsName
+		}
+		tabsDir, err := filepath.Abs(tabsName)
 		if err != nil {
 			return err
-		}
-		if tmpPath != "" {
-			tabsDir = tmpPath + string(filepath.Separator) + tabsDir
 		}
 		tabsDir = tabsDir + string(filepath.Separator)
 		filterArgs2 = append(filterArgs2, "--bqsr-apply", tabsDir, "--recal-file", bqsr)
