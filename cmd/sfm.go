@@ -51,6 +51,7 @@ const SfmHelp = "\nsfm parameters:\n" +
 	"[--replace-read-group read-group-string]\n" +
 	"[--mark-duplicates]\n" +
 	"[--mark-optical-duplicates file]\n" +
+	"[--optical-duplicates-pixel-distance nr]\n" +
 	"[--remove-duplicates]\n" +
 	"[--remove-optional-fields [all | list]]\n" +
 	"[--keep-optional-fields [none | list]]\n" +
@@ -82,6 +83,7 @@ const CombinedSfmFilterHelp = "filter/sfm parameters:\n" +
 	"[--replace-read-group read-group-string]\n" +
 	"[--mark-duplicates]\n" +
 	"[--mark-optical-duplicates file]\n" +
+	"[--optical-duplicates-pixel-distance nr]\n" +
 	"[--remove-duplicates]\n" +
 	"[--remove-optional-fields [all | list]]\n" +
 	"[--keep-optional-fields [none | list]]\n" +
@@ -112,6 +114,7 @@ func Sfm() error {
 		replaceReadGroup                                    string
 		markDuplicates, markDuplicatesDet, removeDuplicates bool
 		markOpticalDuplicates                               string
+		opticalDuplicatesPixelDistance                      int
 		removeOptionalFields                                string
 		keepOptionalFields                                  string
 		sortingOrderString                                  string
@@ -147,6 +150,7 @@ func Sfm() error {
 	flags.BoolVar(&markDuplicatesDet, "mark-duplicates-deterministic", false, "mark duplicates deterministically")
 	flags.BoolVar(&removeDuplicates, "remove-duplicates", false, "remove duplicates")
 	flags.StringVar(&markOpticalDuplicates, "mark-optical-duplicates", "", "mark optical duplicates")
+	flags.IntVar(&opticalDuplicatesPixelDistance, "optical-duplicates-pixel-distance", 100, "pixel distance used for optical duplicate marking")
 	flags.StringVar(&removeOptionalFields, "remove-optional-fields", "", "remove the given optional fields")
 	flags.StringVar(&keepOptionalFields, "keep-optional-fields", "", "remove all except for the given optional fields")
 	flags.StringVar(&sortingOrderString, "sorting-order", string(sam.Keep), "determine output order of alignments, one of keep, unknown, unsorted, queryname, or coordinate")
@@ -323,6 +327,7 @@ func Sfm() error {
 
 	if markOpticalDuplicates != "" {
 		fmt.Fprint(&command, " --mark-optical-duplicates ", markOpticalDuplicates)
+		fmt.Fprint(&command, " --optical-duplicates-pixel-distance ", opticalDuplicatesPixelDistance)
 	}
 
 	if removeDuplicates {
@@ -502,6 +507,9 @@ func Sfm() error {
 			if markOpticalDuplicates != "" {
 				metricsFile := path.Join(metricsDir, fileName)
 				fileFilterArgs = append(fileFilterArgs, []string{"--mark-optical-duplicates-intermediate", metricsFile}...)
+				opticalDuplicatesPixelDistanceString := strconv.FormatInt(int64(opticalDuplicatesPixelDistance), 10)
+				fileFilterArgs = append(fileFilterArgs, []string{"--optical-duplicates-pixel-distance", opticalDuplicatesPixelDistanceString}...)
+
 			}
 			filterCmd := exec.Command(os.Args[0], fileFilterArgs...)
 			filterCmd.Stderr = os.Stderr
@@ -523,6 +531,8 @@ func Sfm() error {
 			if markOpticalDuplicates != "" {
 				metricsFile := path.Join(metricsDir, spreadFileName)
 				fileFilterArgs = append(fileFilterArgs, []string{"--mark-optical-duplicates-intermediate", metricsFile}...)
+				opticalDuplicatesPixelDistanceString := strconv.FormatInt(int64(opticalDuplicatesPixelDistance), 10)
+				fileFilterArgs = append(fileFilterArgs, []string{"--optical-duplicates-pixel-distance", opticalDuplicatesPixelDistanceString}...)
 			}
 			filterCmd := exec.Command(os.Args[0], fileFilterArgs...)
 			filterCmd.Stderr = os.Stderr
@@ -559,6 +569,8 @@ func Sfm() error {
 			if markOpticalDuplicates != "" {
 				metricsFile := path.Join(metricsDir, spreadFileName)
 				fileFilterArgs = append(fileFilterArgs, []string{"--mark-optical-duplicates-intermediate", metricsFile}...)
+				opticalDuplicatesPixelDistanceString := strconv.FormatInt(int64(opticalDuplicatesPixelDistance), 10)
+				fileFilterArgs = append(fileFilterArgs, []string{"--optical-duplicates-pixel-distance", opticalDuplicatesPixelDistanceString}...)
 			}
 			filterCmd := exec.Command(os.Args[0], fileFilterArgs...)
 			filterCmd.Stderr = os.Stderr

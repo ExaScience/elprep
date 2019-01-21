@@ -114,9 +114,7 @@ func (cache tileInfoCache) getTileInfo(aln *sam.Alignment) (tile tileInfo, err e
 	return tile, nil
 }
 
-const opticalPixelDistance = 100
-
-func isOpticalDuplicate(aln1 *sam.Alignment, tile1 tileInfo, aln2 *sam.Alignment, tile2 tileInfo, deterministic bool) bool {
+func isOpticalDuplicate(aln1 *sam.Alignment, tile1 tileInfo, aln2 *sam.Alignment, tile2 tileInfo, deterministic bool, opticalPixelDistance int) bool {
 	if aln1.RG() != aln2.RG() {
 		return false
 	}
@@ -166,7 +164,7 @@ func markOpticalDuplicatesFragment(aln *sam.Alignment, ctr *DuplicatesCtr) {
 	}
 }
 
-func markOpticalDuplicatesPair(aln *sam.Alignment, pairFragments, pairs *sync.Map, ctr *DuplicatesCtr, deterministic bool) error {
+func markOpticalDuplicatesPair(aln *sam.Alignment, pairFragments, pairs *sync.Map, ctr *DuplicatesCtr, deterministic bool, opticalPixelDistance int) error {
 	if isTruePair(aln) {
 		aln1 := aln
 		var aln2 *sam.Alignment
@@ -211,7 +209,7 @@ func markOpticalDuplicatesPair(aln *sam.Alignment, pairFragments, pairs *sync.Ma
 		if err != nil {
 			return err
 		}
-		if isOpticalDuplicate(bestPair.aln1, tile1, aln1, tile2, deterministic) {
+		if isOpticalDuplicate(bestPair.aln1, tile1, aln1, tile2, deterministic, opticalPixelDistance) {
 			ctr.ReadPairOpticalDuplicates++
 			setOpticalDuplicate(aln1)
 			setOpticalDuplicate(aln2) // other end is duplicate too, cause have same QNAME, so same tile info
@@ -234,7 +232,7 @@ func pairOrientationLess(pair1, pair2 *alnCons) bool {
 	return pair2.aln1.IsReversed() || pair2.aln2.IsReversed()
 }
 
-func countOpticalDuplicates(list *alnCons, libraryTable map[string]int, deterministic bool) (int, error) {
+func countOpticalDuplicates(list *alnCons, libraryTable map[string]int, deterministic bool, opticalPixelDistance int) (int, error) {
 	var pairs []*alnCons
 	for entry := list; entry != nil; entry = entry.next {
 		pairs = append(pairs, entry)
@@ -310,7 +308,7 @@ func countOpticalDuplicates(list *alnCons, libraryTable map[string]int, determin
 				if err != nil {
 					return 0, err
 				}
-				if isOpticalDuplicate(pairs[i].aln1, tileI, pairs[j].aln1, tileJ, deterministic) {
+				if isOpticalDuplicate(pairs[i].aln1, tileI, pairs[j].aln1, tileJ, deterministic, opticalPixelDistance) {
 					ctr++
 					if opticalJ {
 						setOpticalDuplicate(pairs[i].aln1)
@@ -326,13 +324,13 @@ func countOpticalDuplicates(list *alnCons, libraryTable map[string]int, determin
 	return ctr, nil
 }
 
-func countOpticalDuplicatesPairs(pairs *sync.Map, libraryTable map[string]int, deterministic bool) (map[string]int, error) {
+func countOpticalDuplicatesPairs(pairs *sync.Map, libraryTable map[string]int, deterministic bool, opticalPixelDistance int) (map[string]int, error) {
 	result := pairs.ParallelReduce(
 		func(alns map[interface{}]interface{}) interface{} {
 			ctrs := make(map[string]int)
 			for _, value := range alns {
 				origin := value.(*handle).pair()
-				ctr, err := countOpticalDuplicates(origin.getOpticalDuplicates(), libraryTable, deterministic)
+				ctr, err := countOpticalDuplicates(origin.getOpticalDuplicates(), libraryTable, deterministic, opticalPixelDistance)
 				if err != nil {
 					return err
 				}
@@ -450,8 +448,14 @@ func mergeDuplicatesCtrMaps(ctrs1, ctrs2 DuplicatesCtrMap) {
 	}
 }
 
-// MarkOpticalDuplicates implements a function for calculating duplication metrics for a set of reads
-func MarkOpticalDuplicates(reads *sam.Sam, fragments, pairs *sync.Map, deterministic bool) DuplicatesCtrMap {
+// MarkOpticalDuplicates implements a function for calculating duplication metrics for a set of reads,
+// optical pixel distance = 100
+func MarkOpticalDuplicates(reads *sam.Sam, _, pairs *sync.Map, deterministic bool) DuplicatesCtrMap {
+	return MarkOpticalDuplicatesWithPixelDistance(reads, pairs, deterministic, 100)
+}
+
+// MarkOpticalDuplicatesWithPixelDistance implements a function for calculating duplication metrics for a set of reads
+func MarkOpticalDuplicatesWithPixelDistance(reads *sam.Sam, pairs *sync.Map, deterministic bool, opticalPixelDistance int) DuplicatesCtrMap {
 	alns := reads.Alignments
 	pairsFragments := sync.NewMap(16 * runtime.GOMAXPROCS(0))
 	// Mark duplicates versus origin + collect for origins their duplicates.
@@ -475,7 +479,7 @@ func MarkOpticalDuplicates(reads *sam.Sam, fragments, pairs *sync.Map, determini
 			}
 			if aln.IsDuplicate() {
 				markOpticalDuplicatesFragment(aln, ctr)
-				if ctrMap.err = markOpticalDuplicatesPair(aln, pairsFragments, pairs, ctr, deterministic); ctrMap.err != nil {
+				if ctrMap.err = markOpticalDuplicatesPair(aln, pairsFragments, pairs, ctr, deterministic, opticalPixelDistance); ctrMap.err != nil {
 					return ctrMap
 				}
 			}
@@ -501,7 +505,7 @@ func MarkOpticalDuplicates(reads *sam.Sam, fragments, pairs *sync.Map, determini
 	// We need to extract the order of the library ids from the header, since this is used for the second phase of optical duplicate marking.
 	libraryTable := initLibraryTable(reads.Header)
 	//fnr := countOpticalDuplicatesFragments(fragments)
-	pnr, err := countOpticalDuplicatesPairs(pairs, libraryTable, deterministic)
+	pnr, err := countOpticalDuplicatesPairs(pairs, libraryTable, deterministic, opticalPixelDistance)
 	if err != nil {
 		ctrMap.err = err
 		return ctrMap

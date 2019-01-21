@@ -402,6 +402,7 @@ const FilterHelp = "\nfilter parameters:\n" +
 	"[--replace-read-group read-group-string]\n" +
 	"[--mark-duplicates]\n" +
 	"[--mark-optical-duplicates file]\n" +
+	"[--optical-duplicates-pixel-distance nr]\n" +
 	"[--remove-duplicates]\n" +
 	"[--remove-optional-fields [all | list]]\n" +
 	"[--keep-optional-fields [none | list]]\n" +
@@ -435,6 +436,7 @@ func Filter() error {
 		replaceReadGroup                                         string
 		markDuplicates, markDuplicatesDet, removeDuplicates      bool
 		markOpticalDuplicates, markOpticalDuplicatesIntermediate string
+		opticalDuplicatesPixelDistance                           int
 		removeOptionalFields                                     string
 		keepOptionalFields                                       string
 		sortingOrderString                                       string
@@ -468,6 +470,7 @@ func Filter() error {
 	flags.BoolVar(&markDuplicates, "mark-duplicates", false, "mark duplicates")
 	flags.StringVar(&markOpticalDuplicates, "mark-optical-duplicates", "", "mark optical duplicates")
 	flags.StringVar(&markOpticalDuplicatesIntermediate, "mark-optical-duplicates-intermediate", "", "mark optical duplicates intermediate file (only for split files)")
+	flags.IntVar(&opticalDuplicatesPixelDistance, "optical-duplicates-pixel-distance", 100, "pixel distance used for optical duplicate marking")
 	flags.BoolVar(&markDuplicatesDet, "mark-duplicates-deterministic", false, "mark duplicates deterministically")
 	flags.BoolVar(&removeDuplicates, "remove-duplicates", false, "remove duplicates")
 	flags.StringVar(&removeOptionalFields, "remove-optional-fields", "", "remove the given optional fields")
@@ -589,6 +592,11 @@ func Filter() error {
 		log.Println("Error: Cannot use --mark-optical-duplicates-intermediate without also using --mark-duplicates.")
 	}
 
+	if opticalDuplicatesPixelDistance != 100 && markOpticalDuplicates == "" && markOpticalDuplicatesIntermediate == "" {
+		sanityChecksFailed = true
+		log.Println("Error: cannot use --optical-duplicates-pixel-distance without also using --mark-optical-duplicates or --mark-optical-duplicates-intermediate")
+	}
+
 	if deterministic && (bqsrTablesOnly != "" || bqsrApplyFromTables != "") {
 		sanityChecksFailed = true
 		log.Println("Error: deterministic option is not yet supported for --bqsr-tables-only or --bqsr-apply")
@@ -683,12 +691,12 @@ func Filter() error {
 		filters1 = append(filters1, filters.AddREFID)
 	}
 
-	var fragments, pairs *psync.Map
+	var pairs *psync.Map
 	var markDupsFilter sam.Filter
 
 	if markDuplicates {
 		alsoOpticals := markOpticalDuplicates != "" || markOpticalDuplicatesIntermediate != ""
-		markDupsFilter, fragments, pairs = filters.MarkDuplicates(alsoOpticals)
+		markDupsFilter, _, pairs = filters.MarkDuplicates(alsoOpticals)
 		filters1 = append(filters1, markDupsFilter)
 		fmt.Fprint(&command, " --mark-duplicates")
 	}
@@ -697,29 +705,30 @@ func Filter() error {
 
 	if markOpticalDuplicates != "" {
 		opticalDuplicatesFilter = func(alns *sam.Sam) error {
-			ctr := filters.MarkOpticalDuplicates(alns, fragments, pairs, deterministic)
+			ctr := filters.MarkOpticalDuplicatesWithPixelDistance(alns, pairs, deterministic, opticalDuplicatesPixelDistance)
 			if err := ctr.Err(); err != nil {
 				return err
 			}
 			return filters.PrintDuplicatesMetrics(input, output, markOpticalDuplicates, removeDuplicates, ctr)
 		}
 		fmt.Fprint(&command, " --mark-optical-duplicates ", markOpticalDuplicates)
+		fmt.Fprint(&command, " --optical-duplicates-pixel-distance ", opticalDuplicatesPixelDistance)
 	}
 
 	if markOpticalDuplicatesIntermediate != "" {
 		opticalDuplicatesFilter = func(alns *sam.Sam) error {
-			ctr := filters.MarkOpticalDuplicates(alns, fragments, pairs, deterministic)
+			ctr := filters.MarkOpticalDuplicatesWithPixelDistance(alns, pairs, deterministic, opticalDuplicatesPixelDistance)
 			if err := ctr.Err(); err != nil {
 				return err
 			}
 			return filters.PrintDuplicatesMetricsToIntermediateFile(markOpticalDuplicatesIntermediate, ctr)
 		}
 		fmt.Fprint(&command, " --mark-optical-duplicates-intermediate ", markOpticalDuplicatesIntermediate)
+		fmt.Fprint(&command, " --optical-duplicates-pixel-distance ", opticalDuplicatesPixelDistance)
 	}
 
 	if markOpticalDuplicates == "" && markOpticalDuplicatesIntermediate == "" {
 		// nil tables for gc
-		fragments = nil
 		pairs = nil
 	}
 
