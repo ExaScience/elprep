@@ -35,7 +35,7 @@ We recommend using NA12878.exome.hg19.chr22.bam for quick testing and checking t
 
 Copy the elPrep binary on your machine add it to your path. For example, fill in your username and execute:
 
-	export PATH=$PATH:/home/username/tools/elprep4.0:
+	export PATH=$PATH:/home/username/tools/elprep-v4.1.0:
 
 
 ## Demo 1: a workload for testing installation (NA12878.exome.hg19.chr22.bam)
