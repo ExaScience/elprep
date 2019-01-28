@@ -413,7 +413,7 @@ Use this command option to indicate the sfm command is processing single-end dat
 
 ### --contig-group-size number
 
-This command option is passed to both the split and merge tools.
+This command option is passed to the split tool.
 
 The elprep split command groups the sequence dictionary entries for deciding how to split up the input data. The goal is to end up with groups of sequence dictionary entries (contigs) for which the total length (sum of LN tags) is roughly the same among all groups. By default, the elprep split command identifies the sequence dictionary entry with the largest length (LN) and chooses this as a target size for the groups. 
 
@@ -490,8 +490,6 @@ Sets the path for writing a log file.
 
 The elprep split command groups the sequence dictionary entries for deciding how to split up the input data. The --contig-group-size options allows configuring a specific group size. See the description of --contig-group-size for the elprep sfm command for more details.
 
-The --contig-group-size parameter passed to the elprep merge command must be exactly the same as the one passed to the elprep split commend. The elprep sfm command ensures that this is the case.
-
 ## Name
 
 ### elprep merge - a commandline tool for merging .sam/.bam files created by elprep split
@@ -522,9 +520,7 @@ Sets the path for writing a log file.
 
 ### --contig-group-size number
 
-The elprep split command groups the sequence dictionary entries for deciding how to split up the input data. The --contig-group-size options allows configuring a specific group size. See the description of --contig-group-size for the elprep sfm command for more details.
-
-The --contig-group-size parameter passed to the elprep merge command must be exactly the same as the one passed to the elprep split commend. The elprep sfm command ensures that this is the case.
+The --contig-group-size parameter for the elprep merge command is deprecated since version 4.1.1. The elprep merge command now correctly processes the split files without that information.
 
 # Extending elPrep
 

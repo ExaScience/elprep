@@ -50,6 +50,7 @@ func ReplaceReferenceSequenceDictionary(dict []utils.StringMap) sam.Filter {
 			}
 		}
 		dictTable := make(map[string]bool)
+		dictTable["*"] = true
 		for _, entry := range dict {
 			dictTable[entry["SN"]] = true
 		}

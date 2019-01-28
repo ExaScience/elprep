@@ -38,8 +38,7 @@ const MergeHelp = "\nmerge parameters:\n" +
 	"[--single-end]\n" +
 	"[--nr-of-threads n]\n" +
 	"[--timed]\n" +
-	"[--log-path path]\n" +
-	"[--contig-group-size nr]\n"
+	"[--log-path path]\n"
 
 // Merge implements the elprep merge command.
 func Merge() error {
@@ -52,7 +51,7 @@ func Merge() error {
 
 	var flags flag.FlagSet
 
-	flags.IntVar(&contigGroupSize, "contig-group-size", 0, "maximum sum of reference sequence lengths for creating groups of reference sequences")
+	flags.IntVar(&contigGroupSize, "contig-group-size", -1, "maximum sum of reference sequence lengths for creating groups of reference sequences (deprecated)")
 	flags.BoolVar(&singleEnd, "single-end", false, "when splitting single-end data")
 	flags.IntVar(&nrOfThreads, "nr-of-threads", 0, "number of worker threads")
 	flags.BoolVar(&timed, "timed", false, "measure the runtime")
@@ -102,6 +101,10 @@ func Merge() error {
 	if sanityChecksFailed {
 		fmt.Fprint(os.Stderr, MergeHelp)
 		os.Exit(1)
+	}
+
+	if contigGroupSize != -1 {
+		fmt.Fprintln(os.Stderr, "Use of the --contig-group-size option in the elprep merge command is deprecated.")
 	}
 
 	firstFile, err := sam.Open(filepath.Join(fullInputPath, filesToMerge[0]))
@@ -164,12 +167,12 @@ func Merge() error {
 	case sam.Coordinate:
 		if singleEnd {
 			err := timedRun(timed, profile, "Merging single-end split files sorted by coordinate.", 1, func() (err error) {
-				return sam.MergeSingleEndFilesSplitPerChromosome(fullInputPath, output, inputPrefix, inputExtension, header, contigGroupSize)
+				return sam.MergeSingleEndFilesSplitPerChromosome(fullInputPath, output, inputPrefix, inputExtension, header, -1)
 			})
 			return err
 		}
 		err := timedRun(timed, profile, "Merging paired-end split files sorted by coordinate.", 1, func() (err error) {
-			return sam.MergeSortedFilesSplitPerChromosome(fullInputPath, output, inputPrefix, inputExtension, header, contigGroupSize)
+			return sam.MergeSortedFilesSplitPerChromosome(fullInputPath, output, inputPrefix, inputExtension, header, -1)
 		})
 		return err
 	case sam.Queryname:
@@ -178,12 +181,12 @@ func Merge() error {
 	default:
 		if singleEnd {
 			err := timedRun(timed, profile, "Merging unsorted single-end split files.", 1, func() (err error) {
-				return sam.MergeSingleEndFilesSplitPerChromosome(fullInputPath, output, inputPrefix, inputExtension, header, contigGroupSize)
+				return sam.MergeSingleEndFilesSplitPerChromosome(fullInputPath, output, inputPrefix, inputExtension, header, -1)
 			})
 			return err
 		}
 		err := timedRun(timed, profile, "Merging unsorted paired-end split files.", 1, func() (err error) {
-			return sam.MergeUnsortedFilesSplitPerChromosome(fullInputPath, output, inputPrefix, inputExtension, header, contigGroupSize)
+			return sam.MergeUnsortedFilesSplitPerChromosome(fullInputPath, output, inputPrefix, inputExtension, header, -1)
 		})
 		return err
 	}

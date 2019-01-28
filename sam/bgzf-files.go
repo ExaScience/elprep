@@ -25,6 +25,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"hash/crc32"
 	"io"
 	"sync"
@@ -356,10 +357,22 @@ func NewBGZFWriter(w io.Writer) *BGZFWriter {
 	return bgzf
 }
 
+func (bgzf *BGZFWriter) sendBlock() (err error) {
+	defer func() {
+		if x := recover(); x != nil {
+			err = errors.New(fmt.Sprint(x))
+		}
+	}()
+	bgzf.channel <- bgzf.block
+	return nil
+}
+
 // Close closes this BGZFWriter.
 func (bgzf *BGZFWriter) Close() error {
 	if bgzf.block != nil && len(bgzf.block.bytes) > 0 {
-		bgzf.channel <- bgzf.block
+		if err := bgzf.sendBlock(); err != nil {
+			return err
+		}
 	}
 	close(bgzf.channel)
 	bgzf.wait.Wait()
@@ -380,7 +393,9 @@ func (bgzf *BGZFWriter) Write(p []byte) (n int, err error) {
 			bgzf.block.bytes = bgzf.block.bytes[:maxBgzfBlockSize]
 			k := copy(bgzf.block.bytes[blockIndex:], p)
 			p = p[k:]
-			bgzf.channel <- bgzf.block
+			if err := bgzf.sendBlock(); err != nil {
+				return n - len(p), err
+			}
 			bgzf.block = bytesPool.Get().(*bytesBlock)
 		} else {
 			bgzf.block.bytes = bgzf.block.bytes[:newBlockLength]

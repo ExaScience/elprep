@@ -422,7 +422,6 @@ func Sfm() error {
 	if contigGroupSize > 0 {
 		contigGroupSizeString := strconv.FormatInt(int64(contigGroupSize), 10)
 		splitArgs = append(splitArgs, "--contig-group-size", contigGroupSizeString)
-		mergeArgs = append(mergeArgs, "--contig-group-size", contigGroupSizeString)
 	}
 
 	if singleEnd {
