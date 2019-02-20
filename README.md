@@ -119,7 +119,9 @@ You can also contact us via exascience@imec.be directly.
 
 # Citing elPrep
 
-Please cite the following article:
+Please cite the following articles:
+
+Herzeel C, Costanza P, Decap D, Fostier J, Verachtert W (2019) elPrep 4: A multithreaded framework for sequence analysis. PLoS ONE 14(2): e0209523. https://doi.org/10.1371/journal.pone.0209523
 
 Herzeel C, Costanza P, Decap D, Fostier J, Reumers J (2015) elPrep: High-Performance Preparation of Sequence Alignment/Map Files for Variant Calling. PLoS ONE 10(7): e0132868. doi:10.1371/journal.pone.0132868
 
