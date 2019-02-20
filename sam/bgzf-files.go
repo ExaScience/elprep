@@ -100,6 +100,8 @@ func (bgzf *internalBGZFReader) readBgzfBlock() (block *bgzfBlock, err error) {
 					if len(block.Data) != 2 || block.Data[0] != 3 || block.Data[1] != 0 || block.Crc32 != 0 || block.Size != 0 {
 						err = errors.New("invalid BGZF file: does not end in proper EOF marker")
 					}
+				} else if err != nil {
+					err = fmt.Errorf("%v in readBgzfBlock", err)
 				}
 				return
 			}
@@ -148,7 +150,7 @@ var flateReaderPool sync.Pool
 func NewBGZFReader(r flate.Reader) (*BGZFReader, error) {
 	gz, err := gzip.NewReader(r)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%v in NewBGZFReader", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	bgzf := &BGZFReader{
