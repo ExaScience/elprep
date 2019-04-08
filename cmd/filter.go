@@ -1,5 +1,5 @@
 // elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017, 2018 imec vzw.
+// Copyright (c) 2017-2019 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -38,7 +38,7 @@ import (
 
 // Run the best practices pipeline. Version that uses an intermediate
 // slice so that sorting and mark-duplicates are supported.
-func runBestPracticesPipelineIntermediateSam(fileIn, fileOut string, sortingOrder sam.SortingOrder, filters, filters2 []sam.Filter, opticalDuplicateFilter func(reads *sam.Sam) error, deterministic, timed bool, profile string) error {
+func runBestPracticesPipelineIntermediateSam(fileIn, fileOut string, sortingOrder sam.SortingOrder, filters, filters2 []sam.Filter, opticalDuplicateFilter func(reads *sam.Sam) error, timed bool, profile string) error {
 	filteredReads := sam.NewSam()
 	phase := int64(1)
 	err := timedRun(timed, profile, "Reading SAM into memory and applying filters.", phase, func() (err error) {
@@ -56,7 +56,7 @@ func runBestPracticesPipelineIntermediateSam(fileIn, fileOut string, sortingOrde
 				err = nerr
 			}
 		}()
-		return input.RunPipelineFI(filteredReads, filters, sortingOrder, deterministic)
+		return input.RunPipeline(filteredReads, filters, sortingOrder)
 	})
 	if err != nil {
 		return err
@@ -99,7 +99,7 @@ func runBestPracticesPipelineIntermediateSam(fileIn, fileOut string, sortingOrde
 	})
 }
 
-func runBestPracticesPipelineIntermediateSamWithBQSR(fileIn, fileOut string, sortingOrder sam.SortingOrder, filters1, filters2 []sam.Filter, opticalDuplicateFilter func(reads *sam.Sam) error, baseRecalibrator *filters.BaseRecalibrator, quantizeLevels int, sqqList []uint8, recalFile string, deterministic, timed bool, profile string) error {
+func runBestPracticesPipelineIntermediateSamWithBQSR(fileIn, fileOut string, sortingOrder sam.SortingOrder, filters1, filters2 []sam.Filter, opticalDuplicateFilter func(reads *sam.Sam) error, baseRecalibrator *filters.BaseRecalibrator, quantizeLevels int, sqqList []uint8, recalFile string, timed bool, profile string) error {
 	// Input and first filters and sorting
 	filteredReads := sam.NewSam()
 	phase := int64(1)
@@ -118,7 +118,7 @@ func runBestPracticesPipelineIntermediateSamWithBQSR(fileIn, fileOut string, sor
 				err = nerr
 			}
 		}()
-		return input.RunPipelineFI(filteredReads, filters1, sortingOrder, deterministic)
+		return input.RunPipeline(filteredReads, filters1, sortingOrder)
 	})
 	if err != nil {
 		return err
@@ -597,11 +597,6 @@ func Filter() error {
 		log.Println("Error: cannot use --optical-duplicates-pixel-distance without also using --mark-optical-duplicates or --mark-optical-duplicates-intermediate")
 	}
 
-	if deterministic && (bqsrTablesOnly != "" || bqsrApplyFromTables != "") {
-		sanityChecksFailed = true
-		log.Println("Error: deterministic option is not yet supported for --bqsr-tables-only or --bqsr-apply")
-	}
-
 	if !checkBQSROptions(bqsr != "", (bqsrTablesOnly != ""), referenceElFasta, quantizeLevels, sqq, knownSites, bqsr, recalFile) {
 		sanityChecksFailed = true
 	}
@@ -818,12 +813,6 @@ func Filter() error {
 		fmt.Fprint(&command, " --deterministic")
 	}
 
-	// Currently, we need the deterministic option only when optical duplicates are marked.
-	// This might change in the future.
-	if opticalDuplicatesFilter == nil {
-		deterministic = false
-	}
-
 	if nrOfThreads > 0 {
 		runtime.GOMAXPROCS(nrOfThreads)
 		fmt.Fprint(&command, " --nr-of-threads ", nrOfThreads)
@@ -861,7 +850,7 @@ func Filter() error {
 			return err
 		}
 		baseRecalibrator := filters.NewBaseRecalibrator(knownSitesList, referenceElFasta)
-		return runBestPracticesPipelineIntermediateSamWithBQSR(input, output, sortingOrder, filters1, filters2, opticalDuplicatesFilter, baseRecalibrator, quantizeLevels, sqqList, recalFile, deterministic, timed, profile)
+		return runBestPracticesPipelineIntermediateSamWithBQSR(input, output, sortingOrder, filters1, filters2, opticalDuplicatesFilter, baseRecalibrator, quantizeLevels, sqqList, recalFile, timed, profile)
 	}
 
 	if bqsrTablesOnly != "" {
@@ -885,7 +874,7 @@ func Filter() error {
 	if markDuplicates ||
 		(sortingOrder == sam.Coordinate) || (sortingOrder == sam.Queryname) ||
 		((replaceReferenceSequences != "") && (sortingOrder == sam.Keep)) {
-		return runBestPracticesPipelineIntermediateSam(input, output, sortingOrder, filters1, filters2, opticalDuplicatesFilter, deterministic, timed, profile)
+		return runBestPracticesPipelineIntermediateSam(input, output, sortingOrder, filters1, filters2, opticalDuplicatesFilter, timed, profile)
 	}
 	return runBestPracticesPipeline(input, output, sortingOrder, append(filters1, filters2...), timed, profile)
 }

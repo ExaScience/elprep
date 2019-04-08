@@ -1,5 +1,5 @@
 // elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017, 2018 imec vzw.
+// Copyright (c) 2017-2019 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -37,7 +37,7 @@ const (
 	// ProgramName is "elprep"
 	ProgramName = "elprep"
 	// ProgramVersion is the version of the elprep binary
-	ProgramVersion = "4.1.1"
+	ProgramVersion = "4.1.2"
 	// ProgramURL is the repository for the elprep source code
 	ProgramURL = "http://github.com/exascience/elprep"
 )

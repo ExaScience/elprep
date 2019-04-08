@@ -1,5 +1,5 @@
 // elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017, 2018 imec vzw.
+// Copyright (c) 2017-2019 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -252,7 +252,7 @@ func DeprecatedFilter() error {
 	log.Println("Executing command:\n", cmdString)
 	if markDuplicates || (sortingOrder == sam.Coordinate) || (sortingOrder == sam.Queryname) ||
 		((replaceRefSeqDictFilter != nil) && (sortingOrder == sam.Keep)) {
-		return runBestPracticesPipelineIntermediateSam(filenames[0], filenames[1], sortingOrder, filters1, filters2, nil, false, timed, profile)
+		return runBestPracticesPipelineIntermediateSam(filenames[0], filenames[1], sortingOrder, filters1, filters2, nil, timed, profile)
 	}
 	return runBestPracticesPipeline(filenames[0], filenames[1], sortingOrder, filters1, timed, profile)
 }

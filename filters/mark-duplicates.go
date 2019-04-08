@@ -1,5 +1,5 @@
 // elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017, 2018 imec vzw.
+// Copyright (c) 2017-2019 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -302,16 +302,16 @@ func (h *handle) compareAndSwapPair(old, new *samAlignmentPair) bool {
 }
 
 type alnCons struct {
-	aln1, aln2 *sam.Alignment
-	next       *alnCons
+	aln  *sam.Alignment
+	next *alnCons
 }
 
 func (pair *samAlignmentPair) getOpticalDuplicates() *alnCons {
 	return (*alnCons)(atomic.LoadPointer(&pair.opticalDuplicates))
 }
 
-func (pair *samAlignmentPair) addOpticalDuplicate(aln1, aln2 *sam.Alignment) {
-	entry := &alnCons{aln1: aln1, aln2: aln2}
+func (pair *samAlignmentPair) addOpticalDuplicate(aln *sam.Alignment) {
+	entry := &alnCons{aln: aln}
 	for {
 		head := atomic.LoadPointer(&pair.opticalDuplicates)
 		entry.next = (*alnCons)(head)

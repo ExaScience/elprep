@@ -1,5 +1,5 @@
 // elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017, 2018 imec vzw.
+// Copyright (c) 2017-2019 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -35,21 +35,9 @@ import (
 
 	"github.com/exascience/elprep/v4/internal"
 	"github.com/exascience/elprep/v4/sam"
-	"github.com/exascience/elprep/v4/utils"
 	"github.com/exascience/pargo/parallel"
 	"github.com/exascience/pargo/sync"
 )
-
-var optical = utils.Intern("optical")
-
-func getOpticalDuplicate(aln *sam.Alignment) bool {
-	_, ok := aln.Temps.Get(optical)
-	return ok
-}
-
-func setOpticalDuplicate(aln *sam.Alignment) {
-	aln.Temps.Set(optical, true)
-}
 
 type (
 	tileInfo struct {
@@ -114,11 +102,15 @@ func (cache tileInfoCache) getTileInfo(aln *sam.Alignment) (tile tileInfo, err e
 	return tile, nil
 }
 
+func isOpticalDuplicateShort(tile1, tile2 tileInfo, deterministic bool, opticalPixelDistance int) bool {
+	if deterministic {
+		return absInt(int(int16(tile1.x))-int(int16(tile2.x))) <= opticalPixelDistance && absInt(int(int16(tile1.y))-int(int16(tile2.y))) <= opticalPixelDistance
+	}
+	return absInt(tile1.x-tile2.x) <= opticalPixelDistance && absInt(tile1.y-tile2.y) <= opticalPixelDistance
+}
+
 func isOpticalDuplicate(aln1 *sam.Alignment, tile1 tileInfo, aln2 *sam.Alignment, tile2 tileInfo, deterministic bool, opticalPixelDistance int) bool {
 	if aln1.RG() != aln2.RG() {
-		return false
-	}
-	if aln1.IsReversed() != aln2.IsReversed() {
 		return false
 	}
 	if tile1.t == -1 || tile2.t == -1 { // no tile info available
@@ -127,24 +119,24 @@ func isOpticalDuplicate(aln1 *sam.Alignment, tile1 tileInfo, aln2 *sam.Alignment
 	if tile1.t != tile2.t {
 		return false
 	}
-	if deterministic {
-		return absInt(int(int16(tile1.x))-int(int16(tile2.x))) <= opticalPixelDistance && absInt(int(int16(tile1.y))-int(int16(tile2.y))) <= opticalPixelDistance
-	}
-	return absInt(tile1.x-tile2.x) <= opticalPixelDistance && absInt(tile1.y-tile2.y) <= opticalPixelDistance
+	return isOpticalDuplicateShort(tile1, tile2, deterministic, opticalPixelDistance)
 }
 
 // DuplicatesCtr implements a struct that stores metrics about reads such as the number of (optical) duplicates, unmapped reads, etc.
 type DuplicatesCtr struct {
-	UnpairedReadsExamined         int
-	ReadPairsExamined             int
-	SecondaryOrSupplementaryReads int
-	UnmappedReads                 int
-	UnpairedReadDuplicates        int
-	ReadPairDuplicates            int
-	ReadPairOpticalDuplicates     int
-	percentDuplication            float64
-	estimatedLibrarySize          int
-	histogram                     []float64
+	UnpairedReadsExamined              int
+	ReadPairsExamined                  int
+	SecondaryOrSupplementaryReads      int
+	UnmappedReads                      int
+	UnpairedReadDuplicates             int
+	ReadPairDuplicates                 int
+	ReadPairOpticalDuplicates          int
+	percentDuplication                 float64
+	estimatedLibrarySize               int
+	histogram                          []float64
+	duplicatesCountHistogram           map[int]int
+	nonOpticalDuplicatesCountHistogram map[int]int
+	opticalDuplicatesCountHistogram    map[int]int
 }
 
 // DuplicatesCtrMap maps library names to duplicate counters.
@@ -158,13 +150,77 @@ func (ctrMap DuplicatesCtrMap) Err() error {
 	return ctrMap.err
 }
 
+// DuplicatesCountHistograms keeps tracks of metrics for the number of pcr vs optical duplicates per list of duplicates
+type DuplicatesCountsHistograms struct {
+	duplicatesCountHistogram           map[int]int
+	nonOpticalDuplicatesCountHistogram map[int]int
+	opticalDuplicatesCountHistogram    map[int]int
+}
+
+// merge histograms2 into histograms1
+func mergeDuplicatesCountsHistograms(histograms1, histograms2 DuplicatesCountsHistograms) (result DuplicatesCountsHistograms) {
+	histogram1 := histograms1.duplicatesCountHistogram
+	histogram2 := histograms2.duplicatesCountHistogram
+	if len(histogram2) > len(histogram1) {
+		histogram1, histogram2 = histogram2, histogram1
+	}
+	for i, v := range histogram2 {
+		histogram1[i] += v
+	}
+	result.duplicatesCountHistogram = histogram1
+	histogram1 = histograms1.nonOpticalDuplicatesCountHistogram
+	histogram2 = histograms2.nonOpticalDuplicatesCountHistogram
+	if len(histogram2) > len(histogram1) {
+		histogram1, histogram2 = histogram2, histogram1
+	}
+	for i, v := range histogram2 {
+		histogram1[i] += v
+	}
+	result.nonOpticalDuplicatesCountHistogram = histogram1
+	histogram1 = histograms1.opticalDuplicatesCountHistogram
+	histogram2 = histograms2.opticalDuplicatesCountHistogram
+	if len(histogram2) > len(histogram1) {
+		histogram1, histogram2 = histogram2, histogram1
+	}
+	for i, v := range histogram2 {
+		histogram1[i] += v
+	}
+	result.opticalDuplicatesCountHistogram = histogram1
+	return result
+}
+
+// indices is a slice of index1, index2, and index3
+// index1 the length of the total number of duplicates for an origin
+// index2 is the number of non optical duplicates in a list of duplicates for a given origin
+// index3 is the number optical duplicates in a list of duplicates for a given origin
+func incrementDuplicatesCountsHistograms(histograms DuplicatesCountsHistograms, indices []int) {
+	for i, idx := range indices {
+		histogram := histograms.duplicatesCountHistogram
+		if i == 1 {
+			if idx > 0 {
+				histogram = histograms.nonOpticalDuplicatesCountHistogram
+			} else {
+				continue
+			}
+		}
+		if i == 2 {
+			if idx > 0 {
+				histogram = histograms.opticalDuplicatesCountHistogram
+			} else {
+				continue
+			}
+		}
+		histogram[idx] += 1
+	}
+}
+
 func markOpticalDuplicatesFragment(aln *sam.Alignment, ctr *DuplicatesCtr) {
 	if isTrueFragment(aln) {
 		ctr.UnpairedReadDuplicates++
 	}
 }
 
-func markOpticalDuplicatesPair(aln *sam.Alignment, pairFragments, pairs *sync.Map, ctr *DuplicatesCtr, deterministic bool, opticalPixelDistance int) error {
+func markOpticalDuplicatesPair(aln *sam.Alignment, pairFragments, pairs *sync.Map, ctr *DuplicatesCtr) error {
 	if isTruePair(aln) {
 		aln1 := aln
 		var aln2 *sam.Alignment
@@ -199,211 +255,274 @@ func markOpticalDuplicatesPair(aln *sam.Alignment, pairFragments, pairs *sync.Ma
 		}
 		best := entry.(*handle)
 		bestPair := best.pair()
-		bestPair.addOpticalDuplicate(aln1, aln2) // map alns to origin duplicates
-		// for aln2 same as other end, cause have same QNAME, so same tile info
-		tile1, err := computeTileInfo(bestPair.aln1)
-		if err != nil {
-			return err
-		}
-		tile2, err := computeTileInfo(aln1)
-		if err != nil {
-			return err
-		}
-		if isOpticalDuplicate(bestPair.aln1, tile1, aln1, tile2, deterministic, opticalPixelDistance) {
-			ctr.ReadPairOpticalDuplicates++
-			setOpticalDuplicate(aln1)
-			setOpticalDuplicate(aln2) // other end is duplicate too, cause have same QNAME, so same tile info
+		if bestPair.aln1 != aln1 {
+			if aln1.IsFirst() {
+				bestPair.addOpticalDuplicate(aln1) // map alns to origin duplicates
+			} else {
+				bestPair.addOpticalDuplicate(aln2)
+			}
 		}
 		return nil
 	}
 	return nil
 }
 
-func pairOrientationLess(pair1, pair2 *alnCons) bool {
-	if pair1.aln1.IsReversed() {
-		if pair1.aln2.IsReversed() {
-			return pair2.aln1.IsReversed() && !pair2.aln2.IsReversed()
+func fillGraphFromAGroup(tileCache tileInfoCache, duplicates []*sam.Alignment, group []int, opticalPixelDistance int, deterministic bool, opticalDistanceRelationGraph graph) error {
+	for i, iIndex := range group {
+		tileI, err := tileCache.getTileInfo(duplicates[iIndex])
+		if err != nil {
+			return err
 		}
-		return false
+		for j := i + 1; j < len(group); j++ {
+			jIndex := group[j]
+			tileJ, err := tileCache.getTileInfo(duplicates[jIndex])
+			if err != nil {
+				return err
+			}
+			if isOpticalDuplicateShort(tileI, tileJ, deterministic, opticalPixelDistance) {
+				opticalDistanceRelationGraph.addEdge(iIndex, jIndex)
+			}
+		}
 	}
-	if pair1.aln2.IsReversed() {
-		return pair2.aln1.IsReversed()
-	}
-	return pair2.aln1.IsReversed() || pair2.aln2.IsReversed()
+	return nil
 }
 
-func countOpticalDuplicates(list *alnCons, libraryTable map[string]int, deterministic bool, opticalPixelDistance int) (int, error) {
-	var pairs []*alnCons
-	for entry := list; entry != nil; entry = entry.next {
-		pairs = append(pairs, entry)
-	}
-	sort.Slice(pairs, func(i, j int) bool {
-		pairI := pairs[i]
-		pairJ := pairs[j]
-		if libidI, libidJ := getLibIDIndex(pairI.aln1, libraryTable), getLibIDIndex(pairJ.aln1, libraryTable); libidI < libidJ {
-			return true
-		} else if libidI > libidJ {
-			return false
-		}
-		if refidI, refidJ := pairI.aln1.REFID(), pairJ.aln1.REFID(); refidI < refidJ {
-			return true
-		} else if refidI > refidJ {
-			return false
-		}
-		if pairIPos, pairJPos := adaptedPos(pairI.aln1), adaptedPos(pairJ.aln1); pairIPos < pairJPos {
-			return true
-		} else if pairIPos > pairJPos {
-			return false
-		}
-		if pairOrientationLess(pairI, pairJ) {
-			return true
-		} else if pairOrientationLess(pairJ, pairI) {
-			return false
-		}
-		if refidI, refidJ := pairI.aln2.REFID(), pairJ.aln2.REFID(); refidI < refidJ {
-			return true
-		} else if refidI > refidJ {
-			return false
-		}
-		if pairIPos, pairJPos := adaptedPos(pairI.aln2), adaptedPos(pairJ.aln2); pairIPos < pairJPos {
-			return true
-		} else if pairIPos > pairJPos {
-			return false
-		}
-		if pairI.aln1.POS < pairJ.aln1.POS {
-			return true
-		} else if pairI.aln1.POS > pairJ.aln1.POS {
-			return false
-		}
-		if pairI.aln2.POS < pairJ.aln2.POS {
-			return true
-		} else if pairI.aln2.POS > pairJ.aln2.POS {
-			return false
-		}
-		if !deterministic {
-			return pairI.aln1.QNAME < pairJ.aln1.QNAME
-		}
-		if indexI, indexJ := pairI.aln1.FileIndex(), pairJ.aln1.FileIndex(); indexI < indexJ {
-			return true
-		} else if indexI > indexJ {
-			return false
-		}
-		if indexI, indexJ := pairI.aln2.FileIndex(), pairJ.aln2.FileIndex(); indexI < indexJ {
-			return true
-		}
-		return false
-	})
+type tileRGKey struct {
+	rg interface{}
+	t  int
+}
 
-	ctr := 0
+func countOpticalDuplicatesWithGraph(duplicates []*sam.Alignment, deterministic bool, opticalPixelDistance int) (int, error) {
 	tileCache := make(tileInfoCache)
-	for i := 0; i < len(pairs); i++ {
-		opticalI := getOpticalDuplicate(pairs[i].aln1)
-		tileI, err := tileCache.getTileInfo(pairs[i].aln1)
+
+	opticalDistanceRelationGraph := newGraph(len(duplicates))
+	tileRGMap := make(map[tileRGKey][]int)
+	for i, aln := range duplicates {
+		tile, err := tileCache.getTileInfo(aln)
 		if err != nil {
 			return 0, err
 		}
-		for j := i + 1; j < len(pairs); j++ {
-			if opticalJ := getOpticalDuplicate(pairs[j].aln1); !(opticalI && opticalJ) {
-				tileJ, err := tileCache.getTileInfo(pairs[j].aln1)
-				if err != nil {
-					return 0, err
-				}
-				if isOpticalDuplicate(pairs[i].aln1, tileI, pairs[j].aln1, tileJ, deterministic, opticalPixelDistance) {
-					ctr++
-					if opticalJ {
-						setOpticalDuplicate(pairs[i].aln1)
-						setOpticalDuplicate(pairs[i].aln2)
-					} else {
-						setOpticalDuplicate(pairs[j].aln1)
-						setOpticalDuplicate(pairs[j].aln2)
-					}
-				}
+		if tile.t != -1 {
+			key := tileRGKey{aln.RG(), tile.t}
+			tileRGMap[key] = append(tileRGMap[key], i)
+		}
+	}
+
+	for _, tileGroup := range tileRGMap {
+		if len(tileGroup) > 1 {
+			if err := fillGraphFromAGroup(tileCache, duplicates, tileGroup, opticalPixelDistance, deterministic, opticalDistanceRelationGraph); err != nil {
+				return 0, err
 			}
 		}
+	}
+
+	var ctr int
+	opticalDuplicateClusterMap := opticalDistanceRelationGraph.cluster()
+	ctrPerCluster := make(map[int]int)
+	for _, cluster := range opticalDuplicateClusterMap {
+		ctrPerCluster[cluster] += 1
+	}
+	for _, clusterCtr := range ctrPerCluster {
+		ctr += clusterCtr - 1
 	}
 	return ctr, nil
 }
 
-func countOpticalDuplicatesPairs(pairs *sync.Map, libraryTable map[string]int, deterministic bool, opticalPixelDistance int) (map[string]int, error) {
+func countOpticalDuplicates(origin *samAlignmentPair, list *alnCons, deterministic bool, opticalPixelDistance int) (int, []int, error) {
+	var forwardDuplicates, reverseDuplicates []*sam.Alignment
+	var originAln *sam.Alignment
+	if origin.aln1.IsFirst() {
+		originAln = origin.aln1
+	} else {
+		originAln = origin.aln2
+	}
+	if originAln.IsReversed() {
+		reverseDuplicates = append(reverseDuplicates, originAln)
+	} else {
+		forwardDuplicates = append(forwardDuplicates, originAln)
+	}
+
+	for entry := list; entry != nil; entry = entry.next {
+		if entry.aln.IsReversed() {
+			if len(reverseDuplicates) <= 300000 {
+				reverseDuplicates = append(reverseDuplicates, entry.aln)
+			}
+		} else {
+			if len(forwardDuplicates) <= 300000 {
+				forwardDuplicates = append(forwardDuplicates, entry.aln)
+			}
+		}
+	}
+
+	var forwardCount, reverseCount int
+	var forwardErr, reverseErr error
+	parallel.Do(
+		func() {
+			forwardCount, forwardErr = countOpticalDuplicatesFromSlice(forwardDuplicates, deterministic, opticalPixelDistance)
+		},
+		func() {
+			reverseCount, reverseErr = countOpticalDuplicatesFromSlice(reverseDuplicates, deterministic, opticalPixelDistance)
+		},
+	)
+	if forwardErr != nil {
+		return 0, nil, forwardErr
+	}
+	if reverseErr != nil {
+		return 0, nil, reverseErr
+	}
+	// create histograms metrics counts
+	opticalDuplicatesCount := forwardCount + reverseCount
+	duplicatesCount := len(forwardDuplicates) + len(reverseDuplicates)
+
+	index1 := duplicatesCount
+	index2, index3 := 0, 0
+	if duplicatesCount-opticalDuplicatesCount > 0 {
+		index2 = duplicatesCount - opticalDuplicatesCount
+	}
+	if opticalDuplicatesCount > 0 {
+		index3 = opticalDuplicatesCount + 1
+	}
+
+	histogramIndices := []int{index1, index2, index3}
+	return forwardCount + reverseCount, histogramIndices, nil
+}
+
+func countOpticalDuplicatesFromSlice(duplicates []*sam.Alignment, deterministic bool, opticalPixelDistance int) (int, error) {
+	if len(duplicates) > 300000 {
+		return 0, nil
+	}
+
+	if len(duplicates) >= 4 {
+		return countOpticalDuplicatesWithGraph(duplicates, deterministic, opticalPixelDistance)
+	}
+
+	if len(duplicates) < 2 {
+		return 0, nil
+	}
+
+	tile0, err := computeTileInfo(duplicates[0])
+	if err != nil {
+		return 0, err
+	}
+
+	tile1, err := computeTileInfo(duplicates[1])
+	if err != nil {
+		return 0, err
+	}
+
+	var ctr int
+
+	if isOpticalDuplicate(duplicates[0], tile0, duplicates[1], tile1, deterministic, opticalPixelDistance) {
+		ctr++
+	}
+
+	if len(duplicates) < 3 {
+		return ctr, nil
+	}
+
+	tile2, err := computeTileInfo(duplicates[2])
+	if err != nil {
+		return 0, err
+	}
+
+	if isOpticalDuplicate(duplicates[0], tile0, duplicates[2], tile2, deterministic, opticalPixelDistance) {
+		ctr++
+	}
+
+	if ctr == 2 {
+		return 2, nil
+	}
+
+	if isOpticalDuplicate(duplicates[1], tile1, duplicates[2], tile2, deterministic, opticalPixelDistance) {
+		return ctr + 1, nil
+	}
+
+	return ctr, nil
+}
+
+type ctrsAndHistograms struct {
+	ctrs       map[string]int
+	histograms map[string]DuplicatesCountsHistograms
+}
+
+func countOpticalDuplicatesPairs(pairs *sync.Map, deterministic bool, opticalPixelDistance int) (ctrsAndHistograms, error) {
 	result := pairs.ParallelReduce(
 		func(alns map[interface{}]interface{}) interface{} {
 			ctrs := make(map[string]int)
+			histograms := make(map[string]DuplicatesCountsHistograms)
 			for _, value := range alns {
 				origin := value.(*handle).pair()
-				ctr, err := countOpticalDuplicates(origin.getOpticalDuplicates(), libraryTable, deterministic, opticalPixelDistance)
+				ctr, histogramIndices, err := countOpticalDuplicates(origin, origin.getOpticalDuplicates(), deterministic, opticalPixelDistance)
 				if err != nil {
 					return err
 				}
 				libID := origin.aln1.LIBID()
+				var libIDString string
 				if libID != nil {
-					ctrs[libID.(string)] += ctr
+					libIDString = libID.(string)
+					ctrs[libIDString] += ctr
 				} else {
+					libIDString = undefinedLibrary
 					ctrs[undefinedLibrary] += ctr
 				}
+				// update histogram metrics
+				histogramsForLibID, ok := histograms[libIDString]
+				if !ok {
+					histogramsForLibID = DuplicatesCountsHistograms{
+						opticalDuplicatesCountHistogram:    make(map[int]int),
+						nonOpticalDuplicatesCountHistogram: make(map[int]int),
+						duplicatesCountHistogram:           make(map[int]int),
+					}
+					histograms[libIDString] = histogramsForLibID
+				}
+				incrementDuplicatesCountsHistograms(histogramsForLibID, histogramIndices)
 			}
-			return ctrs
+			return ctrsAndHistograms{ctrs, histograms}
 		}, func(x, y interface{}) interface{} {
-			var ctrs1, ctrs2 map[string]int
+			var ctrsAndHistograms1, ctrsAndHistograms2 ctrsAndHistograms
 			switch xt := x.(type) {
 			case error:
 				return xt
-			case map[string]int:
-				ctrs1 = xt
+			case ctrsAndHistograms:
+				ctrsAndHistograms1 = xt
 			default:
 				log.Fatal("invalid type during countOpticalDuplicatesPairs")
-				panic("Unreachable code.")
 			}
 			switch yt := y.(type) {
 			case error:
 				return yt
-			case map[string]int:
-				ctrs2 = yt
+			case ctrsAndHistograms:
+				ctrsAndHistograms2 = yt
 			default:
 				log.Fatal("invalid type during countOpticalDuplicatesPairs")
-				panic("Unreachable code.")
 			}
+			ctrs1 := ctrsAndHistograms1.ctrs
+			ctrs2 := ctrsAndHistograms2.ctrs
+			histograms1 := ctrsAndHistograms1.histograms
+			histograms2 := ctrsAndHistograms2.histograms
 			if len(ctrs1) < len(ctrs2) {
 				ctrs1, ctrs2 = ctrs2, ctrs1
+				histograms1, histograms2 = histograms2, histograms1
 			}
 			for library, ctr := range ctrs2 {
 				ctrs1[library] += ctr
 			}
-			return ctrs1
+			for library, histograms := range histograms2 {
+				histograms1[library] = mergeDuplicatesCountsHistograms(histograms1[library], histograms)
+			}
+			ctrsAndHistograms1.ctrs = ctrs1
+			ctrsAndHistograms1.histograms = histograms1
+			return ctrsAndHistograms1
 		})
 	switch r := result.(type) {
 	case error:
-		return nil, r
-	case map[string]int:
+		return ctrsAndHistograms{}, r
+	case ctrsAndHistograms:
 		return r, nil
 	default:
 		log.Fatal("invalid type during countOpticalDuplicatesPairs")
 		panic("Unreachable code.")
 	}
-}
-
-func initLibraryTable(header *sam.Header) map[string]int {
-	table := make(map[string]int)
-	ctr := 0
-	for _, entry := range header.RG {
-		library, found := entry["LB"]
-		if found {
-			table[library] = ctr
-			ctr++
-		}
-	}
-	return table
-}
-
-func getLibIDIndex(aln *sam.Alignment, libraryTable map[string]int) int {
-	libid := aln.LIBID()
-	if libid == nil {
-		return -1
-	}
-	libIDIndex, found := libraryTable[libid.(string)]
-	if !found {
-		return -1
-	}
-	return libIDIndex
 }
 
 const undefinedLibrary = "Unknown Library"
@@ -479,7 +598,7 @@ func MarkOpticalDuplicatesWithPixelDistance(reads *sam.Sam, pairs *sync.Map, det
 			}
 			if aln.IsDuplicate() {
 				markOpticalDuplicatesFragment(aln, ctr)
-				if ctrMap.err = markOpticalDuplicatesPair(aln, pairsFragments, pairs, ctr, deterministic, opticalPixelDistance); ctrMap.err != nil {
+				if ctrMap.err = markOpticalDuplicatesPair(aln, pairsFragments, pairs, ctr); ctrMap.err != nil {
 					return ctrMap
 				}
 			}
@@ -502,22 +621,25 @@ func MarkOpticalDuplicatesWithPixelDistance(reads *sam.Sam, pairs *sync.Map, det
 		ctr.ReadPairsExamined = ctr.ReadPairsExamined / 2
 	}
 	// Now that for each "origin" we have the list of reads that are its duplicates, we check if among those duplicates are optical duplicates.
-	// We need to extract the order of the library ids from the header, since this is used for the second phase of optical duplicate marking.
-	libraryTable := initLibraryTable(reads.Header)
 	//fnr := countOpticalDuplicatesFragments(fragments)
-	pnr, err := countOpticalDuplicatesPairs(pairs, libraryTable, deterministic, opticalPixelDistance)
+	pnr, err := countOpticalDuplicatesPairs(pairs, deterministic, opticalPixelDistance)
 	if err != nil {
 		ctrMap.err = err
 		return ctrMap
 	}
 	// Combine ctrs
-	for library, nr := range pnr {
+	for library, nr := range pnr.ctrs {
 		ctr := ctrMap.Map[library]
 		ctr.ReadPairOpticalDuplicates += nr
 	}
 	// Calculate derived metrics.
-	for _, ctr := range ctrMap.Map {
+	// Fill in collected histograms
+	for libID, ctr := range ctrMap.Map {
 		calculateDerivedDuplicateMetrics(ctr)
+		histograms := pnr.histograms[libID]
+		ctr.opticalDuplicatesCountHistogram = histograms.opticalDuplicatesCountHistogram
+		ctr.duplicatesCountHistogram = histograms.duplicatesCountHistogram
+		ctr.nonOpticalDuplicatesCountHistogram = histograms.nonOpticalDuplicatesCountHistogram
 	}
 	return ctrMap
 }
@@ -602,6 +724,7 @@ func formatFloat(f float64) []byte {
 
 // PrintDuplicatesMetrics writes the duplication metrics for a set of reads to a file.
 func PrintDuplicatesMetrics(input, output, metrics string, removeDuplicates bool, ctrs DuplicatesCtrMap) (err error) {
+
 	file, err := os.Create(metrics)
 	if err != nil {
 		return err
@@ -646,10 +769,57 @@ func PrintDuplicatesMetrics(input, output, metrics string, removeDuplicates bool
 		return nil
 	}
 	fmt.Fprintln(file, "## HISTOGRAM\tjava.lang.Double")
-	fmt.Fprintln(file, "BIN\tVALUE")
+	fmt.Fprintln(file, "BIN\tVALUE\tall_sets\toptical_sets\tnon_optical_sets")
 	histogram := ctr.histogram
 	for i := 0; i < len(histogram); i++ {
-		fmt.Fprintf(file, "%v.0\t%s\n", i+1, formatFloat(histogram[i]))
+		fmt.Fprintf(file, "%v.0\t%s\t%v\t%v\t%v\n", i+1, formatFloat(histogram[i]),
+			ctr.duplicatesCountHistogram[i+1],
+			ctr.opticalDuplicatesCountHistogram[i+1],
+			ctr.nonOpticalDuplicatesCountHistogram[i+1],
+		)
+	}
+
+	// collect the keys > 100, so they can be sorted to be printed
+	histogramUnprintedKeysMap := make(map[int]int)
+	for k, _ := range ctr.nonOpticalDuplicatesCountHistogram {
+		if k > 100 {
+			_, ok := histogramUnprintedKeysMap[k]
+			if !ok {
+				histogramUnprintedKeysMap[k] = 1
+			}
+		}
+	}
+	for k, _ := range ctr.opticalDuplicatesCountHistogram {
+		if k > 100 {
+			_, ok := histogramUnprintedKeysMap[k]
+			if !ok {
+				histogramUnprintedKeysMap[k] = 1
+			}
+		}
+	}
+	for k, _ := range ctr.duplicatesCountHistogram {
+		if k > 100 {
+			_, ok := histogramUnprintedKeysMap[k]
+			if !ok {
+				histogramUnprintedKeysMap[k] = 1
+			}
+		}
+	}
+	var histogramUnprintedKeys []int
+	for k, _ := range histogramUnprintedKeysMap {
+		histogramUnprintedKeys = append(histogramUnprintedKeys, k)
+	}
+	sort.Slice(histogramUnprintedKeys, func(i, j int) bool {
+		return histogramUnprintedKeys[i] < histogramUnprintedKeys[j]
+	})
+
+	// plot the rest of the histogram counts
+	for _, k := range histogramUnprintedKeys {
+		fmt.Fprintf(file, "%v.0\t0\t%v\t%v\t%v\n", k,
+			ctr.duplicatesCountHistogram[k],
+			ctr.opticalDuplicatesCountHistogram[k],
+			ctr.nonOpticalDuplicatesCountHistogram[k],
+		)
 	}
 	fmt.Fprintln(file)
 

@@ -1,5 +1,5 @@
 // elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017, 2018 imec vzw.
+// Copyright (c) 2017-2019 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -219,11 +219,6 @@ func Sfm() error {
 		sanityChecksFailed = true
 	}
 
-	if deterministic {
-		sanityChecksFailed = true
-		log.Println("Error: deterministic mode currently not supported in sfm")
-	}
-
 	sortingOrder := sam.SortingOrder(sortingOrderString)
 
 	switch sortingOrder {
@@ -403,6 +398,12 @@ func Sfm() error {
 		filterArgs2 = append(filterArgs2, "--log-path", logPath)
 		splitArgs = append(splitArgs, "--log-path", logPath)
 		mergeArgs = append(mergeArgs, "--log-path", logPath)
+	}
+
+	if deterministic {
+		fmt.Fprint(&command, " --deterministic")
+		filterArgs = append(filterArgs, "--deterministic")
+		filterArgs2 = append(filterArgs2, "--deterministic")
 	}
 
 	ext := filepath.Ext(input)
