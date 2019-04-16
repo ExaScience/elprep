@@ -279,32 +279,40 @@ func Sfm() error {
 	}
 	if mergeOnly {
 		// set filepaths from input variables.
-		if (!checkExist("--splits-dir", splitsDir) {
+		if (!checkExist("--splits-dir", splitsDir)) {
 			sanityChecksFailed = true
-		}
-		else {
-			splitsDir, err = filepath.Abs(splitsDir)
+		} else {
+			splitsDir, err := filepath.Abs(splitsDir)
+			if err != nil {
+				sanityChecksFailed = true
+			}
 			splitsDir = splitsDir + string(filepath.Separator)
 		}
-		if (!checkExist("--metrics-dir", metricsDir) {
+		if (!checkExist("--metrics-dir", metricsDir)) {
 			sanityChecksFailed = true
-		}
-		else {
-			metricsDir, err = filepath.Abs(metricsDir)
+		} else {
+			metricsDir, err := filepath.Abs(metricsDir)
+			if err != nil {
+				sanityChecksFailed = true
+			}
 			metricsDir = metricsDir + string(filepath.Separator)
 		}
-		if (!checkExist("--merge-dir", mergeDir) {
+		if (!checkExist("--merge-dir", mergeDir)) {
 			sanityChecksFailed = true
-		}
-		else {
-			mergeDir, err = filepath.Abs(mergeDir)
+		} else {
+			mergeDir, err := filepath.Abs(mergeDir)
+			if err != nil {
+				sanityChecksFailed = true
+			}
 			mergeDir = mergeDir + string(filepath.Separator)
 		}
-		if (!checkExist("--tabs-dir", tabsDir) {
+		if (!checkExist("--tabs-dir", tabsDir)) {
 			sanityChecksFailed = true
-		}
-		else {
-			tabsDir, err = filepath.Abs(tabsDir)
+		} else {
+			tabsDir, err := filepath.Abs(tabsDir)
+			if err != nil {
+				sanityChecksFailed = true
+			}
 			tabsDir = tabsDir + string(filepath.Separator)
 		}
 	}
@@ -423,6 +431,7 @@ func Sfm() error {
 		runtime.GOMAXPROCS(nrOfThreads)
 		fmt.Fprint(&command, " --nr-of-threads ", nrOfThreads)
 		filterArgs = append(filterArgs, "--nr-of-threads", strconv.Itoa(nrOfThreads))
+		filterArgs2 = append(filterArgs2, "--nr-of-threads", strconv.Itoa(nrOfThreads))
 		splitArgs = append(splitArgs, "--nr-of-threads", strconv.Itoa(nrOfThreads))
 		mergeArgs = append(mergeArgs, "--nr-of-threads", strconv.Itoa(nrOfThreads))
 	}
@@ -490,14 +499,11 @@ func Sfm() error {
 	commandString := command.String()
 
 	// executing command
-	if (mergeOnly) {
-		// set filepaths from input variables.
-		goto Merging
-	}
+	timeStamp := time.Now().Format(time.RFC3339)
+     if (!mergeOnly) {
 	log.Println("Executing command:\n", commandString)
 
 	// split command
-	timeStamp := time.Now().Format(time.RFC3339)
 	splitsName := fmt.Sprintf("elprep-splits-%s", timeStamp)
 	if tmpPath != "" {
 		splitsName = tmpPath + string(filepath.Separator) + splitsName
@@ -646,8 +652,8 @@ func Sfm() error {
 			}
 		}
 	}
-        Merging:
-	err = os.RemoveAll(splitsDir)
+      }
+        err := os.RemoveAll(splitsDir)
 	if err != nil {
 		return err
 	}
@@ -666,15 +672,17 @@ func Sfm() error {
 		log.Println("Filtering...")
 		filterOpt2 := []string{"filter", "/dev/stdin", output}
 		filterArgs2 = append(filterOpt2, filterArgs2...)
-		tabsName := fmt.Sprintf("elprep-tabs-%s", timeStamp) + string(filepath.Separator)
-		if tmpPath != "" {
-			tabsName = tmpPath + string(filepath.Separator) + tabsName
+		if (!mergeOnly) {
+			tabsName := fmt.Sprintf("elprep-tabs-%s", timeStamp) + string(filepath.Separator)
+			if tmpPath != "" {
+				tabsName = tmpPath + string(filepath.Separator) + tabsName
+			}
+			tabsDir, err := filepath.Abs(tabsName)
+			if err != nil {
+				return err
+			}
+			tabsDir = tabsDir + string(filepath.Separator)
 		}
-		tabsDir, err := filepath.Abs(tabsName)
-		if err != nil {
-			return err
-		}
-		tabsDir = tabsDir + string(filepath.Separator)
 		filterArgs2 = append(filterArgs2, "--bqsr-apply", tabsDir, "--recal-file", bqsr)
 		applyBqsrCommand := exec.Command(os.Args[0], filterArgs2...)
 		applyBqsrCommand.Stdin = outPipe
