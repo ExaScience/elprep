@@ -66,9 +66,15 @@ const SfmHelp = "\nsfm parameters:\n" +
 	"[--log-path path]\n" +
 	"[--intermediate-files-output-prefix name]\n" +
 	"[--intermediate-files-output-type [sam | bam]]\n" +
-	"[--tmp-path path]\n"+
+	"[--tmp-path path]\n" +
 	"[--single-end]\n" +
-	"[--contig-group-size nr]\n"
+	"[--contig-group-size nr]\n" +
+	"[--merge-only] (sfm only)\n"+
+	"[--splits-dir] (sfm --merge-only) Location with split files\n"+
+	"[--metrics-dir] (sfm --merge-only) Location with intermediate MarkDuplicates reports\n"+
+	"[--tabs-dir] (sfm --merge-only) Location with intermediate BQSR .elrecal files\n"+
+	"[--merge-dir] (sfm --merge-only) Location with processed split.bam files\n"
+
 
 	// CombinedSfmFilterHelp is a help string that combines the help strings for the filter and sfm commands.
 const CombinedSfmFilterHelp = "filter/sfm parameters:\n" +
@@ -100,7 +106,12 @@ const CombinedSfmFilterHelp = "filter/sfm parameters:\n" +
 	"[--intermediate-files-output-type [sam | bam]] (sfm only)\n" +
 	"[--tmp-path path]\n" +
 	"[--single-end] (sfm only)\n" +
-	"[--contig-group-size nr] (sfm only)\n"
+	"[--contig-group-size nr] (sfm only)\n" +
+	"[--merge-only] (sfm only)\n" +
+	"[--splits-dir] (sfm --merge-only) Location with split files\n" +
+	"[--metrics-dir] (sfm --merge-only) Location with intermediate MarkDuplicates reports\n" +
+	"[--tabs-dir] (sfm --merge-only) Location with intermediate BQSR .elrecal files\n" +
+	"[--merge-dir] (sfm --merge-only) Location with processed split.bam files\n"
 
 // Sfm implements the elprep sfm command.
 func Sfm() error {
@@ -132,6 +143,8 @@ func Sfm() error {
 		outputPrefix, outputType                            string
 		contigGroupSize                                     int
 		singleEnd                                           bool
+		mergeOnly                                           bool
+		splitsDir,tabsDir,mergeDir,metricsDir               string
 	)
 
 	var flags flag.FlagSet
@@ -170,6 +183,11 @@ func Sfm() error {
 	flags.StringVar(&outputType, "intermediate-files-output-type", "", "format of the output files")
 	flags.IntVar(&contigGroupSize, "contig-group-size", 0, "maximum sum of reference sequence lengths for creating groups of reference sequences")
 	flags.BoolVar(&singleEnd, "single-end", false, "when splitting single-end data")
+	flags.BoolVar(&mergeOnly, "merge-only", false, "Skip split and Filter. Only merge bam and metrics, and apply BQSR if specified")
+	flags.StringVar(&splitsDir,"splits-dir","","elprep split output directory. (for --merge-only)")
+	flags.StringVar(&metricsDir,"metrics-dir","","Mark-optical-duplicates intermediates output directory. (for --merge-only)")
+	flags.StringVar(&tabsDir,"tabs-dir","","Directory with BQSR .elrecal files from split analysis. (for --merge-only)")
+	flags.StringVar(&mergeDir,"merge-dir","","elprep filter output files, for split runs. (for --merge-only)")
 
 	parseFlags(flags, 4, SfmHelp)
 
@@ -259,7 +277,37 @@ func Sfm() error {
 		sanityChecksFailed = true
 		log.Println("Error: Cannot use --mark-optical-duplicates without also using --mark-duplicates.")
 	}
-
+	if mergeOnly {
+		// set filepaths from input variables.
+		if (!checkExist("--splits-dir", splitsDir) {
+			sanityChecksFailed = true
+		}
+		else {
+			splitsDir, err = filepath.Abs(splitsDir)
+			splitsDir = splitsDir + string(filepath.Separator)
+		}
+		if (!checkExist("--metrics-dir", metricsDir) {
+			sanityChecksFailed = true
+		}
+		else {
+			metricsDir, err = filepath.Abs(metricsDir)
+			metricsDir = metricsDir + string(filepath.Separator)
+		}
+		if (!checkExist("--merge-dir", mergeDir) {
+			sanityChecksFailed = true
+		}
+		else {
+			mergeDir, err = filepath.Abs(mergeDir)
+			mergeDir = mergeDir + string(filepath.Separator)
+		}
+		if (!checkExist("--tabs-dir", tabsDir) {
+			sanityChecksFailed = true
+		}
+		else {
+			tabsDir, err = filepath.Abs(tabsDir)
+			tabsDir = tabsDir + string(filepath.Separator)
+		}
+	}
 	if sanityChecksFailed {
 		fmt.Fprint(os.Stderr, SfmHelp)
 		os.Exit(1)
@@ -442,18 +490,21 @@ func Sfm() error {
 	commandString := command.String()
 
 	// executing command
-
+	if (mergeOnly) {
+		// set filepaths from input variables.
+		goto Merging
+	}
 	log.Println("Executing command:\n", commandString)
 
 	// split command
 	timeStamp := time.Now().Format(time.RFC3339)
 	splitsName := fmt.Sprintf("elprep-splits-%s", timeStamp)
+	if tmpPath != "" {
+		splitsName = tmpPath + string(filepath.Separator) + splitsName
+	}
 	splitsDir, err := filepath.Abs(splitsName)
 	if err != nil {
 		return err
-	}
-	if tmpPath != "" {
-		splitsDir = tmpPath + string(filepath.Separator) + splitsDir
 	}
 	splitsDir = splitsDir + string(filepath.Separator)
 	splitOpt := []string{"split", os.Args[2], splitsDir}
@@ -468,14 +519,14 @@ func Sfm() error {
 
 	// set up directory for metrics
 	metricsName := fmt.Sprintf("elprep-metrics-%s", timeStamp)
+	if tmpPath != "" {
+		metricsName = tmpPath + string(filepath.Separator) + metricsName
+	}
 	metricsDir := ""
 	if markOpticalDuplicates != "" {
 		metricsDir, err = filepath.Abs(metricsName)
 		if err != nil {
 			return err
-		}
-		if tmpPath != "" {
-			metricsDir = tmpPath + string(filepath.Separator) + metricsDir
 		}
 		metricsDir = metricsDir + string(filepath.Separator)
 		err = os.MkdirAll(filepath.Dir(metricsDir), 0700)
@@ -486,12 +537,12 @@ func Sfm() error {
 
 	// filter commands
 	mergeName := fmt.Sprintf("elprep-splits-processed-%s", timeStamp) + string(filepath.Separator)
+	if tmpPath != "" {
+		mergeName = tmpPath + string(filepath.Separator) + mergeName
+	}
 	mergeDir, err := filepath.Abs(mergeName)
 	if err != nil {
 		return err
-	}
-	if tmpPath != "" {
-		mergeDir = tmpPath + string(filepath.Separator) + mergeDir
 	}
 	mergeDir = mergeDir + string(filepath.Separator)
 	splitFilesDir := splitsDir
@@ -505,12 +556,13 @@ func Sfm() error {
 	log.Println("Filtering...")
 	if bqsr != "" {
 		// phase 1: Recalibration
-		tabsDir, err := filepath.Abs("elprep-tabs-" + timeStamp)
+		tabsName := fmt.Sprintf("elprep-tabs-%s", timeStamp) + string(filepath.Separator)
+		if tmpPath != "" {
+			tabsName = tmpPath + string(filepath.Separator) + tabsName
+		}
+		tabsDir, err := filepath.Abs(tabsName)
 		if err != nil {
 			return err
-		}
-		if tmpPath != "" {
-			tabsDir = tmpPath + string(filepath.Separator) + tabsDir
 		}
 		tabsDir = tabsDir + string(filepath.Separator)
 		err = os.MkdirAll(filepath.Dir(tabsDir), 0700)
@@ -594,6 +646,7 @@ func Sfm() error {
 			}
 		}
 	}
+        Merging:
 	err = os.RemoveAll(splitsDir)
 	if err != nil {
 		return err
@@ -613,12 +666,13 @@ func Sfm() error {
 		log.Println("Filtering...")
 		filterOpt2 := []string{"filter", "/dev/stdin", output}
 		filterArgs2 = append(filterOpt2, filterArgs2...)
-		tabsDir, err := filepath.Abs("elprep-tabs-" + timeStamp)
+		tabsName := fmt.Sprintf("elprep-tabs-%s", timeStamp) + string(filepath.Separator)
+		if tmpPath != "" {
+			tabsName = tmpPath + string(filepath.Separator) + tabsName
+		}
+		tabsDir, err := filepath.Abs(tabsName)
 		if err != nil {
 			return err
-		}
-		if tmpPath != "" {
-			tabsDir = tmpPath + string(filepath.Separator) + tabsDir
 		}
 		tabsDir = tabsDir + string(filepath.Separator)
 		filterArgs2 = append(filterArgs2, "--bqsr-apply", tabsDir, "--recal-file", bqsr)
