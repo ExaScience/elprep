@@ -1,8 +1,9 @@
 module github.com/exascience/elprep/v4
 
 require (
-	github.com/exascience/pargo v1.0.0
-	golang.org/x/sys v0.0.0-20181011152604-fa43e7bc11ba
-	gonum.org/v1/gonum v0.0.0-20181017130424-4c3d8206805c // indirect
-	gonum.org/v1/netlib v0.0.0-20181018051557-57e1e4db57a7 // indirect
+	github.com/exascience/pargo v1.0.1
+	golang.org/x/exp v0.0.0-20190426190305-956cc1757749 // indirect
+	golang.org/x/sys v0.0.0-20190429094411-2cc0cad0ac78
+	gonum.org/v1/gonum v0.0.0-20190424212039-2a1643c79af2 // indirect
+	gonum.org/v1/netlib v0.0.0-20190331212654-76723241ea4e // indirect
 )

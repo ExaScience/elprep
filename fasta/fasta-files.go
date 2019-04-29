@@ -1,5 +1,5 @@
 // elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017, 2018 imec vzw.
+// Copyright (c) 2017-2019 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -156,8 +156,11 @@ func ParseFasta(filename string, fai map[string]FaiReference, toUpper, toN bool)
 		return nil, fmt.Errorf("empty fasta file %v", filename)
 	}
 	b := scanner.Bytes()
-	if len(b) == 0 {
-		return nil, fmt.Errorf("invalid fasta file %v - empty line", filename)
+	for len(b) == 0 {
+		if !scanner.Scan() {
+			return nil, fmt.Errorf("empty fasta file %v", filename)
+		}
+		b = scanner.Bytes()
 	}
 	if b[0] != '>' {
 		return nil, fmt.Errorf("invalid fasta file %v - missing first header", filename)
@@ -167,10 +170,23 @@ func ParseFasta(filename string, fai map[string]FaiReference, toUpper, toN bool)
 	seq := initSeq(contig, fai)
 	fasta = make(map[string][]byte)
 
+scanLoop:
 	for scanner.Scan() {
 		b := scanner.Bytes()
 		if len(b) == 0 {
-			return nil, fmt.Errorf("invalid fasta file %v - empty line", filename)
+			if !scanner.Scan() {
+				break scanLoop
+			}
+			b = scanner.Bytes()
+			for len(b) == 0 {
+				if !scanner.Scan() {
+					break scanLoop
+				}
+				b = scanner.Bytes()
+			}
+			if b[0] != '>' {
+				return nil, fmt.Errorf("invalid fasta file %v - empty line", filename)
+			}
 		}
 		if b[0] == '>' {
 			fasta[contig] = seq
@@ -391,8 +407,11 @@ func OpenConcurrentFasta(filename, fai string, toUpper, toN bool) (fasta Concurr
 		return nil, fmt.Errorf("empty fasta file %v", filename)
 	}
 	b := scanner.Bytes()
-	if len(b) == 0 {
-		return nil, fmt.Errorf("invalid fasta file %v - empty line", filename)
+	for len(b) == 0 {
+		if !scanner.Scan() {
+			return nil, fmt.Errorf("empty fasta file %v", filename)
+		}
+		b = scanner.Bytes()
 	}
 	if b[0] != '>' {
 		return nil, fmt.Errorf("invalid fasta file %v - missing first header", filename)
@@ -409,10 +428,23 @@ func OpenConcurrentFasta(filename, fai string, toUpper, toN bool) (fasta Concurr
 		ref := faiMap[contig]
 		seq := make([]byte, 0, ref.Length)
 
+	scanLoop:
 		for scanner.Scan() {
 			b := scanner.Bytes()
 			if len(b) == 0 {
-				log.Fatal(fmt.Errorf("invalid fasta file %v - empty line", filename))
+				if !scanner.Scan() {
+					break scanLoop
+				}
+				b = scanner.Bytes()
+				for len(b) == 0 {
+					if !scanner.Scan() {
+						break scanLoop
+					}
+					b = scanner.Bytes()
+				}
+				if b[0] != '>' {
+					log.Fatal(fmt.Errorf("invalid fasta file %v - empty line", filename))
+				}
 			}
 			if b[0] == '>' {
 				entry := fasta[contig]
