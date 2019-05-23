@@ -1,5 +1,5 @@
 // elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017, 2018 imec vzw.
+// Copyright (c) 2017-2019 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -27,17 +27,17 @@ import (
 // refers to a directory, return a slice of names of files that are in
 // this directory. If the given filename does not refer to a
 // directory, return a slice with this filename as the only entry.
-func Directory(file string) (files []string, err error) {
+func Directory(file string) (directory string, files []string, err error) {
 	info, err := os.Stat(file)
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
 	if !info.IsDir() {
-		return []string{filepath.Base(file)}, nil
+		return filepath.Dir(file), []string{filepath.Base(file)}, nil
 	}
 	f, err := os.Open(file)
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
 	defer func() {
 		nerr := f.Close()
@@ -45,5 +45,9 @@ func Directory(file string) (files []string, err error) {
 			err = nerr
 		}
 	}()
-	return f.Readdirnames(0)
+	files, err = f.Readdirnames(0)
+	if err != nil {
+		return "", nil, err
+	}
+	return filepath.Clean(file), files, err
 }

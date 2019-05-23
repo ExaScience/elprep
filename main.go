@@ -1,5 +1,5 @@
 // elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017, 2018 imec vzw.
+// Copyright (c) 2017-2019 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -42,11 +42,12 @@ func printHelp() {
 }
 
 func prinExtendedHelp() {
-	fmt.Fprintln(os.Stderr, "Available commands: filter, split, merge, sfm, vcf-to-elsites, bed-to-elsites, fasta-to-elfasta")
+	fmt.Fprintln(os.Stderr, "Available commands: filter, split, merge, merge-optical-duplicates-metrics, sfm, vcf-to-elsites, bed-to-elsites, fasta-to-elfasta")
 	fmt.Fprint(os.Stderr, "\n", cmd.FilterExtendedHelp)
 	fmt.Fprint(os.Stderr, "\n", cmd.SplitHelp)
 	fmt.Fprint(os.Stderr, "\n", cmd.MergeHelp)
 	fmt.Fprint(os.Stderr, "\n", cmd.SfmHelp)
+	fmt.Fprint(os.Stderr, "\n", cmd.MergeOpticalDuplicatesMetricsHelp)
 	fmt.Fprint(os.Stderr, "\n", cmd.VcfToElsitesHelp)
 	fmt.Fprint(os.Stderr, "\n", cmd.BedToElsitesHelp)
 	fmt.Fprint(os.Stderr, "\n", cmd.FastaToElfastaHelp)
@@ -69,6 +70,8 @@ func main() {
 		err = cmd.Split()
 	case "merge":
 		err = cmd.Merge()
+	case "merge-optical-duplicates-metrics":
+		err = cmd.MergeOpticalDuplicatesMetrics()
 	case "vcf-to-elsites":
 		err = cmd.VcfToElsites()
 	case "bed-to-elsites":

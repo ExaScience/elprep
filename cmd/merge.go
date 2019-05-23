@@ -1,5 +1,5 @@
 // elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017, 2018 imec vzw.
+// Copyright (c) 2017-2019 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -84,7 +84,7 @@ func Merge() error {
 	if err != nil {
 		return err
 	}
-	filesToMerge, err := internal.Directory(fullInputPath)
+	fullInputPath, filesToMerge, err := internal.Directory(fullInputPath)
 	if err != nil {
 		log.Printf("Given directory %v causes error %v.\n", input, err)
 		sanityChecksFailed = true

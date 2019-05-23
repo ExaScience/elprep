@@ -1,5 +1,5 @@
 // elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017, 2018 imec vzw.
+// Copyright (c) 2017-2019 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -338,7 +338,7 @@ func LoadAndCombineBQSRTables(bqsrPath string) (BaseRecalibratorTables, error) {
 	// create bqsr tables
 	result := NewBaseRecalibratorTables()
 	// go through the files, loading intermediate tables
-	files, err := internal.Directory(bqsrPath)
+	bqsrPath, files, err := internal.Directory(bqsrPath)
 	if err != nil {
 		return BaseRecalibratorTables{}, err
 	}

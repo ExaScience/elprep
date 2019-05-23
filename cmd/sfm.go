@@ -67,6 +67,7 @@ const SfmHelp = "\nsfm parameters:\n" +
 	"[--log-path path]\n" +
 	"[--intermediate-files-output-prefix name]\n" +
 	"[--intermediate-files-output-type [sam | bam]]\n" +
+	"[--tmp-path path]\n" +
 	"[--single-end]\n" +
 	"[--contig-group-size nr]\n"
 
@@ -99,6 +100,7 @@ const CombinedSfmFilterHelp = "filter/sfm parameters:\n" +
 	"[--log-path path]\n" +
 	"[--intermediate-files-output-prefix name] (sfm only)\n" +
 	"[--intermediate-files-output-type [sam | bam]] (sfm only)\n" +
+	"[--tmp-path path]\n" +
 	"[--single-end] (sfm only)\n" +
 	"[--contig-group-size nr] (sfm only)\n"
 
@@ -128,7 +130,7 @@ func Sfm() error {
 		nrOfThreads                                         int
 		timed                                               bool
 		profile                                             string
-		logPath                                             string
+		logPath, tmpPath                                    string
 		renameChromosomes                                   bool
 		outputPrefix, outputType                            string
 		contigGroupSize                                     int
@@ -165,6 +167,7 @@ func Sfm() error {
 	flags.BoolVar(&timed, "timed", false, "measure the runtime")
 	flags.StringVar(&profile, "profile", "", "write a runtime profile to the specified file(s)")
 	flags.StringVar(&logPath, "log-path", "", "write log files to the specified directory")
+	flags.StringVar(&tmpPath, "tmp-path", "", "write split files to a specified directory")
 	flags.BoolVar(&renameChromosomes, "rename-chromosomes", false, "")
 	//split/merge flags
 	flags.StringVar(&outputPrefix, "intermediate-files-output-prefix", "", "prefix for the output files")
@@ -400,6 +403,13 @@ func Sfm() error {
 		mergeArgs = append(mergeArgs, "--log-path", logPath)
 	}
 
+	if tmpPath != "" {
+		fmt.Fprint(&command, " --tmp-path ", tmpPath)
+		if err := os.MkdirAll(tmpPath, 0700); err != nil {
+			log.Fatal(err, ", while trying to create directories for split files ", tmpPath)
+		}
+	}
+
 	if deterministic {
 		fmt.Fprint(&command, " --deterministic")
 		filterArgs = append(filterArgs, "--deterministic")
@@ -415,7 +425,11 @@ func Sfm() error {
 	splitArgs = append(splitArgs, "--output-prefix", outputPrefix)
 
 	if outputType == "" {
-		outputType = ext[1:]
+		if ext == "" {
+			outputType = "sam"
+		} else {
+			outputType = ext[1:]
+		}
 	}
 	fmt.Fprint(&command, " --intermediate-files-output-type ", outputType)
 	splitArgs = append(splitArgs, "--output-type", outputType)
@@ -438,16 +452,19 @@ func Sfm() error {
 
 	// split command
 	timeStamp := time.Now().Format(time.RFC3339)
-	splitsName := fmt.Sprintf("elprep-splits-%s", timeStamp)
+	splitsName := filepath.Join(tmpPath, fmt.Sprintf("elprep-splits-%s", timeStamp))
 	splitsDir, err := filepath.Abs(splitsName)
 	if err != nil {
 		return err
 	}
 	splitsDir = splitsDir + string(filepath.Separator)
-	splitOpt := []string{"split", os.Args[2], splitsDir}
+	splitOpt := []string{"split", input, splitsDir}
 	splitArgs = append(splitOpt, splitArgs...)
 	log.Println("Splitting...")
 	splitCmd := exec.Command(os.Args[0], splitArgs...)
+	if input == "/dev/stdin" {
+		splitCmd.Stdin = os.Stdin
+	}
 	splitCmd.Stderr = os.Stderr
 	err = splitCmd.Run()
 	if err != nil {
@@ -455,9 +472,9 @@ func Sfm() error {
 	}
 
 	// set up directory for metrics
-	metricsName := fmt.Sprintf("elprep-metrics-%s", timeStamp)
 	metricsDir := ""
 	if markOpticalDuplicates != "" {
+		metricsName := filepath.Join(tmpPath, fmt.Sprintf("elprep-metrics-%s", timeStamp))
 		metricsDir, err = filepath.Abs(metricsName)
 		if err != nil {
 			return err
@@ -470,7 +487,7 @@ func Sfm() error {
 	}
 
 	// filter commands
-	mergeName := fmt.Sprintf("elprep-splits-processed-%s", timeStamp) + string(filepath.Separator)
+	mergeName := filepath.Join(tmpPath, fmt.Sprintf("elprep-splits-processed-%s", timeStamp))
 	mergeDir, err := filepath.Abs(mergeName)
 	if err != nil {
 		return err
@@ -478,16 +495,17 @@ func Sfm() error {
 	mergeDir = mergeDir + string(filepath.Separator)
 	splitFilesDir := splitsDir
 	if !singleEnd {
-		splitFilesDir = path.Join(splitsDir, "splits") + string(filepath.Separator)
+		splitFilesDir = path.Join(splitsDir, "splits")
 	}
-	files, err := internal.Directory(splitFilesDir)
+	splitFilesDir, files, err := internal.Directory(splitFilesDir)
 	if err != nil {
 		return err
 	}
 	log.Println("Filtering...")
 	if bqsr != "" {
 		// phase 1: Recalibration
-		tabsDir, err := filepath.Abs("elprep-tabs-" + timeStamp)
+		tabsName := filepath.Join(tmpPath, fmt.Sprintf("elprep-tabs-%s", timeStamp)) + string(filepath.Separator)
+		tabsDir, err := filepath.Abs(tabsName)
 		if err != nil {
 			return err
 		}
@@ -599,7 +617,8 @@ func Sfm() error {
 		log.Println("Filtering...")
 		filterOpt2 := []string{"filter", "/dev/stdin", output}
 		filterArgs2 = append(filterOpt2, filterArgs2...)
-		tabsDir, err := filepath.Abs("elprep-tabs-" + timeStamp)
+		tabsName := filepath.Join(tmpPath, fmt.Sprintf("elprep-tabs-%s", timeStamp)) + string(filepath.Separator)
+		tabsDir, err := filepath.Abs(tabsName)
 		if err != nil {
 			return err
 		}
@@ -607,6 +626,9 @@ func Sfm() error {
 		filterArgs2 = append(filterArgs2, "--bqsr-apply", tabsDir, "--recal-file", bqsr)
 		applyBqsrCommand := exec.Command(os.Args[0], filterArgs2...)
 		applyBqsrCommand.Stdin = outPipe
+		if output == "/dev/stdout" {
+			applyBqsrCommand.Stdout = os.Stdout
+		}
 		applyBqsrCommand.Stderr = os.Stderr
 		err = mergeCmd.Start()
 		if err != nil {
@@ -632,6 +654,9 @@ func Sfm() error {
 		mergeOpt := []string{"merge", mergeDir, output}
 		mergeArgs = append(mergeOpt, mergeArgs...)
 		mergeCmd := exec.Command(os.Args[0], mergeArgs...)
+		if output == "/dev/stdout" {
+			mergeCmd.Stdout = os.Stdout
+		}
 		mergeCmd.Stderr = os.Stderr
 		err = mergeCmd.Run()
 		if err != nil {

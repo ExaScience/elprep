@@ -289,6 +289,33 @@ This option is used to specify the number of levels for quantizing quality score
 
 This option is used to indicate to use static quantized quality scores to a given number of levels during base quality score recalibration (--bqsr). This list should be of the form "[nr, nr, nr]". The default value is [].
 
+### --mark-optical-duplicates-intermediate file
+
+This option is used in the context of filtering files created using the elprep split command. It is used internally by 
+the elprep sfm command, but can be used when writing your own split/filter/merge scripts.
+
+This option tells elPrep to perform optical duplicate marking and to write the result to an intermediate metrics file.
+The intermediate metrics file generated this way can later be merged with other intermediate metrics files, see the 
+merge-optical-duplicates-metrics command.
+
+### --bqsr-tables-only table-file
+
+This option is used in the context of filtering files created using the elprep split command. It is used internally by 
+the elprep sfm command, but can be used when writing your own split/filter/merge scripts.
+
+This option tells elPrep to perform base quality score recalibration and to write the result of the recalibration to an 
+intermediate table file. This table file will need to be merged with other intermediate recalibration results during the
+application of the base quality score recalibration. See the --bqsr-apply option.
+
+### --bqsr-apply path
+
+This option is used when filtering files created by the elprep split command. It is used internally by the elprep sfm 
+command, and can be used when writing your own split/filter/merge scripts.
+
+This option is used for applying base quality score recalibration on an input file. It expects a path parameter that 
+refers to a directory that contains intermediate recalibration results for multiple files created using the 
+--bqsr-tables-only option.
+
 ## Sorting Command Options
 
 ### --sorting-order [keep | unknown | unsorted | queryname | coordinate]
@@ -384,6 +411,7 @@ The elprep split command can be used to split up .sam files into smaller files t
 Splitting the .sam file into smaller files for processing "per chromosome" is useful for reducing the memory pressure as these split files are typically significantly smaller than the  input file as a whole. Splitting also makes it possible to parallelize the processing of a single .sam file by distributing the different split files across different processing nodes.
 
 We provide an sfm command that executes a pipeline while silently using the elprep filter and split/merge tools. It is of course possible to write scripts to combine the filter and split/merge tools yourself.
+We provide a recipe for writing your own split/filter/merge scripts on our github wiki.
 
 ## Name
 
@@ -394,8 +422,6 @@ We provide an sfm command that executes a pipeline while silently using the elpr
 	elprep sfm input.sam output.sam --mark-duplicates --mark-optical-duplicates output.metrics --sorting-order coordinate --bqsr output.recal --bqsr-reference hg38.elfasta --known-sites dbsnp_138.hg38.elsites 
 
 	elprep sfm input.bam output.bam --mark-duplicates --mark-optical-duplicates output.metrics --sorting-order coordinate --bqsr output.recal --bqsr-reference hg38.elfasta --known-sites dbsnp_138.hg38.elsites 
-
-	elprep sfm --mark-duplicates --mark-optical-duplicates output.metrics --sorting-order coordinate --bqsr output.recal --bqsr-reference hg38.elfasta --known-sites dbsnp_138.hg38.elsites 
 
 ## Description
 
@@ -408,6 +434,10 @@ The elprep sfm command has the same options as the elprep filter command, with t
 ### --intermediate-files-output-type [sam | bam]
 
 This command option sets the format of the split files. By default, elprep uses the same format as the input file for the split files. Changing the intermediate file output type may improve either runtime (.sam) or reduce peak disk usage (.bam).
+
+### --tmp-path
+
+This command option is used to specify a path where elPrep can store temporary files that are created (and deleted) by the split and merge commands that are silently called by the elprep sfm command. The default path is the folder from where you call elprep sfm.
 
 ### --single-end
 
@@ -438,6 +468,8 @@ Choosing the value 1 for the --contig-group-size tells elprep split to split the
 ## Description
 
 The elprep split command requires two arguments: 1) the input file or a path to multiple input files and 2) a path to a directory where elPrep can store the split files. The input file(s) can be .sam or .bam. It is also possible to use /dev/stdin as the input for using Unix pipes. There are no structural requirements on the input file(s) for using elprep split. For example, it is not necessary to sort the input file, nor is it necessary to convert to .bam or index the input file.
+
+Warning: If you pass a path to multiple input files to the elprep split command, elprep assumes that they all have the same (or compatible) headers, and just picks the first header it finds as the header for all input files. elprep currently does not make an attempt to resolve potential conflicts between headers, especially with regard to the @SQ, @RG, or @PG header records. We will include proper merging of different SAM/BAM files in a future version of elprep. In the meantime, if you need proper merging of SAM/BAM files, please use samtools merge, Picard MergeSamFiles, or a similar tool. (If such a tool produces SAM file as output, it can be piped into elprep using Unix pipes.)
 
 elPrep creates the output directory denoted by the output path, unless the directory already exists, in which case elPrep may override the existing files in that directory. Please make sure elPrep has the correct permissions for writing that directory.
 
@@ -523,6 +555,34 @@ Sets the path for writing a log file.
 ### --contig-group-size number
 
 The --contig-group-size parameter for the elprep merge command is deprecated since version 4.1.1. The elprep merge command now correctly processes the split files without that information.
+
+## Name
+
+### elprep merge-optical-duplicate-metrics - a commandline tool for merging intermediate metrics files created by the --mark-optical-duplicates-intermediate option
+
+## Synopsis
+
+	elprep merge-optical-duplicates-metrics input-file output-file metrics-file /path/to/intermediate/metrics --remove-duplicates
+
+## Description
+
+The elprep merge-optical-duplicates-metrics command requires four arguments: 
+the names of the original input and output .sam/.bam files for which the metrics are calculated, 
+the metrics file to which the merged metrics should be written, and a path to the intermediate metrics files that need 
+to be merged (and were generated using --mark-optical-duplicates-intermediate). 
+
+## Options
+
+### --nr-of-threads number
+
+This command option sets the number of threads that elPrep uses during execution for parsing/outputting .sam/.bam data. The default number of threads is equal to the number of cpu threads.
+
+It is normally not necessary to set this option. elPrep by default allocates the optimal number of threads.
+
+## --remove-duplicates
+
+Pass this option if the metrics were generated for a file for which the duplicates were removed. This information will 
+be included in the merged metrics file.
 
 # Extending elPrep
 

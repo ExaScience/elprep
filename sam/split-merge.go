@@ -1,5 +1,5 @@
 // elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017, 2018 imec vzw.
+// Copyright (c) 2017-2019 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -78,11 +78,10 @@ func computeContigGroups(SQ []utils.StringMap, contigGroupSize int) (groups []st
 // pairs where the reads map to that chromosome. There are no
 // requirements on the input file for splitting.
 func SplitFilePerChromosome(input, outputPath, outputPrefix, outputExtension string, contigGroupSize int) (funcErr error) {
-	files, err := internal.Directory(input)
+	inputPath, files, err := internal.Directory(input)
 	if err != nil {
 		return fmt.Errorf("%v, while attempting to fetch file(s) %v in SplitFilePerChromosome", err, input)
 	}
-	inputPath := filepath.Dir(input)
 	firstFile := filepath.Join(inputPath, files[0])
 	firstIn, err := Open(firstFile)
 	if err != nil {
@@ -624,12 +623,10 @@ func MergeUnsortedFilesSplitPerChromosome(inputPath, output, inputPrefix, inputE
 // chromosome, containing all reads that map to that chromosome. There
 // are no requirements on the input file for splitting.
 func SplitSingleEndFilePerChromosome(input, outputPath, outputPrefix, outputExtension string, contigGroupSize int) (funcErr error) {
-
-	files, err := internal.Directory(input)
+	inputPath, files, err := internal.Directory(input)
 	if err != nil {
 		return fmt.Errorf("%v, while attempting to fetch file(s) %v in SplitSingleEndFilePerChromosome", err, input)
 	}
-	inputPath := filepath.Dir(input)
 	firstFile := filepath.Join(inputPath, files[0])
 	firstIn, err := Open(firstFile)
 	if err != nil {

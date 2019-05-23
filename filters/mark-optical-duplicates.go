@@ -845,7 +845,7 @@ func LoadAndCombineDuplicateMetrics(metricsPath string) DuplicatesCtrMap {
 	// create ctr
 	ctrs := DuplicatesCtrMap{Map: make(map[string]*DuplicatesCtr)}
 	// go through the files, loading intermediate metrics
-	files, err := internal.Directory(metricsPath)
+	metricsPath, files, err := internal.Directory(metricsPath)
 	if err != nil {
 		ctrs.err = err
 		return ctrs
