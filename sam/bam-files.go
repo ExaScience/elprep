@@ -196,7 +196,7 @@ func parseBamU32(record []byte, index int) (value interface{}, newIndex int) {
 // it as an float32. See http://samtools.github.io/hts-specs/SAMv1.pdf - Section
 // 4.2.4.
 func parseBamFloat(record []byte, index int) (value interface{}, newIndex int) {
-	return math.Float32frombits(binary.LittleEndian.Uint32(record[index : index+2])), index + 2
+	return math.Float32frombits(binary.LittleEndian.Uint32(record[index : index+4])), index + 4
 }
 
 // parseBamString parses a Z optional field in a BAM alignment record and returns
