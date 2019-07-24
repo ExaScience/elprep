@@ -774,9 +774,9 @@ func computeStrandedClippedSeq(aln *sam.Alignment, newSeq []byte) []byte {
 	return newSeq
 }
 
-const maxCycle = 500
+const defaultMaxCycle = 500
 
-func checkCycleCovariate(cycle int) int {
+func checkCycleCovariate(cycle, maxCycle int) int {
 	if cycle > maxCycle || cycle < -maxCycle {
 		log.Fatal("cycle value exceeds maximum cycle value")
 	}
@@ -797,8 +797,8 @@ func prepareCycleCovariates(aln *sam.Alignment) (int, int) {
 	return cycleFactor, increment
 }
 
-func computeBaseCycleCovariate(cycleFactor, increment, index int) int {
-	return checkCycleCovariate(cycleFactor + index*increment)
+func computeBaseCycleCovariate(cycleFactor, increment, index, maxCycle int) int {
+	return checkCycleCovariate(cycleFactor+index*increment, maxCycle)
 }
 
 func calculateSkipSlice(aln *sam.Alignment, knownSites []intervals.Interval, skipSlice []bool) []bool {
@@ -908,6 +908,11 @@ func (recal *BaseRecalibrator) close() error {
 
 // Recalibrate implements the first step of base recalibration.
 func (recal *BaseRecalibrator) Recalibrate(reads *sam.Sam) (tables BaseRecalibratorTables) {
+	return recal.RecalibrateWithMaxCycle(reads, defaultMaxCycle)
+}
+
+// RecalibrateWithMaxCycle implements the first step of base recalibration.
+func (recal *BaseRecalibrator) RecalibrateWithMaxCycle(reads *sam.Sam, maxCycle int) (tables BaseRecalibratorTables) {
 	defer func() {
 		if err := recal.close(); tables.err == nil {
 			tables.err = err
@@ -975,7 +980,7 @@ func (recal *BaseRecalibrator) Recalibrate(reads *sam.Sam) (tables BaseRecalibra
 					Qual:      qual,
 				}
 				result.QualityScores.update(key1, qual, errVal)
-				baseCycleCovariate := computeBaseCycleCovariate(cycleFactor, cycleIncrement, i)
+				baseCycleCovariate := computeBaseCycleCovariate(cycleFactor, cycleIncrement, i, maxCycle)
 				key2 := bqsrTableKey{
 					Covariate: int32(baseCycleCovariate),
 					ReadGroup: readGroupCovariate,
@@ -1391,6 +1396,11 @@ type (
 
 // ApplyBQSR applies the base recalibration result to the QUAL strings of the given reads.
 func (recal BaseRecalibratorTables) ApplyBQSR(quantizeLevels int, sqqList []uint8) sam.Filter {
+	return recal.ApplyBQSRWithMaxCycle(quantizeLevels, sqqList, defaultMaxCycle)
+}
+
+// ApplyBQSRWithMaxCycle applies the base recalibration result to the QUAL strings of the given reads.
+func (recal BaseRecalibratorTables) ApplyBQSRWithMaxCycle(quantizeLevels int, sqqList []uint8, maxCycle int) sam.Filter {
 	return func(hdr *sam.Header) sam.AlignmentFilter {
 		combinedBQSRTable := initializeCombinedBQSRTable(recal.QualityScores)
 		var staticQuantizedScores []uint8
@@ -1425,7 +1435,7 @@ func (recal BaseRecalibratorTables) ApplyBQSR(quantizeLevels int, sqqList []uint
 			for i := 0; i < alnLength; i++ {
 				if qual := aln.QUAL[i]; qual >= minInterestingQual {
 					key.qual = qual
-					key.cycleCovariate = int32(computeBaseCycleCovariate(cycleFactor, cycleIncrement, i))
+					key.cycleCovariate = int32(computeBaseCycleCovariate(cycleFactor, cycleIncrement, i, maxCycle))
 					key.contextCovariate = buf.baseContextCovariate[i]
 					if recalibratedQualityScore, ok := buf.recalibratedQualityScores[key]; ok {
 						aln.QUAL[i] = recalibratedQualityScore

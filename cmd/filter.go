@@ -99,7 +99,7 @@ func runBestPracticesPipelineIntermediateSam(fileIn, fileOut string, sortingOrde
 	})
 }
 
-func runBestPracticesPipelineIntermediateSamWithBQSR(fileIn, fileOut string, sortingOrder sam.SortingOrder, filters1, filters2 []sam.Filter, opticalDuplicateFilter func(reads *sam.Sam) error, baseRecalibrator *filters.BaseRecalibrator, quantizeLevels int, sqqList []uint8, recalFile string, timed bool, profile string) error {
+func runBestPracticesPipelineIntermediateSamWithBQSR(fileIn, fileOut string, sortingOrder sam.SortingOrder, filters1, filters2 []sam.Filter, opticalDuplicateFilter func(reads *sam.Sam) error, baseRecalibrator *filters.BaseRecalibrator, quantizeLevels int, sqqList []uint8, maxCycle int, recalFile string, timed bool, profile string) error {
 	// Input and first filters and sorting
 	filteredReads := sam.NewSam()
 	phase := int64(1)
@@ -141,7 +141,7 @@ func runBestPracticesPipelineIntermediateSamWithBQSR(fileIn, fileOut string, sor
 	var baseRecalibratorTables filters.BaseRecalibratorTables
 	phase++
 	err = timedRun(timed, profile, "Base recalibration", phase, func() error {
-		baseRecalibratorTables = baseRecalibrator.Recalibrate(filteredReads)
+		baseRecalibratorTables = baseRecalibrator.RecalibrateWithMaxCycle(filteredReads, maxCycle)
 		return baseRecalibratorTables.Err()
 	})
 	if err != nil {
@@ -172,7 +172,7 @@ func runBestPracticesPipelineIntermediateSamWithBQSR(fileIn, fileOut string, sor
 			n = m
 		}
 		filteredReads.NofBatches(n)
-		return filteredReads.RunPipeline(filteredReads, []sam.Filter{baseRecalibratorTables.ApplyBQSR(quantizeLevels, sqqList)}, sortingOrder)
+		return filteredReads.RunPipeline(filteredReads, []sam.Filter{baseRecalibratorTables.ApplyBQSRWithMaxCycle(quantizeLevels, sqqList, maxCycle)}, sortingOrder)
 	})
 	if err != nil {
 		return err
@@ -257,7 +257,7 @@ func runBestPracticesPipelineIntermediateSamWithBQSRApplyOnly(input, output stri
 	})
 }
 
-func runBestPracticesPipelineIntermediateSamWithBQSRCalculateTablesOnly(fileIn, fileOut string, sortingOrder sam.SortingOrder, filters1, filters2 []sam.Filter, opticalDuplicateFilter func(reads *sam.Sam) error, baseRecalibrator *filters.BaseRecalibrator, tableFile string, timed bool, profile string) error {
+func runBestPracticesPipelineIntermediateSamWithBQSRCalculateTablesOnly(fileIn, fileOut string, sortingOrder sam.SortingOrder, filters1, filters2 []sam.Filter, opticalDuplicateFilter func(reads *sam.Sam) error, baseRecalibrator *filters.BaseRecalibrator, tableFile string, maxCycle int, timed bool, profile string) error {
 	// Input and first filters and sorting
 	filteredReads := sam.NewSam()
 	phase := int64(1)
@@ -297,7 +297,7 @@ func runBestPracticesPipelineIntermediateSamWithBQSRCalculateTablesOnly(fileIn, 
 	var baseRecalibratorTables filters.BaseRecalibratorTables
 	phase++
 	err = timedRun(timed, profile, "Base recalibration", phase, func() error {
-		baseRecalibratorTables = baseRecalibrator.Recalibrate(filteredReads)
+		baseRecalibratorTables = baseRecalibrator.RecalibrateWithMaxCycle(filteredReads, maxCycle)
 		return baseRecalibratorTables.Err()
 	})
 	if err != nil {
@@ -412,6 +412,7 @@ const FilterHelp = "\nfilter parameters:\n" +
 	"[--bqsr-reference elfasta]\n" +
 	"[--quantize-levels nr]\n" +
 	"[--sqq list]\n" +
+	"[--max-cycle nr]\n" +
 	"[--known-sites list]\n" +
 	"[--nr-of-threads nr]\n" +
 	"[--timed]\n" +
@@ -447,6 +448,7 @@ func Filter() error {
 		bqsrApplyFromTables                                      string
 		quantizeLevels                                           int
 		sqq                                                      string
+		maxCycle                                                 int
 		knownSites                                               string
 		recalFile                                                string
 		deterministic                                            bool
@@ -483,6 +485,7 @@ func Filter() error {
 	flags.StringVar(&referenceElFasta, "bqsr-reference", "", "reference used for base quality score recalibration (elfasta format)")
 	flags.IntVar(&quantizeLevels, "quantize-levels", 0, "number of levels to be used for quantizing recalibrated base qualities (only with --bqsr)")
 	flags.StringVar(&sqq, "sqq", "", "levels to be used for statically quantizing recalibrated base qualities (only with --bqsr)")
+	flags.IntVar(&maxCycle, "max-cycle", 500, "maximum cycle length (only with --bqsr)")
 	flags.StringVar(&knownSites, "known-sites", "", "list of vcf files containing known sites for base recalibration (only with --bqsr)")
 	flags.StringVar(&recalFile, "recal-file", "", "log file for recalibration tables (only with --bqsr-apply)")
 	flags.BoolVar(&deterministic, "deterministic", false, "run elprep deterministically")
@@ -597,13 +600,31 @@ func Filter() error {
 		log.Println("Error: cannot use --optical-duplicates-pixel-distance without also using --mark-optical-duplicates or --mark-optical-duplicates-intermediate")
 	}
 
-	if !checkBQSROptions(bqsr != "", (bqsrTablesOnly != ""), referenceElFasta, quantizeLevels, sqq, knownSites, bqsr, recalFile) {
-		sanityChecksFailed = true
-	}
-	if !checkBQSRTablesOnlyOptions((bqsrTablesOnly != ""), bqsrTablesOnly, referenceElFasta) {
-		sanityChecksFailed = true
-	}
-	if !checkBQSRApplyOptions((bqsrApplyFromTables != ""), bqsrApplyFromTables, recalFile) {
+	if bqsr != "" {
+		if bqsrTablesOnly != "" {
+			sanityChecksFailed = true
+			log.Println("Error: cannot use both --bsqr and --bqsr-tables-only in the same command")
+		}
+		if bqsrApplyFromTables != "" {
+			sanityChecksFailed = true
+			log.Println("Error: cannot use both --bqsr and --bqsr-apply in the same command")
+		}
+		if !checkBQSROptions(referenceElFasta, bqsr, recalFile) {
+			sanityChecksFailed = true
+		}
+	} else if bqsrTablesOnly != "" {
+		if bqsrApplyFromTables != "" {
+			sanityChecksFailed = true
+			log.Println("Error: cannot use both --bqsr-tables-only and --bqsr-apply in the same command")
+		}
+		if !checkBQSRTablesOnlyOptions(bqsrTablesOnly, referenceElFasta) {
+			sanityChecksFailed = true
+		}
+	} else if bqsrApplyFromTables != "" {
+		if !checkBQSRApplyOptions(bqsrApplyFromTables, recalFile) {
+			sanityChecksFailed = true
+		}
+	} else if !checkNonBQSROptions(quantizeLevels, sqq, knownSites) {
 		sanityChecksFailed = true
 	}
 
@@ -739,24 +760,26 @@ func Filter() error {
 		fmt.Fprint(&command, " --bqsr ", bqsr)
 		fmt.Fprint(&command, " --bqsr-reference ", referenceElFasta)
 		fmt.Fprint(&command, " --quantize-levels ", quantizeLevels)
+		fmt.Fprint(&command, " --max-cycle ", maxCycle)
 	}
 
 	if bqsrTablesOnly != "" {
 		// filters created later
 		fmt.Fprint(&command, " --bqsr-tables-only ", bqsrTablesOnly)
 		fmt.Fprint(&command, " --bqsr-reference ", referenceElFasta)
-		fmt.Fprint(&command, " --quantize-levels ", quantizeLevels)
+		fmt.Fprint(&command, " --max-cycle ", maxCycle)
 	}
 
 	if bqsrApplyFromTables != "" {
 		// filters created later
 		fmt.Fprint(&command, " --bqsr-apply ", bqsrApplyFromTables)
 		fmt.Fprint(&command, " --quantize-levels ", quantizeLevels)
+		fmt.Fprint(&command, " --max-cycle ", maxCycle)
 	}
 
 	var sqqList []uint8
 
-	if (bqsr != "" || (bqsrTablesOnly != "")) && sqq != "" {
+	if (bqsr != "" || (bqsrApplyFromTables != "")) && sqq != "" {
 		sqqs := strings.Split(sqq, ",")
 		for _, sqq := range sqqs {
 			if i, err := strconv.ParseUint(strings.TrimSpace(sqq), 10, 32); err != nil {
@@ -850,12 +873,12 @@ func Filter() error {
 			return err
 		}
 		baseRecalibrator := filters.NewBaseRecalibrator(knownSitesList, referenceElFasta)
-		return runBestPracticesPipelineIntermediateSamWithBQSR(input, output, sortingOrder, filters1, filters2, opticalDuplicatesFilter, baseRecalibrator, quantizeLevels, sqqList, recalFile, timed, profile)
+		return runBestPracticesPipelineIntermediateSamWithBQSR(input, output, sortingOrder, filters1, filters2, opticalDuplicatesFilter, baseRecalibrator, quantizeLevels, sqqList, maxCycle, recalFile, timed, profile)
 	}
 
 	if bqsrTablesOnly != "" {
 		baseRecalibrator := filters.NewBaseRecalibrator(knownSitesList, referenceElFasta)
-		return runBestPracticesPipelineIntermediateSamWithBQSRCalculateTablesOnly(input, output, sortingOrder, filters1, filters2, opticalDuplicatesFilter, baseRecalibrator, bqsrTablesOnly, timed, profile)
+		return runBestPracticesPipelineIntermediateSamWithBQSRCalculateTablesOnly(input, output, sortingOrder, filters1, filters2, opticalDuplicatesFilter, baseRecalibrator, bqsrTablesOnly, maxCycle, timed, profile)
 	}
 
 	if bqsrApplyFromTables != "" {
@@ -867,7 +890,7 @@ func Filter() error {
 		if err != nil {
 			return err
 		}
-		filters2 = append(filters2, baseRecalibratorTables.ApplyBQSR(quantizeLevels, sqqList))
+		filters2 = append(filters2, baseRecalibratorTables.ApplyBQSRWithMaxCycle(quantizeLevels, sqqList, maxCycle))
 		return runBestPracticesPipelineIntermediateSamWithBQSRApplyOnly(input, output, sortingOrder, filters2, baseRecalibratorTables, recalFile, timed, profile)
 	}
 

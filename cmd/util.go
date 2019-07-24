@@ -153,59 +153,54 @@ func checkCreate(parameter, filename string) bool {
 	return true
 }
 
-func checkBQSROptions(bqsr, bqsrTablesOnly bool, elFasta string, quantizationLevel int, sqq string, knownSites, bqsrRecalFile, recalFile string) bool {
-	if bqsr {
-		if bqsrRecalFile == "" {
-			log.Println("Error: Attempt to calculate base recalibration without specifying a log file for the recalibration tables.")
-			return false
-		}
-		if elFasta == "" {
-			log.Println("Error: Attempt to calculate base recalibration without specifying a reference file. Please add --bqsr-reference option to your call.")
-			return false
-		}
-		if recalFile != "" {
-			log.Println("Warning: The --recal-file option is set with using --bqsr file. The parameter is ignored and file is used instead.")
-		}
-	} else {
-		if !bqsrTablesOnly {
-			if quantizationLevel != 0 {
-				log.Println("Warning: The --quantization-level optional flag is set without using --bqsr. This parameter is ignored because base recalibration is not requested.")
-			}
-			if sqq != "" {
-				log.Println("Warning: The --sqq optional flag is set without using --bqsr. This parameter is ignored because base recalibration is not requested.")
-			}
-			if knownSites != "" {
-				log.Println("Warning: The --known-sites optional flag is set without using --bqsr. This parameter is ignored because base recalibration is not requested.")
-			}
-		}
+func checkBQSROptions(elFasta, bqsrRecalFile, recalFile string) bool {
+	if bqsrRecalFile == "" {
+		log.Println("Error: Attempt to calculate base recalibration without specifying a log file for the recalibration tables.")
+		return false
+	}
+	if elFasta == "" {
+		log.Println("Error: Attempt to calculate base recalibration without specifying a reference file. Please add --bqsr-reference option to your call.")
+		return false
+	}
+	if recalFile != "" {
+		log.Println("Warning: The --recal-file option is set with using --bqsr file. The parameter is ignored and file is used instead.")
 	}
 	return true
 }
 
-func checkBQSRTablesOnlyOptions(bqsr bool, tableFile, elFasta string) bool {
-	if bqsr {
-		if tableFile == "" {
-			log.Println("Error: Attempt to calculate base recalibration tables without specifying a table file.")
-			return false
-		}
-		if elFasta == "" {
-			log.Println("Error: Attempt to calculate base recalibration tables without specifying a reference file. Please add the --bqsr-reference option to your call.")
-			return false
-		}
+func checkNonBQSROptions(quantizationLevel int, sqq string, knownSites string) bool {
+	if quantizationLevel != 0 {
+		log.Println("Warning: The --quantization-level optional flag is set without using --bqsr. This parameter is ignored because base recalibration is not requested.")
+	}
+	if sqq != "" {
+		log.Println("Warning: The --sqq optional flag is set without using --bqsr. This parameter is ignored because base recalibration is not requested.")
+	}
+	if knownSites != "" {
+		log.Println("Warning: The --known-sites optional flag is set without using --bqsr. This parameter is ignored because base recalibration is not requested.")
 	}
 	return true
 }
 
-func checkBQSRApplyOptions(bqsr bool, path, recalFile string) bool {
-	if bqsr {
-		if path == "" {
-			log.Println("Error: Attempt to apply base recalibration without specifying a path to the tables calculated with --bqsr-tables-only.")
-			return false
-		}
-		if recalFile == "" {
-			log.Println("Error: Attempt to apply base recalibration without specifying a log file for the recalibration tables. Please add the --recal-file option to your call.")
-			return false
-		}
+func checkBQSRTablesOnlyOptions(tableFile, elFasta string) bool {
+	if tableFile == "" {
+		log.Println("Error: Attempt to calculate base recalibration tables without specifying a table file.")
+		return false
+	}
+	if elFasta == "" {
+		log.Println("Error: Attempt to calculate base recalibration tables without specifying a reference file. Please add the --bqsr-reference option to your call.")
+		return false
+	}
+	return true
+}
+
+func checkBQSRApplyOptions(path, recalFile string) bool {
+	if path == "" {
+		log.Println("Error: Attempt to apply base recalibration without specifying a path to the tables calculated with --bqsr-tables-only.")
+		return false
+	}
+	if recalFile == "" {
+		log.Println("Error: Attempt to apply base recalibration without specifying a log file for the recalibration tables. Please add the --recal-file option to your call.")
+		return false
 	}
 	return true
 }

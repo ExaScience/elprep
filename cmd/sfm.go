@@ -61,6 +61,7 @@ const SfmHelp = "\nsfm parameters:\n" +
 	"[--bqsr-reference elfasta]\n" +
 	"[--quantize-levels nr]\n" +
 	"[--sqq list]\n" +
+	"[--max-cycle nr]\n" +
 	"[--known-sites list]\n" +
 	"[--nr-of-threads nr]\n" +
 	"[--timed]\n" +
@@ -71,7 +72,7 @@ const SfmHelp = "\nsfm parameters:\n" +
 	"[--single-end]\n" +
 	"[--contig-group-size nr]\n"
 
-	// CombinedSfmFilterHelp is a help string that combines the help strings for the filter and sfm commands.
+// CombinedSfmFilterHelp is a help string that combines the help strings for the filter and sfm commands.
 const CombinedSfmFilterHelp = "filter/sfm parameters:\n" +
 	"elprep [filter | sfm] sam-file sam-output-file\n" +
 	"[--replace-reference-sequences sam-file]\n" +
@@ -94,6 +95,7 @@ const CombinedSfmFilterHelp = "filter/sfm parameters:\n" +
 	"[--bqsr-reference elfasta]\n" +
 	"[--quantize-levels nr]\n" +
 	"[--sqq list]\n" +
+	"[--max-cycle nr]\n" +
 	"[--known-sites list]\n" +
 	"[--nr-of-threads nr]\n" +
 	"[--timed]\n" +
@@ -125,6 +127,7 @@ func Sfm() error {
 		referenceElFasta                                    string
 		quantizeLevels                                      int
 		sqq                                                 string
+		maxCycle                                            int
 		knownSites                                          string
 		deterministic                                       bool
 		nrOfThreads                                         int
@@ -161,6 +164,7 @@ func Sfm() error {
 	flags.StringVar(&referenceElFasta, "bqsr-reference", "", "reference used for base quality score recalibration (elfasta format)")
 	flags.IntVar(&quantizeLevels, "quantize-levels", 0, "number of levels to be used for quantizing recalibrated base qualities (only with --bqsr)")
 	flags.StringVar(&sqq, "sqq", "", "levels to be used for statically quantizing recalibrated base qualities (only with --bqsr)")
+	flags.IntVar(&maxCycle, "max-cycle", 500, "maximum cycle length (only with --bqsr)")
 	flags.StringVar(&knownSites, "known-sites", "", "list of vcf files containing known sites for base recalibration (only with --bqsr)")
 	flags.BoolVar(&deterministic, "deterministic", false, "run elprep deterministically (currently not supported in sfm mode)")
 	flags.IntVar(&nrOfThreads, "nr-of-threads", 0, "number of worker threads")
@@ -250,7 +254,11 @@ func Sfm() error {
 		markDuplicates = true
 	}
 
-	if !checkBQSROptions(bqsr != "", false, referenceElFasta, quantizeLevels, sqq, knownSites, bqsr, "") {
+	if bqsr != "" {
+		if !checkBQSROptions(referenceElFasta, bqsr, "") {
+			sanityChecksFailed = true
+		}
+	} else if !checkNonBQSROptions(quantizeLevels, sqq, knownSites) {
 		sanityChecksFailed = true
 	}
 
@@ -337,7 +345,10 @@ func Sfm() error {
 		fmt.Fprint(&command, " --bqsr ", bqsr)
 		fmt.Fprint(&command, " --bqsr-reference ", referenceElFasta)
 		fmt.Fprint(&command, " --quantize-levels ", quantizeLevels)
-		filterArgs = append(filterArgs, "--bqsr-reference", referenceElFasta, "--quantize-levels", strconv.Itoa(quantizeLevels))
+		fmt.Fprint(&command, " --max-cycle ", maxCycle)
+		maxCycleString := strconv.Itoa(maxCycle)
+		filterArgs = append(filterArgs, "--bqsr-reference", referenceElFasta, "--max-cycle", maxCycleString)
+		filterArgs2 = append(filterArgs2, "--quantize-levels", strconv.Itoa(quantizeLevels), "--max-cycle", maxCycleString)
 	}
 
 	if bqsr != "" && sqq != "" {

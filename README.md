@@ -257,8 +257,9 @@ There are additional elprep options that can be used for configuring the base qu
 
 * --bqsr-reference elfasta (required)
 * --known-sites list (optional)
-* --quantize-levels  nr (optional)
+* --quantize-levels nr (optional)
 * --sqq list (optional)
+* --max-cycle nr (optional)
 
 See detailed descriptions of these options next.
 
@@ -288,6 +289,10 @@ This option is used to specify the number of levels for quantizing quality score
 ### --sqq list
 
 This option is used to indicate to use static quantized quality scores to a given number of levels during base quality score recalibration (--bqsr). This list should be of the form "[nr, nr, nr]". The default value is [].
+
+### --max-cycle nr
+
+This option is used to specify the maximum cycle value during base quality score recalibration (--bqsr). The default value is 500.
 
 ### --mark-optical-duplicates-intermediate file
 
