@@ -125,6 +125,8 @@ Herzeel C, Costanza P, Decap D, Fostier J, Verachtert W (2019) elPrep 4: A multi
 
 Herzeel C, Costanza P, Decap D, Fostier J, Reumers J (2015) elPrep: High-Performance Preparation of Sequence Alignment/Map Files for Variant Calling. PLoS ONE 10(7): e0132868. doi:10.1371/journal.pone.0132868
 
+Costanza P, Herzeel C, Verachter W (2019) A comparison of three programming languages for a full-fledged next-generation sequencing tool. BMC Bioinformatics 2019 20:301. https://doi.org/10.1186/s12859-019-2903-5
+
 If performance is below your expectations, please contact us first before reporting your results.
 
 # Demo
