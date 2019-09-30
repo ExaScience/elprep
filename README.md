@@ -29,7 +29,7 @@ The advantages of elPrep include:
 
 # Availability
 
-elPrep is released and distributed as an open-source project under the terms of the GNU Affero General Public License version 3 as published by the Free Software Foundation, with Additional Terms. Please see the file LICENSE.txt for a copy of the GNU Affero Public License and the Additional Terms.
+elPrep is released and distributed as an open-source project under the terms of the GNU Affero General Public License version 3 as published by the Free Software Foundation, with Additional Terms. Please see the file LICENSE.txt for a copy of the GNU Affero Public License and the Additional Terms. For inquiries about commercial licensing options contact us via exascience@imec.be.
 
 We also provide a download of a precompiled binary.
 
@@ -116,6 +116,8 @@ elPrep by default does not write any intermediate files, and therefore does not 
 Use the Google [forum](https://groups.google.com/d/forum/elprep) for discussions. You need a Google account to subscribe through the forum URL. You can also subscribe without a Google account by sending an email to elprep+subscribe@googlegroups.com.
 
 You can also contact us via exascience@imec.be directly.
+
+For inquiries about commercial licensing options contact us via exascience@imec.be. 
 
 # Citing elPrep
 
