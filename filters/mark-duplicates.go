@@ -423,7 +423,7 @@ func MarkDuplicates(alsoOpticals bool) (sam.Filter, *sync.Map, *sync.Map) {
 		if alsoOpticals {
 			return func(aln *sam.Alignment) bool {
 				addLIBID(aln, lbTable) // need this for all reads when marking optical duplicates
-				if aln.FlagNotAny(sam.Unmapped | sam.Secondary | sam.Duplicate | sam.Supplementary) {
+				if aln.FlagNotAny(sam.Unmapped | sam.Secondary | sam.Supplementary) {
 					adaptAlignment(aln)
 					classifyFragment(aln, fragments)
 					classifyPair(aln, pairsFragments, pairs)
@@ -432,7 +432,7 @@ func MarkDuplicates(alsoOpticals bool) (sam.Filter, *sync.Map, *sync.Map) {
 			}
 		}
 		return func(aln *sam.Alignment) bool {
-			if aln.FlagNotAny(sam.Unmapped | sam.Secondary | sam.Duplicate | sam.Supplementary) {
+			if aln.FlagNotAny(sam.Unmapped | sam.Secondary | sam.Supplementary) {
 				addLIBID(aln, lbTable) // don't need this for all reads when not marking optical duplicates
 				adaptAlignment(aln)
 				classifyFragment(aln, fragments)
