@@ -580,6 +580,8 @@ func Sfm() error {
 			if markOpticalDuplicates != "" {
 				metricsFile := path.Join(metricsDir, fileName)
 				fileFilterArgs = append(fileFilterArgs, []string{"--mark-optical-duplicates-intermediate", metricsFile}...)
+				opticalDuplicatesPixelDistanceString := strconv.FormatInt(int64(opticalDuplicatesPixelDistance), 10)
+				fileFilterArgs = append(fileFilterArgs, []string{"--optical-duplicates-pixel-distance", opticalDuplicatesPixelDistanceString}...)
 			}
 			filterCmd := exec.Command(os.Args[0], fileFilterArgs...)
 			filterCmd.Stderr = os.Stderr

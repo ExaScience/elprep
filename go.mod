@@ -1,5 +1,7 @@
 module github.com/exascience/elprep/v4
 
+go 1.14
+
 require (
 	github.com/exascience/pargo v1.0.1
 	golang.org/x/exp v0.0.0-20190718202018-cfdd5522f6f6 // indirect
