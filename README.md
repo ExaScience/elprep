@@ -1,7 +1,3 @@
-# elPrep 5 is coming soon, with support for variant calling
-
-Please contact us at exascience@imec.be if you would like to be notified.
-
 # Overview
 
 elPrep is a high-performance tool for analyzing .sam/.bam files (up to and including variant calling) in sequencing pipelines. 
