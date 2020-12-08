@@ -1,5 +1,5 @@
-// elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017, 2018 imec vzw.
+// elPrep: a high-performance tool for analyzing SAM/BAM files.
+// Copyright (c) 2017-2020 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -23,7 +23,7 @@ import (
 
 	"github.com/exascience/pargo/sync"
 
-	"github.com/exascience/elprep/v4/internal"
+	"github.com/exascience/elprep/v5/internal"
 )
 
 type symbolName string

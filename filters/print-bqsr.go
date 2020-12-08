@@ -1,5 +1,5 @@
-// elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017-2019 imec vzw.
+// elPrep: a high-performance tool for analyzing SAM/BAM files.
+// Copyright (c) 2017-2020 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -22,29 +22,15 @@ import (
 	"encoding/gob"
 	"fmt"
 	"io"
-	"os"
+	"log"
 	"path"
 	"sort"
 	"strconv"
 
-	"github.com/exascience/elprep/v4/internal"
+	"github.com/exascience/elprep/v5/internal"
 )
 
 const quantizationLevel = 16
-
-func (recal *BaseRecalibratorTables) fprintln(w io.Writer, a ...interface{}) {
-	if recal.err != nil {
-		return
-	}
-	fmt.Fprintln(w, a...)
-}
-
-func (recal *BaseRecalibratorTables) fprintf(w io.Writer, format string, a ...interface{}) {
-	if recal.err != nil {
-		return
-	}
-	fmt.Fprintf(w, format, a...)
-}
 
 const (
 	countString              = "Count"
@@ -63,8 +49,8 @@ const (
 func (recal *BaseRecalibratorTables) printQuantizationTable(file io.Writer) {
 	observations, scores := initializeQuantizedQualityScores(recal.QualityScores, quantizationLevel)
 
-	recal.fprintln(file, "#:GATKTable:3:94:\045d:\045d:\045d:;")
-	recal.fprintln(file, "#:GATKTable:Quantized:Quality quantization map")
+	fmt.Fprintf(file, "#:%sTable:3:%d:%%d:%%d:%%d:;\n", internal.BQSRTablenamePrefix, len(observations))
+	fmt.Fprintf(file, "#:%sTable:Quantized:Quality quantization map\n", internal.BQSRTablenamePrefix)
 
 	maxLenQualityScore := len(qualityScoreString)
 	maxLenCount := len(countString)
@@ -76,24 +62,24 @@ func (recal *BaseRecalibratorTables) printQuantizationTable(file io.Writer) {
 		maxLenQuantizedScore = maxInt(maxLenQuantizedScore, len(strconv.FormatInt(int64(scores[i]), 10)))
 	}
 
-	recal.fprintf(file, "%-[1]*[2]s", maxLenQualityScore, qualityScoreString)
-	recal.fprintf(file, "  %-[1]*[2]s", maxLenCount, countString)
-	recal.fprintf(file, "  %-[1]*[2]s\n", maxLenQuantizedScore, quantizedScoreString)
+	fmt.Fprintf(file, "%-[1]*[2]s", maxLenQualityScore, qualityScoreString)
+	fmt.Fprintf(file, "  %-[1]*[2]s", maxLenCount, countString)
+	fmt.Fprintf(file, "  %-[1]*[2]s\n", maxLenQuantizedScore, quantizedScoreString)
 
 	for i, observation := range observations {
-		recal.fprintf(file, "%[1]*[2]d", maxLenQualityScore, i)
-		recal.fprintf(file, "  %[1]*[2]d", maxLenCount, observation)
-		recal.fprintf(file, "  %[1]*[2]d\n", maxLenQuantizedScore, scores[i])
+		fmt.Fprintf(file, "%[1]*[2]d", maxLenQualityScore, i)
+		fmt.Fprintf(file, "  %[1]*[2]d", maxLenCount, observation)
+		fmt.Fprintf(file, "  %[1]*[2]d\n", maxLenQuantizedScore, scores[i])
 	}
 
-	recal.fprintln(file)
+	fmt.Fprintln(file)
 }
 
 func (recal *BaseRecalibratorTables) printCombinedBQSRTable(file io.Writer) {
 	table := initializeCombinedBQSRTable(recal.QualityScores)
 
-	recal.fprintln(file, "#:GATKTable:6:1:\045s:\045s:\045.4f:\045.4f:\045d:\045.2f:;")
-	recal.fprintln(file, "#:GATKTable:RecalTable0:")
+	fmt.Fprintf(file, "#:%sTable:6:%d:%%s:%%s:%%.4f:%%.4f:%%d:%%.2f:;\n", internal.BQSRTablenamePrefix, len(table))
+	fmt.Fprintf(file, "#:%sTable:RecalTable0:\n", internal.BQSRTablenamePrefix)
 
 	maxLenReadGroup := len(readGroupString)
 	maxLenEventType := len(eventTypeString)
@@ -113,31 +99,31 @@ func (recal *BaseRecalibratorTables) printCombinedBQSRTable(file io.Writer) {
 		maxLenErrors = maxInt(maxLenErrors, len(strconv.FormatInt(int64(entry.Mismatches), 10))+3)
 	}
 
-	recal.fprintf(file, "%-[1]*[2]s", maxLenReadGroup, readGroupString)
-	recal.fprintf(file, "  %-[1]*[2]s", maxLenEventType, eventTypeString)
-	recal.fprintf(file, "  %-[1]*[2]s", maxLenEmpiricalQuality, empiricalQualityString)
-	recal.fprintf(file, "  %-[1]*[2]s", maxLenEstimatedQReported, estimatedQReportedString)
-	recal.fprintf(file, "  %-[1]*[2]s", maxLenObservations, observationsString)
-	recal.fprintf(file, "  %-[1]*[2]s\n", maxLenErrors, errorsString)
+	fmt.Fprintf(file, "%-[1]*[2]s", maxLenReadGroup, readGroupString)
+	fmt.Fprintf(file, "  %-[1]*[2]s", maxLenEventType, eventTypeString)
+	fmt.Fprintf(file, "  %-[1]*[2]s", maxLenEmpiricalQuality, empiricalQualityString)
+	fmt.Fprintf(file, "  %-[1]*[2]s", maxLenEstimatedQReported, estimatedQReportedString)
+	fmt.Fprintf(file, "  %-[1]*[2]s", maxLenObservations, observationsString)
+	fmt.Fprintf(file, "  %-[1]*[2]s\n", maxLenErrors, errorsString)
 
 	sort.Strings(readGroups)
 
 	for _, rg := range readGroups {
 		entry := table[rg]
-		recal.fprintf(file, "%-[1]*[2]s", maxLenReadGroup, rg)
-		recal.fprintf(file, "  %-[1]*[2]s", maxLenEventType, "M")
-		recal.fprintf(file, "  %[1]*[2]d.0000", maxLenEmpiricalQuality-5, entry.EmpiricalQuality)
-		recal.fprintf(file, "  %[1]*.4[2]f", maxLenEstimatedQReported, entry.reportedQuality)
-		recal.fprintf(file, "  %[1]*[2]d", maxLenObservations, entry.Observations)
-		recal.fprintf(file, "  %[1]*[2]d.00\n", maxLenErrors-3, entry.Mismatches)
+		fmt.Fprintf(file, "%-[1]*[2]s", maxLenReadGroup, rg)
+		fmt.Fprintf(file, "  %-[1]*[2]s", maxLenEventType, "M")
+		fmt.Fprintf(file, "  %[1]*[2]d.0000", maxLenEmpiricalQuality-5, entry.EmpiricalQuality)
+		fmt.Fprintf(file, "  %[1]*.4[2]f", maxLenEstimatedQReported, entry.reportedQuality)
+		fmt.Fprintf(file, "  %[1]*[2]d", maxLenObservations, entry.Observations)
+		fmt.Fprintf(file, "  %[1]*[2]d.00\n", maxLenErrors-3, entry.Mismatches)
 	}
 
-	recal.fprintln(file)
+	fmt.Fprintln(file)
 }
 
 func (recal *BaseRecalibratorTables) printBQSRTable(file io.Writer) {
-	recal.fprintln(file, "#:GATKTable:6:36:\045s:\045d:\045s:\045.4f:\045d:\045.2f:;")
-	recal.fprintln(file, "#:GATKTable:RecalTable1:")
+	fmt.Fprintf(file, "#:%sTable:6:%d:%%s:%%d:%%s:%%.4f:%%d:%%.2f:;\n", internal.BQSRTablenamePrefix, len(recal.QualityScores))
+	fmt.Fprintf(file, "#:%sTable:RecalTable1:\n", internal.BQSRTablenamePrefix)
 
 	maxLenReadGroup := len(readGroupString)
 	maxLenQualityScore := len(qualityScoreString)
@@ -157,12 +143,12 @@ func (recal *BaseRecalibratorTables) printBQSRTable(file io.Writer) {
 		maxLenErrors = maxInt(maxLenErrors, len(strconv.FormatInt(int64(entry.Mismatches), 10))+3)
 	}
 
-	recal.fprintf(file, "%-[1]*[2]s", maxLenReadGroup, readGroupString)
-	recal.fprintf(file, "  %-[1]*[2]s", maxLenQualityScore, qualityScoreString)
-	recal.fprintf(file, "  %-[1]*[2]s", maxLenEventType, eventTypeString)
-	recal.fprintf(file, "  %-[1]*[2]s", maxLenEmpiricalQuality, empiricalQualityString)
-	recal.fprintf(file, "  %-[1]*[2]s", maxLenObservations, observationsString)
-	recal.fprintf(file, "  %-[1]*[2]s\n", maxLenErrors, errorsString)
+	fmt.Fprintf(file, "%-[1]*[2]s", maxLenReadGroup, readGroupString)
+	fmt.Fprintf(file, "  %-[1]*[2]s", maxLenQualityScore, qualityScoreString)
+	fmt.Fprintf(file, "  %-[1]*[2]s", maxLenEventType, eventTypeString)
+	fmt.Fprintf(file, "  %-[1]*[2]s", maxLenEmpiricalQuality, empiricalQualityString)
+	fmt.Fprintf(file, "  %-[1]*[2]s", maxLenObservations, observationsString)
+	fmt.Fprintf(file, "  %-[1]*[2]s\n", maxLenErrors, errorsString)
 
 	sort.Slice(keys, func(i, j int) bool {
 		e1, e2 := keys[i], keys[j]
@@ -177,15 +163,15 @@ func (recal *BaseRecalibratorTables) printBQSRTable(file io.Writer) {
 
 	for _, key := range keys {
 		entry := recal.QualityScores[key]
-		recal.fprintf(file, "%-[1]*[2]s", maxLenReadGroup, key.ReadGroup)
-		recal.fprintf(file, "  %[1]*[2]d", maxLenQualityScore, key.Qual)
-		recal.fprintf(file, "  %-[1]*[2]s", maxLenEventType, "M")
-		recal.fprintf(file, "  %[1]*[2]d.0000", maxLenEmpiricalQuality-5, entry.EmpiricalQuality)
-		recal.fprintf(file, "  %[1]*[2]d", maxLenObservations, entry.Observations)
-		recal.fprintf(file, "  %[1]*[2]d.00\n", maxLenErrors-3, entry.Mismatches)
+		fmt.Fprintf(file, "%-[1]*[2]s", maxLenReadGroup, key.ReadGroup)
+		fmt.Fprintf(file, "  %[1]*[2]d", maxLenQualityScore, key.Qual)
+		fmt.Fprintf(file, "  %-[1]*[2]s", maxLenEventType, "M")
+		fmt.Fprintf(file, "  %[1]*[2]d.0000", maxLenEmpiricalQuality-5, entry.EmpiricalQuality)
+		fmt.Fprintf(file, "  %[1]*[2]d", maxLenObservations, entry.Observations)
+		fmt.Fprintf(file, "  %[1]*[2]d.00\n", maxLenErrors-3, entry.Mismatches)
 	}
 
-	recal.fprintln(file)
+	fmt.Fprintln(file)
 }
 
 type covariateBqsrTableKey struct {
@@ -195,8 +181,8 @@ type covariateBqsrTableKey struct {
 }
 
 func (recal *BaseRecalibratorTables) printOtherCovariateTable(file io.Writer) {
-	recal.fprintln(file, "#:GATKTable:8:7756:\045s:\045d:\045s:\045s:\045s:\045.4f:\045d:\045.2f:;")
-	recal.fprintln(file, "#:GATKTable:RecalTable2:")
+	fmt.Fprintf(file, "#:%sTable:8:%d:%%s:%%d:%%s:%%s:%%s:%%.4f:%%d:%%.2f:;\n", internal.BQSRTablenamePrefix, len(recal.Cycles)+len(recal.Contexts))
+	fmt.Fprintf(file, "#:%sTable:RecalTable2:\n", internal.BQSRTablenamePrefix)
 
 	maxLenReadGroup := len(readGroupString)
 	maxLenQualityScore := len(qualityScoreString)
@@ -231,14 +217,14 @@ func (recal *BaseRecalibratorTables) printOtherCovariateTable(file io.Writer) {
 		maxLenErrors = maxInt(maxLenErrors, len(strconv.FormatInt(int64(entry.Mismatches), 10))+3)
 	}
 
-	recal.fprintf(file, "%-[1]*[2]s", maxLenReadGroup, readGroupString)
-	recal.fprintf(file, "  %-[1]*[2]s", maxLenQualityScore, qualityScoreString)
-	recal.fprintf(file, "  %-[1]*[2]s", maxLenCovariateValue, covariateValueString)
-	recal.fprintf(file, "  %-[1]*[2]s", maxLenCovariateName, covariateNameString)
-	recal.fprintf(file, "  %-[1]*[2]s", maxLenEventType, eventTypeString)
-	recal.fprintf(file, "  %-[1]*[2]s", maxLenEmpiricalQuality, empiricalQualityString)
-	recal.fprintf(file, "  %-[1]*[2]s", maxLenObservations, observationsString)
-	recal.fprintf(file, "  %-[1]*[2]s\n", maxLenErrors, errorsString)
+	fmt.Fprintf(file, "%-[1]*[2]s", maxLenReadGroup, readGroupString)
+	fmt.Fprintf(file, "  %-[1]*[2]s", maxLenQualityScore, qualityScoreString)
+	fmt.Fprintf(file, "  %-[1]*[2]s", maxLenCovariateValue, covariateValueString)
+	fmt.Fprintf(file, "  %-[1]*[2]s", maxLenCovariateName, covariateNameString)
+	fmt.Fprintf(file, "  %-[1]*[2]s", maxLenEventType, eventTypeString)
+	fmt.Fprintf(file, "  %-[1]*[2]s", maxLenEmpiricalQuality, empiricalQualityString)
+	fmt.Fprintf(file, "  %-[1]*[2]s", maxLenObservations, observationsString)
+	fmt.Fprintf(file, "  %-[1]*[2]s\n", maxLenErrors, errorsString)
 
 	sort.Slice(keys, func(i, j int) bool {
 		e1, e2 := keys[i], keys[j]
@@ -266,99 +252,78 @@ func (recal *BaseRecalibratorTables) printOtherCovariateTable(file io.Writer) {
 			entry = recal.Contexts[key.bqsrTableKey]
 			name = "Context"
 		}
-		recal.fprintf(file, "%-[1]*[2]s", maxLenReadGroup, key.ReadGroup)
-		recal.fprintf(file, "  %[1]*[2]d", maxLenQualityScore, key.Qual)
-		recal.fprintf(file, "  %-[1]*[2]s", maxLenCovariateValue, key.text)
-		recal.fprintf(file, "  %-[1]*[2]s", maxLenCovariateName, name)
-		recal.fprintf(file, "  %-[1]*[2]s", maxLenEventType, "M")
-		recal.fprintf(file, "  %[1]*[2]d.0000", maxLenEmpiricalQuality-5, entry.EmpiricalQuality)
-		recal.fprintf(file, "  %[1]*[2]d", maxLenObservations, entry.Observations)
-		recal.fprintf(file, "  %[1]*[2]d.00\n", maxLenErrors-3, entry.Mismatches)
+		fmt.Fprintf(file, "%-[1]*[2]s", maxLenReadGroup, key.ReadGroup)
+		fmt.Fprintf(file, "  %[1]*[2]d", maxLenQualityScore, key.Qual)
+		fmt.Fprintf(file, "  %-[1]*[2]s", maxLenCovariateValue, key.text)
+		fmt.Fprintf(file, "  %-[1]*[2]s", maxLenCovariateName, name)
+		fmt.Fprintf(file, "  %-[1]*[2]s", maxLenEventType, "M")
+		fmt.Fprintf(file, "  %[1]*[2]d.0000", maxLenEmpiricalQuality-5, entry.EmpiricalQuality)
+		fmt.Fprintf(file, "  %[1]*[2]d", maxLenObservations, entry.Observations)
+		fmt.Fprintf(file, "  %[1]*[2]d.00\n", maxLenErrors-3, entry.Mismatches)
 	}
 
-	recal.fprintln(file)
+	fmt.Fprintln(file)
 }
 
 // PrintBQSRTables creates a recalibration report file.
-func (recal *BaseRecalibratorTables) PrintBQSRTables(name string) error {
-	file, err := os.Create(name)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if nerr := file.Close(); err == nil {
-			err = nerr
-		}
-	}()
-	recal.fprintln(file, "#:GATKReport.v1.1:5")
-	recal.fprintln(file, "#:GATKTable:2:17:\045s:\045s:;")
-	recal.fprintln(file, "#:GATKTable:Arguments:Recalibration argument collection values used in this run")
-	recal.fprintln(file, "Argument                    Value                                                                   ")
-	recal.fprintln(file, "binary_tag_name             null                                                                    ")
-	recal.fprintln(file, "covariate                   ReadGroupCovariate,QualityScoreCovariate,ContextCovariate,CycleCovariate")
-	recal.fprintln(file, "default_platform            null                                                                    ")
-	recal.fprintln(file, "deletions_default_quality   45                                                                      ")
-	recal.fprintln(file, "force_platform              null                                                                    ")
-	recal.fprintln(file, "indels_context_size         3                                                                       ")
-	recal.fprintln(file, "insertions_default_quality  45                                                                      ")
-	recal.fprintln(file, "low_quality_tail            2                                                                       ")
-	recal.fprintln(file, "maximum_cycle_value         500                                                                     ")
-	recal.fprintln(file, "mismatches_context_size     2                                                                       ")
-	recal.fprintln(file, "mismatches_default_quality  -1                                                                      ")
-	recal.fprintln(file, "no_standard_covs            false                                                                   ")
-	recal.fprintln(file, "quantizing_levels           16                                                                      ")
-	recal.fprintln(file, "recalibration_report        null                                                                    ")
-	recal.fprintln(file, "run_without_dbsnp           false                                                                   ")
-	recal.fprintln(file, "solid_nocall_strategy       THROW_EXCEPTION                                                         ")
-	recal.fprintln(file, "solid_recal_mode            SET_Q_ZERO                                                              ")
-	recal.fprintln(file)
+func (recal *BaseRecalibratorTables) PrintBQSRTables(name string) {
+	file := internal.FileCreate(name)
+	defer internal.Close(file)
+	fmt.Fprintf(file, "#:%sReport.v1.1:5\n", internal.BQSRTablenamePrefix)
+	fmt.Fprintf(file, "#:%sTable:2:17:%%s:%%s:;\n", internal.BQSRTablenamePrefix)
+	fmt.Fprintf(file, "#:%sTable:Arguments:Recalibration argument collection values used in this run\n", internal.BQSRTablenamePrefix)
+	fmt.Fprintln(file, "Argument                    Value                                                                   ")
+	fmt.Fprintln(file, "binary_tag_name             null                                                                    ")
+	fmt.Fprintln(file, "covariate                   ReadGroupCovariate,QualityScoreCovariate,ContextCovariate,CycleCovariate")
+	fmt.Fprintln(file, "default_platform            null                                                                    ")
+	fmt.Fprintln(file, "deletions_default_quality   45                                                                      ")
+	fmt.Fprintln(file, "force_platform              null                                                                    ")
+	fmt.Fprintln(file, "indels_context_size         3                                                                       ")
+	fmt.Fprintln(file, "insertions_default_quality  45                                                                      ")
+	fmt.Fprintln(file, "low_quality_tail            2                                                                       ")
+	fmt.Fprintln(file, "maximum_cycle_value         500                                                                     ")
+	fmt.Fprintln(file, "mismatches_context_size     2                                                                       ")
+	fmt.Fprintln(file, "mismatches_default_quality  -1                                                                      ")
+	fmt.Fprintln(file, "no_standard_covs            false                                                                   ")
+	fmt.Fprintln(file, "quantizing_levels           16                                                                      ")
+	fmt.Fprintln(file, "recalibration_report        null                                                                    ")
+	fmt.Fprintln(file, "run_without_dbsnp           false                                                                   ")
+	fmt.Fprintln(file, "solid_nocall_strategy       THROW_EXCEPTION                                                         ")
+	fmt.Fprintln(file, "solid_recal_mode            SET_Q_ZERO                                                              ")
+	fmt.Fprintln(file)
 	recal.printQuantizationTable(file)
 	recal.printCombinedBQSRTable(file)
 	recal.printBQSRTable(file)
 	recal.printOtherCovariateTable(file)
-	return recal.err
 }
 
 // PrintBQSRTablesToIntermediateFile prints the recalibration tables to a gob file.
-func (recal *BaseRecalibratorTables) PrintBQSRTablesToIntermediateFile(name string) error {
-	file, err := os.Create(name)
-	if err != nil {
-		return err
+func (recal *BaseRecalibratorTables) PrintBQSRTablesToIntermediateFile(name string) {
+	file := internal.FileCreate(name)
+	defer internal.Close(file)
+	if err := gob.NewEncoder(file).Encode(recal); err != nil {
+		log.Panic(err)
 	}
-	defer func() {
-		if nerr := file.Close(); err == nil {
-			err = nerr
-		}
-	}()
-	return gob.NewEncoder(file).Encode(recal)
 }
 
 // LoadAndCombineBQSRTables loads and merges multiple recalibration tables from file into a single, new recalibration table.
-func LoadAndCombineBQSRTables(bqsrPath string) (BaseRecalibratorTables, error) {
+func LoadAndCombineBQSRTables(bqsrPath string) *BaseRecalibratorTables {
 	// create bqsr tables
 	result := NewBaseRecalibratorTables()
 	// go through the files, loading intermediate tables
-	bqsrPath, files, err := internal.Directory(bqsrPath)
-	if err != nil {
-		return BaseRecalibratorTables{}, err
-	}
+	bqsrPath, files := internal.Directory(bqsrPath)
 	for _, fileName := range files {
 		partialResult := BaseRecalibratorTables{}
-		file, err := os.Open(path.Join(bqsrPath, fileName))
-		if err != nil {
-			return BaseRecalibratorTables{}, err
-		}
-		if err = gob.NewDecoder(file).Decode(&partialResult); err != nil {
+		file := internal.FileOpen(path.Join(bqsrPath, fileName))
+		if err := gob.NewDecoder(file).Decode(&partialResult); err != nil {
 			_ = file.Close()
-			return BaseRecalibratorTables{}, err
+			log.Panic(err)
 		}
-		if err = file.Close(); err != nil {
-			return BaseRecalibratorTables{}, err
-		}
+		internal.Close(file)
 		// BqsrTable
 		result.QualityScores = result.QualityScores.merge(partialResult.QualityScores)
 		result.Contexts = result.Contexts.merge(partialResult.Contexts)
 		result.Cycles = result.Cycles.merge(partialResult.Cycles)
 	}
-	return result, nil
+	return &result
 }

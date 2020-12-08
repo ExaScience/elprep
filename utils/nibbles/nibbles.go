@@ -1,5 +1,5 @@
-// elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017, 2018 imec vzw.
+// elPrep: a high-performance tool for analyzing SAM/BAM files.
+// Copyright (c) 2017-2020 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -73,10 +73,24 @@ func (n Nibbles) ReflectValue() (len, offset int, bytes []byte) {
 	return n.Len(), n.offset(), n.bytes
 }
 
+// Expand returns a byte slice with the same contents, but where each entry is stored in a byte
+func (n Nibbles) Expand() []byte {
+	length := n.Len()
+	offset := n.offset()
+	result := make([]byte, length)
+	for k := 0; k < length; k++ {
+		index := k + offset
+		i := index >> 1
+		bit := index & 1
+		result[k] = 0xF & (n.bytes[i] >> uint((1^bit)<<2))
+	}
+	return result
+}
+
 // Get returns the nibble at the given index.
 func (n Nibbles) Get(index int) byte {
 	if index >= n.Len() {
-		log.Fatal("index out of range")
+		log.Panic("index out of range")
 	}
 	index += n.offset()
 	i := index >> 1
@@ -87,7 +101,7 @@ func (n Nibbles) Get(index int) byte {
 // Set sets the nibble at the given index.
 func (n Nibbles) Set(index int, value byte) {
 	if index >= n.Len() {
-		log.Fatal("index out of range")
+		log.Panic("index out of range")
 	}
 	index += n.offset()
 	i := index >> 1

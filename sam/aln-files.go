@@ -1,5 +1,5 @@
-// elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017, 2018 imec vzw.
+// elPrep: a high-performance tool for analyzing SAM/BAM files.
+// Copyright (c) 2017-2020 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -21,10 +21,15 @@ package sam
 import (
 	"bufio"
 	"context"
-	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"github.com/exascience/elprep/v5/utils/bgzf"
+
+	"github.com/exascience/elprep/v5/internal"
 
 	"github.com/exascience/pargo/pipeline"
 )
@@ -32,11 +37,11 @@ import (
 type (
 	// alignmentReader is a common interface for reading both SAM and BAM files.
 	alignmentReader interface {
-		ParseHeader() (*Header, error)
-		SkipHeader() error
-		ParseAlignment([]byte) (*Alignment, error)
+		ParseHeader() *Header
+		SkipHeader()
+		ParseAlignment([]byte) *Alignment
+		Close()
 		pipeline.Source
-		io.Closer
 	}
 
 	// InputFile represents a SAM or BAM file for input.
@@ -46,25 +51,25 @@ type (
 )
 
 // Close closes the SAM/BAM input file.
-func (f *InputFile) Close() error {
-	return f.reader.Close()
+func (f *InputFile) Close() {
+	f.reader.Close()
 }
 
 // ParseHeader fetches a header from a SAM or BAM file.
-func (f *InputFile) ParseHeader() (*Header, error) {
+func (f *InputFile) ParseHeader() *Header {
 	return f.reader.ParseHeader()
 }
 
 // SkipHeader skips the header section of a SAM or BAM file.
 // This is more efficient than calling ParseHeader and ignoring its result.
-func (f *InputFile) SkipHeader() error {
-	return f.reader.SkipHeader()
+func (f *InputFile) SkipHeader() {
+	f.reader.SkipHeader()
 }
 
 // ParseAlignment parses a block of bytes into an alignment.
 // For example in a SAM file, each block of bytes must be
 // one line from the alignment section.
-func (f *InputFile) ParseAlignment(block []byte) (*Alignment, error) {
+func (f *InputFile) ParseAlignment(block []byte) *Alignment {
 	return f.reader.ParseAlignment(block)
 }
 
@@ -91,9 +96,10 @@ func (f *InputFile) Data() interface{} {
 type (
 	// alignmentWriter is a common interface for writing both SAM and BAM files.
 	alignmentWriter interface {
-		FormatHeader(hdr *Header) error
-		FormatAlignment(aln *Alignment, out []byte) ([]byte, error)
-		io.WriteCloser
+		FormatHeader(hdr *Header)
+		FormatAlignment(aln *Alignment, out []byte) []byte
+		Close()
+		Write(p []byte) int
 	}
 
 	// OutputFile represents a SAM or BAM file for output.
@@ -103,110 +109,143 @@ type (
 )
 
 // Close closes a SAM or BAM output file.
-func (f *OutputFile) Close() error {
-	return f.writer.Close()
+func (f *OutputFile) Close() {
+	f.writer.Close()
 }
 
 // FormatHeader writes the header to a SAM or BAM file.
-func (f *OutputFile) FormatHeader(hdr *Header) error {
-	return f.writer.FormatHeader(hdr)
+func (f *OutputFile) FormatHeader(hdr *Header) {
+	f.writer.FormatHeader(hdr)
 }
 
 // FormatAlignment formats an alignment into a block of bytes for a SAM or BAM file.
-func (f *OutputFile) FormatAlignment(aln *Alignment, out []byte) ([]byte, error) {
+func (f *OutputFile) FormatAlignment(aln *Alignment, out []byte) []byte {
 	return f.writer.FormatAlignment(aln, out)
 }
 
 // Write can be used to write the blocks of bytes from FormatAlignment
 // to the underlying SAM or BAM file.
-func (f *OutputFile) Write(p []byte) (int, error) {
+func (f *OutputFile) Write(p []byte) int {
 	return f.writer.Write(p)
 }
 
 // SAM file extensions.
 const (
-	SamExt  = ".sam"
-	BamExt  = ".bam"
-	cramExt = ".cram"
+	SamExt = ".sam"
+	BamExt = ".bam"
 )
 
 // Open a SAM or BAM file for input.
 //
-// If the filename extension is not .bam, then .sam is always
-// assumed.
+// Whether the format is SAM or BAM is determined from the content
+// of the input, not from any file extensions.
 //
 // If the name is "/dev/stdin", then the input is read from os.Stdin
-func Open(name string) (*InputFile, error) {
-	switch filepath.Ext(name) {
-	case BamExt:
-		file, err := os.Open(name)
-		if err != nil {
-			return nil, err
-		}
-		bgzf, err := NewBGZFReader(bufio.NewReader(file))
-		if err != nil {
-			return nil, err
-		}
-		return &InputFile{
-			reader: &bamReader{
-				rc:   file,
-				bgzf: bgzf,
-			},
-		}, nil
-	case cramExt:
-		return nil, fmt.Errorf("CRAM format not supported when opening %v", name)
-	default:
-		if name == "/dev/stdin" {
-			return &InputFile{
-				reader: &samReader{
-					rc:  os.Stdin,
-					buf: bufio.NewReader(os.Stdin),
-				},
-			}, nil
-		}
-		file, err := os.Open(name)
-		if err != nil {
-			return nil, err
-		}
+func Open(name string) *InputFile {
+	var file io.ReadCloser
+	if name == "/dev/stdin" {
+		file = os.Stdin
+	} else {
+		file = internal.FileOpen(name)
+	}
+	buf := bufio.NewReader(file)
+	ok, err := bgzf.IsGzip(buf)
+	if err != nil {
+		log.Panic(err)
+	}
+	if !ok {
 		return &InputFile{
 			reader: &samReader{
 				rc:  file,
-				buf: bufio.NewReader(file),
+				buf: buf,
 			},
-		}, nil
+		}
 	}
+	bgzf, err := bgzf.NewReader(buf)
+	if err != nil {
+		log.Panic(err)
+	}
+	return &InputFile{
+		reader: &bamReader{
+			rc:   file,
+			bgzf: bgzf,
+		},
+	}
+}
+
+// OpenIfExists a SAM or BAM file for input, returning false if it doesn't exist.
+//
+// Whether the format is SAM or BAM is determined from the content
+// of the input, not from any file extensions.
+//
+// If the name is "/dev/stdin", then the input is read from os.Stdin
+func OpenIfExists(name string) (*InputFile, bool) {
+	var file io.ReadCloser
+	if name == "/dev/stdin" {
+		file = os.Stdin
+	} else if f, ok := internal.FileOpenIfExists(name); ok {
+		file = f
+	} else {
+		return nil, false
+	}
+	buf := bufio.NewReader(file)
+	ok, err := bgzf.IsGzip(buf)
+	if err != nil {
+		log.Panic(err)
+	}
+	if !ok {
+		return &InputFile{
+			reader: &samReader{
+				rc:  file,
+				buf: buf,
+			},
+		}, true
+	}
+	bgzf, err := bgzf.NewReader(buf)
+	if err != nil {
+		log.Panic(err)
+	}
+	return &InputFile{
+		reader: &bamReader{
+			rc:   file,
+			bgzf: bgzf,
+		},
+	}, true
 }
 
 // Create a SAM or BAM file for output.
 //
-// If the filename extension is not .bam, then .sam is always
-// assumed.
+// The format string can be "sam" or "bam". If the format string
+// is empty, the output format is determined by looking at the
+// filename extension. If the filename extension is not .bam,
+// then .sam is always assumed.
+//
+// The format string will not become part of the resulting filename.
 //
 // If the name is "/dev/stdout", then the output is written to
 // os.Stdout.
-func Create(name string) (*OutputFile, error) {
-	switch filepath.Ext(name) {
-	case BamExt:
-		file, err := os.Create(name)
-		if err != nil {
-			return nil, err
-		}
+func Create(name string, format string) *OutputFile {
+	var file io.WriteCloser
+	if name == "/dev/stdout" {
+		file = os.Stdout
+	} else {
+		file = internal.FileCreate(name)
+	}
+	if format == "" {
+		format = filepath.Ext(name)
+	}
+	switch strings.ToLower(format) {
+	case "bam", ".bam":
 		return &OutputFile{
 			writer: &bamWriter{
 				wc:   file,
-				bgzf: NewBGZFWriter(file),
+				bgzf: bgzf.NewWriter(file, -1),
 			},
-		}, nil
-	case cramExt:
-		return nil, fmt.Errorf("CRAM format not supported when opening %v", name)
+		}
+	case "cram", ".cram":
+		log.Panicf("CRAM format not supported when creating %v", name)
+		return nil
 	default:
-		if name == "/dev/stdout" {
-			return &OutputFile{writer: &samWriter{wc: os.Stdout}}, nil
-		}
-		file, err := os.Create(name)
-		if err != nil {
-			return nil, err
-		}
-		return &OutputFile{writer: &samWriter{wc: file}}, nil
+		return &OutputFile{writer: &samWriter{wc: file}}
 	}
 }

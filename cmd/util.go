@@ -1,5 +1,5 @@
-// elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017-2019 imec vzw.
+// elPrep: a high-performance tool for analyzing SAM/BAM files.
+// Copyright (c) 2017-2020 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -31,15 +31,13 @@ import (
 	"strconv"
 	"strings"
 	"time"
-)
 
-const (
-	// ProgramName is "elprep"
-	ProgramName = "elprep"
-	// ProgramVersion is the version of the elprep binary
-	ProgramVersion = "4.1.6"
-	// ProgramURL is the repository for the elprep source code
-	ProgramURL = "http://github.com/exascience/elprep"
+	"github.com/exascience/elprep/v5/utils"
+
+	"github.com/exascience/elprep/v5/filters"
+
+	"github.com/exascience/elprep/v5/internal"
+	"golang.org/x/sys/unix"
 )
 
 // ProgramMessage is the first line printed when the elprep binary is
@@ -47,7 +45,11 @@ const (
 var ProgramMessage string
 
 func init() {
-	ProgramMessage = fmt.Sprintln("\n", ProgramName, "version", ProgramVersion, "compiled with", runtime.Version(), "- see", ProgramURL, "for more information.")
+	ProgramMessage = fmt.Sprint(
+		"\n", utils.ProgramName, " version ", utils.ProgramVersion,
+		" compiled with ", runtime.Version(), " ", internal.PedanticMessage,
+		filters.FixedHighQDMessage, "- see ", utils.ProgramURL, " for more information.\n",
+	)
 }
 
 // HelpMessage is printed to show the --help and --help-extended flags
@@ -90,6 +92,16 @@ func parseFlags(flags flag.FlagSet, requiredArgs int, help string) {
 		fmt.Fprintln(os.Stderr, "Cannot parse remaining parameters:", flags.Args())
 		fmt.Fprint(os.Stderr, help)
 		os.Exit(1)
+	}
+}
+
+func checkOutputFormat(format string) bool {
+	switch strings.ToLower(format) {
+	case "", "sam", "bam":
+		return true
+	default:
+		log.Printf("Error: Invalid output format %v.\n", format)
+		return false
 	}
 }
 
@@ -159,7 +171,7 @@ func checkBQSROptions(elFasta, bqsrRecalFile, recalFile string) bool {
 		return false
 	}
 	if elFasta == "" {
-		log.Println("Error: Attempt to calculate base recalibration without specifying a reference file. Please add --bqsr-reference option to your call.")
+		log.Println("Error: Attempt to calculate base recalibration without specifying a reference file. Please add the --reference option to your call.")
 		return false
 	}
 	if recalFile != "" {
@@ -187,7 +199,7 @@ func checkBQSRTablesOnlyOptions(tableFile, elFasta string) bool {
 		return false
 	}
 	if elFasta == "" {
-		log.Println("Error: Attempt to calculate base recalibration tables without specifying a reference file. Please add the --bqsr-reference option to your call.")
+		log.Println("Error: Attempt to calculate base recalibration tables without specifying a reference file. Please add the --reference option to your call.")
 		return false
 	}
 	return true
@@ -205,13 +217,19 @@ func checkBQSRApplyOptions(path, recalFile string) bool {
 	return true
 }
 
+func checkHaplotypecallerOptions(elFasta string) bool {
+	if elFasta == "" {
+		log.Println("Error: Attempt to call variants without specifying a reference file. Please add the --reference option to your call.")
+		return false
+	}
+	return true
+}
+
 func createLogFilename() string {
 	t := time.Now()
 	zone, _ := t.Zone()
-	return fmt.Sprintf("logs/elprep/elprep-%d-%02d-%02d-%02d-%02d-%02d-%v.log", t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), zone)
+	return fmt.Sprintf("logs/elprep/elprep-%d-%02d-%02d-%02d-%02d-%02d-%09d-%v.log", t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), zone)
 }
-
-var logOutput io.Writer
 
 func setLogOutput(path string) {
 	logPath := createLogFilename()
@@ -221,29 +239,32 @@ func setLogOutput(path string) {
 	} else {
 		fullPath = filepath.Join(path, logPath)
 	}
-	if err := os.MkdirAll(filepath.Dir(fullPath), 0700); err != nil {
-		log.Fatal(err, ", while trying to create directories for log file ", fullPath)
-	}
-	f, err := os.Create(fullPath)
-	if err != nil {
-		log.Fatal(err, ", while trying to create log file ", fullPath)
-	}
+	f := internal.FileCreate(fullPath)
 	fmt.Fprintln(f, ProgramMessage)
-	logOutput = io.MultiWriter(f, os.Stderr)
-	log.SetOutput(logOutput)
+
+	orgStderr, err := unix.Dup(2)
+	if err != nil {
+		log.Panic(err)
+	}
+	ferr := os.NewFile(uintptr(orgStderr), "/dev/stderr")
+	if err := unix.Dup2(int(f.Fd()), 2); err != nil {
+		log.Panic(err)
+	}
+
+	multi := io.MultiWriter(f, ferr)
+
+	log.SetOutput(multi)
 	log.Println("Created log file at", fullPath)
 	log.Println("Command line:", os.Args)
 }
 
-func timedRun(timed bool, profile, msg string, phase int64, f func() error) error {
+func timedRun(timed bool, profile, msg string, phase int64, f func()) {
 	if profile != "" {
 		filename := profile + strconv.FormatInt(phase, 10) + ".prof"
-		file, err := os.Create(filename)
-		if err != nil {
-			return fmt.Errorf("%v, while creating file %v for a CPU profile", err, filename)
-		}
-		if err = pprof.StartCPUProfile(file); err != nil {
-			return fmt.Errorf("%v, while starting a CPU profile", err)
+		file := internal.FileCreate(filename)
+		defer internal.Close(file)
+		if err := pprof.StartCPUProfile(file); err != nil {
+			log.Panic(err)
 		}
 		defer pprof.StopCPUProfile()
 	}
@@ -255,5 +276,5 @@ func timedRun(timed bool, profile, msg string, phase int64, f func() error) erro
 			log.Println("Elapsed time: ", end.Sub(start))
 		}()
 	}
-	return f()
+	f()
 }

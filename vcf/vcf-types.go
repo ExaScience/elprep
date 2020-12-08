@@ -1,5 +1,5 @@
-// elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017, 2018 imec vzw.
+// elPrep: a high-performance tool for analyzing SAM/BAM files.
+// Copyright (c) 2017-2020 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -19,10 +19,10 @@
 package vcf
 
 import (
-	"fmt"
-	"strconv"
+	"log"
 
-	"github.com/exascience/elprep/v4/utils"
+	"github.com/exascience/elprep/v5/internal"
+	"github.com/exascience/elprep/v5/utils"
 )
 
 // The supported VCF file format version.
@@ -90,10 +90,18 @@ type (
 		Columns    []string
 	}
 
+	// Genotype is a structured representation of the GT entry in a VCF file.
+	Genotype struct {
+		Phased bool
+		GT     []int32        // < 0 for unknown entries
+		Data   utils.SmallMap // values are nil (for missing entry), int, float64, rune, string, or []interface{}
+	}
+
 	// Variant line in a VCF file.
 	Variant struct {
+		Source         string // this is not part of the VCF spec, but is needed in HaplotypeCaller
 		Chrom          string
-		Pos            int32
+		Pos            int32    // < 0 if unknown
 		ID             []string // nil/empty if missing
 		Ref            string
 		Alt            []string       // nil/empty if missing
@@ -101,13 +109,13 @@ type (
 		Filter         []utils.Symbol // nil/empty if missing
 		Info           utils.SmallMap // values are int, float64, bool, rune, string, or []interface{}
 		GenotypeFormat []utils.Symbol
-		GenotypeData   []utils.SmallMap // values are nil (for missing entry), int, float64, rune, string, or []interface{}
+		GenotypeData   []Genotype
 	}
 
 	// Vcf represents the full contents of a VCF file.
 	Vcf struct {
 		Header   *Header
-		Variants []*Variant
+		Variants []Variant
 	}
 )
 
@@ -123,35 +131,47 @@ func NewFormatInformation() *FormatInformation {
 
 // NewHeader creates an empty instance.
 func NewHeader() *Header {
-	return &Header{Meta: make(map[string][]interface{})}
+	return &Header{
+		FileFormat: FileFormatVersionLine,
+		Meta:       make(map[string][]interface{}),
+		Columns:    DefaultHeaderColumns,
+	}
 }
 
 // Start returns the start position of a VCF line in the reference.
-func (v *Variant) Start() int32 {
+func (v Variant) Start() int32 {
 	return v.Pos
 }
 
 // End returns the end position of a VCF line in the reference, determined either by the END field or len(v.Ref)
-func (v *Variant) End() (int32, error) {
+func (v *Variant) End() int32 {
 	if end, ok := v.Info.Get(END); ok {
 		switch e := end.(type) {
 		case int:
-			return int32(e), nil
+			return int32(e)
 		case string:
-			i, err := strconv.ParseInt(e, 10, 32)
-			if err != nil {
-				return v.Pos + 1, err
-			}
+			i := internal.ParseInt(e, 10, 32)
 			v.Info.Set(END, int(i))
-			return int32(i), nil
+			return int32(i)
 		default:
-			return v.Pos + 1, fmt.Errorf("invalid END value %v", end)
+			log.Panicf("invalid END value %v", end)
 		}
 	}
-	return v.Pos - 1 + int32(len(v.Ref)), nil
+	return v.Pos - 1 + int32(len(v.Ref))
+}
+
+// SetEnd sets the end position of a VCF line in the reference by setting the END field.
+// If the end position can be calculated from the start position and the length of Ref,
+// delete the END field.
+func (v *Variant) SetEnd(value int32) {
+	if value == v.Pos-1+int32(len(v.Ref)) {
+		v.Info.Delete(END)
+	} else {
+		v.Info.Set(END, int(value))
+	}
 }
 
 // Pass determines whether the variant passed all filters.
-func (v *Variant) Pass() bool {
+func (v Variant) Pass() bool {
 	return len(v.Filter) == 1 && v.Filter[0] == PASS
 }

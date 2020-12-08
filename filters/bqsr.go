@@ -1,5 +1,5 @@
-// elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017, 2018 imec vzw.
+// elPrep: a high-performance tool for analyzing SAM/BAM files.
+// Copyright (c) 2017-2020 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -19,58 +19,18 @@
 package filters
 
 import (
-	"fmt"
 	"log"
 	"math"
 	"sort"
 	"sync"
 
-	"github.com/exascience/elprep/v4/intervals"
+	"github.com/exascience/elprep/v5/intervals"
 
 	"github.com/exascience/pargo/parallel"
 
-	"github.com/exascience/elprep/v4/fasta"
-	"github.com/exascience/elprep/v4/sam"
+	"github.com/exascience/elprep/v5/fasta"
+	"github.com/exascience/elprep/v5/sam"
 )
-
-func minUint8(x, y uint8) uint8 {
-	if x < y {
-		return x
-	}
-	return y
-}
-
-func minInt32(x, y int32) int32 {
-	if x < y {
-		return x
-	}
-	return y
-}
-
-func minInt(x, y int) int {
-	if x < y {
-		return x
-	}
-	return y
-}
-
-func maxInt(x, y int) int {
-	if x > y {
-		return x
-	}
-	return y
-}
-
-func absInt(x int) int {
-	if x < 0 {
-		return -x
-	}
-	return x
-}
-
-func fastRound(value float64) int {
-	return int(value + 0.5)
-}
 
 func readGroupCovariate(hdr *sam.Header, aln *sam.Alignment) string {
 	rg := aln.RG().(string)
@@ -193,7 +153,7 @@ func simpleBaseIndexToBase(baseIndex int32) (base byte) {
 	case 3:
 		base = 'T'
 	default:
-		log.Fatal("invalid baseIndex")
+		log.Panic("invalid baseIndex")
 	}
 	return
 }
@@ -207,7 +167,7 @@ func keyToString(key int32) string {
 		realKey >>= 2
 	}
 	if realKey != 0 {
-		log.Fatal("invalid key")
+		log.Panic("invalid key")
 	}
 	return string(result)
 }
@@ -257,26 +217,6 @@ func (b bqsrTable) merge(c bqsrTable) bqsrTable {
 	return b
 }
 
-func alignmentAgreesWithHeader(hdr *sam.Header, aln *sam.Alignment) bool {
-	rname := aln.RNAME
-	for _, sq := range hdr.SQ {
-		if contig := sq["SN"]; contig == rname {
-			ln, err := sam.SQLN(sq)
-			return err == nil && aln.POS <= ln
-		}
-	}
-	return false
-}
-
-func cigarContainsN(cigarVec []sam.CigarOperation) bool {
-	for _, cigarOp := range cigarVec {
-		if cigarOp.Operation == 'N' {
-			return true
-		}
-	}
-	return false
-}
-
 func recalibrateAln(hdr *sam.Header, aln *sam.Alignment) bool {
 	_, found := aln.TAGS.Get(sr)
 	if found {
@@ -292,8 +232,8 @@ func recalibrateAln(hdr *sam.Header, aln *sam.Alignment) bool {
 		alignmentAgreesWithHeader(hdr, aln) {
 		cigarVec := aln.CIGAR
 		return !cigarContainsN(cigarVec) &&
-			end(aln, cigarVec)-aln.POS+1 >= 0 &&
-			aln.SEQ.Len() == int(readLengthFromCigar(cigarVec))
+			sam.ReferenceLengthFromCigar(aln.CIGAR) >= 0 &&
+			aln.SEQ.Len() == int(sam.ReadLengthFromCigar(cigarVec))
 	}
 	return false
 }
@@ -308,10 +248,11 @@ var baseToIntMap = map[byte]int{
 
 func computeSnpEvents(aln *sam.Alignment, ref []byte, snps []int) []int {
 	read := aln.SEQ
-	for cap(snps) < read.Len() {
+	readLength := read.Len()
+	for cap(snps) < readLength {
 		snps = append(snps[:cap(snps)], 0)
 	}
-	snps = snps[:read.Len()]
+	snps = snps[:readLength]
 	for i := range snps {
 		snps[i] = 0
 	}
@@ -338,105 +279,6 @@ func computeSnpEvents(aln *sam.Alignment, ref []byte, snps []int) []int {
 	return snps
 }
 
-func isStrictUnmapped(aln *sam.Alignment) bool {
-	return aln.IsUnmapped() || aln.RNAME == "" || aln.RNAME == "*" || aln.POS == 0
-}
-
-func isStrictNextUnmapped(aln *sam.Alignment) bool {
-	return aln.IsNextUnmapped() || aln.RNEXT == "" || aln.RNEXT == "*" || aln.PNEXT == 0
-}
-
-func hasWellDefinedFragmentSize(aln *sam.Alignment) (bool, int) {
-	if aln.TLEN != 0 && aln.IsMultiple() && !isStrictUnmapped(aln) && !isStrictNextUnmapped(aln) && aln.IsReversed() != aln.IsNextReversed() {
-		if aln.IsReversed() {
-			alnEnd := end(aln, aln.CIGAR)
-			return alnEnd > aln.PNEXT, int(alnEnd)
-		}
-		return aln.POS <= aln.PNEXT+aln.TLEN, -1
-	}
-	return false, -1
-}
-
-func computeAdaptorBoundary(aln *sam.Alignment) (int, int, bool) {
-	if wellDefinedSize, alnEnd := hasWellDefinedFragmentSize(aln); wellDefinedSize {
-		var boundary int
-		if aln.IsReversed() {
-			boundary = int(aln.PNEXT) - 1
-		} else {
-			boundary = int(aln.POS) + absInt(int(aln.TLEN))
-		}
-		return boundary, alnEnd, true
-	}
-	return -1, -1, false
-}
-
-func isInsideRead(aln *sam.Alignment, alnEnd, refCoord int) bool {
-	if refCoord >= int(aln.POS) {
-		if alnEnd < 0 {
-			alnEnd = int(end(aln, aln.CIGAR))
-		}
-		return refCoord <= alnEnd
-	}
-	return false
-}
-
-func hardClipAdaptorSequence(aln *sam.Alignment) error {
-	if adaptorBoundary, alnEnd, ok := computeAdaptorBoundary(aln); ok && isInsideRead(aln, alnEnd, adaptorBoundary) {
-		if aln.IsReversed() {
-			return hardClipByReferenceCoordinatesLeftTail(aln, adaptorBoundary)
-		}
-		return hardClipByReferenceCoordinatesRightTail(aln, adaptorBoundary)
-	}
-	return nil
-}
-
-func softStart(aln *sam.Alignment, cigarVec []sam.CigarOperation) int {
-	start := aln.POS
-	for _, op := range cigarVec {
-		if op.Operation == 'S' {
-			start -= op.Length
-		} else if op.Operation != 'H' {
-			break
-		}
-	}
-	return int(start)
-}
-
-func softEnd(aln *sam.Alignment, cigarVec []sam.CigarOperation) int {
-	end := end(aln, cigarVec)
-	softEnd := end
-	for i := len(cigarVec) - 1; i >= 0; i-- {
-		op := cigarVec[i]
-		if op.Operation == 'S' {
-			softEnd += op.Length
-		} else if op.Operation != 'H' {
-			return int(softEnd)
-		}
-	}
-	return int(end)
-}
-
-func hardClipByReferenceCoordinatesLeftTail(aln *sam.Alignment, refStop int) error {
-	cigarVec := aln.CIGAR
-	stop, ok := computeReadCoordinateForReferenceCoordinate(cigarVec, softStart(aln, cigarVec), refStop, left)
-	if !ok {
-		return fmt.Errorf("reference coordinate matches a non-existing base in read %v", aln.QNAME)
-	}
-	hardClip(aln, 0, stop)
-	return nil
-}
-
-func hardClipByReferenceCoordinatesRightTail(aln *sam.Alignment, refStart int) error {
-	cigarVec := aln.CIGAR
-	start, ok := computeReadCoordinateForReferenceCoordinate(cigarVec, softStart(aln, cigarVec), refStart, right)
-	stop := aln.SEQ.Len() - 1
-	if !ok {
-		return fmt.Errorf("reference coordinate matches a non-existing base in read %v", aln.QNAME)
-	}
-	hardClip(aln, start, stop)
-	return nil
-}
-
 func readStartsWithInsertion(cigarVec []sam.CigarOperation) (int32, bool) {
 	for _, element := range cigarVec {
 		switch element.Operation {
@@ -449,267 +291,6 @@ func readStartsWithInsertion(cigarVec []sam.CigarOperation) (int32, bool) {
 		}
 	}
 	return -1, false
-}
-
-type clippingTail int
-
-const (
-	left clippingTail = iota
-	right
-)
-
-func computeReadCoordinateForReferenceCoordinate(cigarVec []sam.CigarOperation, softStart, refIndex int, tail clippingTail) (int, bool) {
-	goal := refIndex - softStart
-	if goal < 0 {
-		return -1, false
-	}
-	var readBases, refBases int
-	fallsInsideDeletionOrSkippedRegion := false
-	endsJustBeforeDeletionOrSkippedRegion := false
-	fallsInsideOrJustBeforeDeletionOrSkippedRegion := false
-	index := 0
-	for refBases != goal && index < len(cigarVec) {
-		element := cigarVec[index]
-		index++
-		elementLength := int(element.Length)
-		var shift int
-		if operatorConsumesReferenceBases[element.Operation] || element.Operation == 'S' {
-			if refBases+elementLength < goal {
-				shift = elementLength
-			} else {
-				shift = goal - refBases
-			}
-			refBases += shift
-		}
-		if refBases != goal {
-			readBases += int(cigarConsumesReadBases[element.Operation]) * elementLength
-		} else {
-			if shift >= elementLength && index == len(cigarVec) {
-				return -1, false
-			}
-			var nextCigar sam.CigarOperation
-			if shift < elementLength {
-				fallsInsideDeletionOrSkippedRegion = element.Operation == 'D' || element.Operation == 'N'
-			} else {
-				nextCigar = cigarVec[index]
-				index++
-				if nextCigar.Operation == 'I' {
-					readBases += int(nextCigar.Length)
-					if index == len(cigarVec) {
-						return -1, false
-					}
-					nextCigar = cigarVec[index]
-					index++
-				}
-				endsJustBeforeDeletionOrSkippedRegion = nextCigar.Operation == 'D' || nextCigar.Operation == 'N'
-			}
-			fallsInsideOrJustBeforeDeletionOrSkippedRegion = endsJustBeforeDeletionOrSkippedRegion || fallsInsideDeletionOrSkippedRegion
-			if !fallsInsideOrJustBeforeDeletionOrSkippedRegion {
-				readBases += int(cigarConsumesReadBases[element.Operation]) * shift
-			} else if endsJustBeforeDeletionOrSkippedRegion {
-				readBases += int(cigarConsumesReadBases[element.Operation]) * (shift - 1)
-			} else if fallsInsideDeletionOrSkippedRegion || (endsJustBeforeDeletionOrSkippedRegion && (nextCigar.Operation == 'D' || nextCigar.Operation == 'N')) {
-				readBases--
-			}
-		}
-	}
-	if refBases != goal {
-		return -1, false
-	}
-	if tail == right && fallsInsideOrJustBeforeDeletionOrSkippedRegion {
-		readBases++
-	}
-	if tail == left && readBases == 0 {
-		if firstInsertionLength, firstInsertion := readStartsWithInsertion(cigarVec); firstInsertion {
-			readBases = int(minInt32(firstInsertionLength, readLengthFromCigar(cigarVec)-1))
-		}
-	}
-	return readBases, true
-}
-
-func calculateHardSoftOffset(cigar []sam.CigarOperation) int32 {
-	var size int32
-	var i int
-	for ; i < len(cigar); i++ {
-		cigarOp := cigar[i]
-		if cigarOp.Operation == 'H' {
-			size += cigarOp.Length
-		} else {
-			break
-		}
-	}
-	for ; i < len(cigar); i++ {
-		cigarOp := cigar[i]
-		if cigarOp.Operation == 'S' {
-			size += cigarOp.Length
-		} else {
-			break
-		}
-	}
-	return size
-}
-
-func calculateAlnStartShift(cigar, clippedCigar []sam.CigarOperation) int32 {
-	return calculateHardSoftOffset(clippedCigar) - calculateHardSoftOffset(cigar)
-}
-
-func calculateHardClippingAlignmentShift(cigarOp sam.CigarOperation, cigarLength int) int {
-	switch cigarOp.Operation {
-	case 'I':
-		return -cigarLength
-	case 'D', 'N':
-		return int(cigarOp.Length)
-	default:
-		return 0
-	}
-}
-
-func hardClip(aln *sam.Alignment, start, stop int) {
-	clippedCigar := hardClipCigar(aln, start, stop)
-	readLength := aln.SEQ.Len()
-	newLength := readLength - (stop - start + 1)
-	copyStart := 0
-	if start == 0 {
-		copyStart = stop + 1
-	}
-	newBases := aln.SEQ.Slice(copyStart, copyStart+newLength)
-	newQuals := aln.QUAL[copyStart : copyStart+newLength]
-	cigarVec := aln.CIGAR
-	aln.SEQ = newBases
-	aln.QUAL = newQuals
-	aln.CIGAR = clippedCigar
-	if start == 0 && !isStrictUnmapped(aln) {
-		aln.POS += calculateAlnStartShift(cigarVec, clippedCigar)
-	}
-}
-
-func hardClipCigar(aln *sam.Alignment, start, stop int) []sam.CigarOperation {
-	cigarVec := aln.CIGAR
-	index := 0
-	totalHardClipCount := stop - start + 1
-	alignmentShift := 0
-	var newCigar []sam.CigarOperation
-	if start == 0 {
-		var cigarOpIndex int
-		var cigarOp sam.CigarOperation
-		for cigarOpIndex, cigarOp = range cigarVec {
-			if cigarOp.Operation != 'H' {
-				break
-			}
-			totalHardClipCount += int(cigarOp.Length)
-		}
-		for ; index <= stop && cigarOpIndex < len(cigarVec); cigarOpIndex++ {
-			cigarOp := cigarVec[cigarOpIndex]
-			cigarOpLength := int(cigarOp.Length)
-			shift := int(cigarConsumesReadBases[cigarOp.Operation]) * cigarOpLength
-			if index+shift == stop+1 {
-				alignmentShift += calculateHardClippingAlignmentShift(cigarOp, cigarOpLength)
-				newCigar = append(newCigar, sam.CigarOperation{Operation: 'H', Length: int32(totalHardClipCount + alignmentShift)})
-			} else if index+shift > stop+1 {
-				lengthAfterChopping := cigarOpLength - (stop - index + 1)
-				alignmentShift += calculateHardClippingAlignmentShift(cigarOp, stop-index+1)
-				newCigar = append(
-					newCigar,
-					sam.CigarOperation{Operation: 'H', Length: int32(totalHardClipCount + alignmentShift)},
-					sam.CigarOperation{Operation: cigarOp.Operation, Length: int32(lengthAfterChopping)},
-				)
-			}
-			index += shift
-			alignmentShift += calculateHardClippingAlignmentShift(cigarOp, shift)
-		}
-		newCigar = append(newCigar, cigarVec[cigarOpIndex:]...)
-	} else {
-		var cigarOpIndex int
-		for ; index < start && cigarOpIndex < len(cigarVec); cigarOpIndex++ {
-			cigarOp := cigarVec[cigarOpIndex]
-			cigarOpLength := int(cigarOp.Length)
-			shift := int(cigarConsumesReadBases[cigarOp.Operation]) * cigarOpLength
-			if index+shift < start {
-				newCigar = append(newCigar, cigarOp)
-			} else {
-				lengthAfterChopping := start - index
-				alignmentShift += calculateHardClippingAlignmentShift(cigarOp, cigarOpLength-(start-index))
-				if cigarOp.Operation == 'H' {
-					totalHardClipCount += lengthAfterChopping
-				} else {
-					newCigar = append(newCigar, sam.CigarOperation{Operation: cigarOp.Operation, Length: int32(lengthAfterChopping)})
-				}
-			}
-			index += shift
-		}
-		for ; cigarOpIndex < len(cigarVec); cigarOpIndex++ {
-			cigarOp := cigarVec[cigarOpIndex]
-			alignmentShift += calculateHardClippingAlignmentShift(cigarOp, int(cigarOp.Length))
-			if cigarOp.Operation == 'H' {
-				totalHardClipCount += int(cigarOp.Length)
-			}
-			newCigar = append(newCigar, sam.CigarOperation{Operation: 'H', Length: int32(totalHardClipCount + alignmentShift)})
-		}
-	}
-	return cleanHardClippedCigar(newCigar)
-}
-
-func cleanHardClippedCigar(cigar []sam.CigarOperation) []sam.CigarOperation {
-	totalHardClip := 0
-	index := 0
-forward:
-	for ; index < len(cigar); index++ {
-		switch element := cigar[index]; element.Operation {
-		case 'H', 'D', 'N':
-			totalHardClip += int(element.Length)
-		default:
-			break forward
-		}
-	}
-	if index > 0 {
-		cigar[0] = sam.CigarOperation{Operation: 'H', Length: int32(totalHardClip)}
-		cigar = append(cigar[:1], cigar[index:]...)
-	}
-	totalHardClip = 0
-	index = len(cigar) - 1
-backward:
-	for ; index >= 0; index-- {
-		switch element := cigar[index]; element.Operation {
-		case 'H', 'D', 'N':
-			totalHardClip += int(element.Length)
-		default:
-			break backward
-		}
-	}
-	if index < len(cigar)-1 {
-		cigar = append(cigar[:index+1], sam.CigarOperation{Operation: 'H', Length: int32(totalHardClip)})
-	}
-	return cigar
-}
-
-func hardClipSoftClippedBases(aln *sam.Alignment) {
-	cigarVec := aln.CIGAR
-	readIndex := 0
-	cutLeft := -1
-	cutRight := -1
-	rightTail := false
-	for _, cigarOp := range cigarVec {
-		key := cigarOp.Operation
-		ln := int(cigarOp.Length)
-		switch key {
-		case 'S':
-			if rightTail {
-				cutRight = readIndex
-			} else {
-				cutLeft = readIndex + ln - 1
-			}
-		case 'H':
-		default:
-			rightTail = true
-		}
-		readIndex += int(cigarConsumesReadBases[key]) * ln
-	}
-	if cutRight >= 0 {
-		hardClip(aln, cutRight, aln.SEQ.Len()-1)
-	}
-	if cutLeft >= 0 {
-		hardClip(aln, 0, cutLeft)
-	}
 }
 
 const lowQualityTail = 2
@@ -725,7 +306,8 @@ func baseComplement(base byte) byte {
 
 func computeStrandedClippedSeq(aln *sam.Alignment, newSeq []byte) []byte {
 	seq := aln.SEQ
-	leftPos := seq.Len()
+	seqLength := seq.Len()
+	leftPos := seqLength
 	for i := 0; i < leftPos; i++ {
 		if aln.QUAL[i] > lowQualityTail {
 			leftPos = i
@@ -733,7 +315,7 @@ func computeStrandedClippedSeq(aln *sam.Alignment, newSeq []byte) []byte {
 		}
 	}
 	rightPos := leftPos - 1
-	for i := seq.Len() - 1; i >= leftPos; i-- {
+	for i := seqLength - 1; i >= leftPos; i-- {
 		if aln.QUAL[i] > lowQualityTail {
 			rightPos = i
 			break
@@ -742,13 +324,13 @@ func computeStrandedClippedSeq(aln *sam.Alignment, newSeq []byte) []byte {
 	if leftPos > rightPos {
 		return nil
 	}
-	for cap(newSeq) < seq.Len() {
+	for cap(newSeq) < seqLength {
 		newSeq = append(newSeq[:cap(newSeq)], 0)
 	}
-	newSeq = newSeq[:seq.Len()]
+	newSeq = newSeq[:seqLength]
 	if aln.IsReversed() {
 		j := -1
-		for i := rightPos + 1; i < seq.Len(); i++ {
+		for i := rightPos + 1; i < seqLength; i++ {
 			j++
 			newSeq[j] = 'N'
 		}
@@ -767,18 +349,16 @@ func computeStrandedClippedSeq(aln *sam.Alignment, newSeq []byte) []byte {
 		for i := leftPos; i <= rightPos; i++ {
 			newSeq[i] = seq.Base(i)
 		}
-		for i := rightPos + 1; i < seq.Len(); i++ {
+		for i := rightPos + 1; i < seqLength; i++ {
 			newSeq[i] = 'N'
 		}
 	}
 	return newSeq
 }
 
-const defaultMaxCycle = 500
-
 func checkCycleCovariate(cycle, maxCycle int) int {
 	if cycle > maxCycle || cycle < -maxCycle {
-		log.Fatal("cycle value exceeds maximum cycle value")
+		log.Panic("cycle value exceeds maximum cycle value")
 	}
 	return cycle
 }
@@ -802,25 +382,24 @@ func computeBaseCycleCovariate(cycleFactor, increment, index, maxCycle int) int 
 }
 
 func calculateSkipSlice(aln *sam.Alignment, knownSites []intervals.Interval, skipSlice []bool) []bool {
-	seq := aln.SEQ
-	cigarVec := aln.CIGAR
-	softStart := softStart(aln, cigarVec)
-	softEnd := softEnd(aln, cigarVec)
-	for cap(skipSlice) < seq.Len() {
+	seqLength := aln.SEQ.Len()
+	softStart := softStart(aln)
+	softEnd := softEnd(aln)
+	for cap(skipSlice) < seqLength {
 		skipSlice = append(skipSlice[:cap(skipSlice)], false)
 	}
-	skipSlice = skipSlice[:seq.Len()]
+	skipSlice = skipSlice[:seqLength]
 	for i := range skipSlice {
 		skipSlice[i] = false
 	}
 	for _, site := range intervals.Intersect(knownSites, int32(softStart), int32(softEnd)) {
-		featureStartOnRead, ok := computeReadCoordinateForReferenceCoordinate(cigarVec, softStart, int(site.Start), left)
+		featureStartOnRead, ok := getReadCoordinateForReferenceCoordinate(aln.CIGAR, softStart, int(site.Start), left)
 		if !ok || featureStartOnRead < 0 {
 			featureStartOnRead = 0
 		}
-		featureEndOnRead, ok := computeReadCoordinateForReferenceCoordinate(cigarVec, softStart, int(site.End), left)
-		if !ok || featureEndOnRead > seq.Len()-1 {
-			featureEndOnRead = seq.Len() - 1
+		featureEndOnRead, ok := getReadCoordinateForReferenceCoordinate(aln.CIGAR, softStart, int(site.End), left)
+		if !ok || featureEndOnRead > seqLength-1 {
+			featureEndOnRead = seqLength - 1
 		}
 		for i := featureStartOnRead; i <= featureEndOnRead; i++ {
 			skipSlice[i] = true
@@ -829,43 +408,24 @@ func calculateSkipSlice(aln *sam.Alignment, knownSites []intervals.Interval, ski
 	return skipSlice
 }
 
-func copySamAlignment(dst, src *sam.Alignment) {
-	tags, temps := dst.TAGS, dst.Temps
-	*dst = *src
-	dst.TAGS = append(tags[:0], src.TAGS...)
-	dst.Temps = append(temps[:0], src.Temps...)
-}
-
 // BaseRecalibrator implements the first step of base recalibration.
 type BaseRecalibrator struct {
-	forFasta          sync.WaitGroup
 	forKnownIntervals sync.WaitGroup
 	fastaMap          *fasta.MappedFasta
 	knownIntervals    map[string][]intervals.Interval
 }
 
 // NewBaseRecalibrator returns a struct for the first step of base recalibration.
-func NewBaseRecalibrator(knownSites []string, referenceFasta string) (recal *BaseRecalibrator) {
-	recal = new(BaseRecalibrator)
-	recal.forFasta.Add(1)
-	go func() {
-		defer recal.forFasta.Done()
-		fastaMap, err := fasta.OpenElfasta(referenceFasta)
-		if err != nil {
-			log.Fatal(err)
-		}
-		recal.fastaMap = fastaMap
-	}()
-	recal.knownIntervals = make(map[string][]intervals.Interval)
+func NewBaseRecalibrator(knownSites []string, referenceFasta *fasta.MappedFasta) (recal *BaseRecalibrator) {
+	recal = &BaseRecalibrator{
+		fastaMap:       referenceFasta,
+		knownIntervals: make(map[string][]intervals.Interval),
+	}
 	recal.forKnownIntervals.Add(1)
 	go func() {
 		defer recal.forKnownIntervals.Done()
 		for _, knownSitesFile := range knownSites {
-			intervals, err := intervals.FromElsitesFile(knownSitesFile)
-			if err != nil {
-				log.Fatal(err)
-			}
-			for chrom, ivals := range intervals {
+			for chrom, ivals := range intervals.FromElsitesFile(knownSitesFile) {
 				recal.knownIntervals[chrom] = append(recal.knownIntervals[chrom], ivals...)
 			}
 		}
@@ -881,12 +441,6 @@ func NewBaseRecalibrator(knownSites []string, referenceFasta string) (recal *Bas
 // All subsequent steps, including ApplyBQSR, are based on these tables.
 type BaseRecalibratorTables struct {
 	QualityScores, Cycles, Contexts bqsrTable
-	err                             error
-}
-
-// Err returns the error stored in these BaseRecalibratorTables.
-func (recal BaseRecalibratorTables) Err() error {
-	return recal.err
 }
 
 // NewBaseRecalibratorTables returns a struct for storing the result
@@ -899,25 +453,14 @@ func NewBaseRecalibratorTables() BaseRecalibratorTables {
 	}
 }
 
-func (recal *BaseRecalibrator) close() error {
-	recal.forFasta.Wait()
+func (recal *BaseRecalibrator) close() {
 	recal.forKnownIntervals.Wait()
 	recal.knownIntervals = nil
-	return recal.fastaMap.Close()
 }
 
 // Recalibrate implements the first step of base recalibration.
-func (recal *BaseRecalibrator) Recalibrate(reads *sam.Sam) (tables BaseRecalibratorTables) {
-	return recal.RecalibrateWithMaxCycle(reads, defaultMaxCycle)
-}
-
-// RecalibrateWithMaxCycle implements the first step of base recalibration.
-func (recal *BaseRecalibrator) RecalibrateWithMaxCycle(reads *sam.Sam, maxCycle int) (tables BaseRecalibratorTables) {
-	defer func() {
-		if err := recal.close(); tables.err == nil {
-			tables.err = err
-		}
-	}()
+func (recal *BaseRecalibrator) Recalibrate(reads *sam.Sam, maxCycle int) *BaseRecalibratorTables {
+	defer recal.close()
 	hdr := reads.Header
 	alns := reads.Alignments
 	result := parallel.RangeReduce(0, len(alns), 0, func(low, high int) interface{} {
@@ -928,14 +471,11 @@ func (recal *BaseRecalibrator) RecalibrateWithMaxCycle(reads *sam.Sam, maxCycle 
 		var skipSlice []bool
 		aln := new(sam.Alignment)
 		for _, alignment := range alns[low:high] {
-			copySamAlignment(aln, alignment)
+			*aln = *alignment
 			if !recalibrateAln(hdr, aln) {
 				continue
 			}
-			if err := hardClipAdaptorSequence(aln); err != nil {
-				result.err = err
-				return result
-			}
+			hardClipAdaptorSequence(aln)
 			if aln.SEQ.Len() == 0 {
 				continue
 			}
@@ -948,11 +488,8 @@ func (recal *BaseRecalibrator) RecalibrateWithMaxCycle(reads *sam.Sam, maxCycle 
 			go func() {
 				defer waitForSkipSlice.Done()
 				recal.forKnownIntervals.Wait()
-				// This corresponds to GATK's calculateKnownSites.
-				// The other cases in GATK's calculateSkipArray are handled 'manually' below.
 				skipSlice = calculateSkipSlice(aln, recal.knownIntervals[aln.RNAME], skipSlice)
 			}()
-			recal.forFasta.Wait()
 			ref := recal.fastaMap.Seq(aln.RNAME)
 			snps = computeSnpEvents(aln, ref, snps)
 			readGroupCovariate := readGroupCovariate(hdr, aln)
@@ -960,8 +497,7 @@ func (recal *BaseRecalibrator) RecalibrateWithMaxCycle(reads *sam.Sam, maxCycle 
 			strandedClippedSeq = computeStrandedClippedSeq(aln, strandedClippedSeq)
 			baseContextCovariate = computeBaseContextCovariate(aln, strandedClippedSeq, baseContextCovariate)
 			waitForSkipSlice.Wait()
-			for i := 0; i < aln.SEQ.Len(); i++ {
-				// tests from GATK's calculateSkipArray
+			for i, l := 0, aln.SEQ.Len(); i < l; i++ {
 				if skipSlice[i] {
 					continue
 				}
@@ -972,7 +508,6 @@ func (recal *BaseRecalibrator) RecalibrateWithMaxCycle(reads *sam.Sam, maxCycle 
 				if qual < minInterestingQual {
 					continue
 				}
-				// end of tests from GATK's calculateSkipArray
 				// mismatch
 				errVal := snps[i]
 				key1 := bqsrTableKey{
@@ -1004,12 +539,10 @@ func (recal *BaseRecalibrator) RecalibrateWithMaxCycle(reads *sam.Sam, maxCycle 
 		r1.QualityScores = r1.QualityScores.merge(r2.QualityScores)
 		r1.Cycles = r1.Cycles.merge(r2.Cycles)
 		r1.Contexts = r1.Contexts.merge(r2.Contexts)
-		if r1.err == nil {
-			r1.err = r2.err
-		}
 		return r1
 	})
-	return result.(BaseRecalibratorTables)
+	tables := result.(BaseRecalibratorTables)
+	return &tables
 }
 
 const (
@@ -1049,7 +582,7 @@ var log10QualEmpiricalPriorCache = [...]float64{
 	-251.06796803064023,
 	-281.46858176386786,
 	-313.60637342472336,
-	-1.7976931348623157E308,
+	-1.7976931348623157e308,
 }
 
 func log10QualEmpiricalPrior(empiricalQual, reportedQual float64) float64 {
@@ -1070,7 +603,7 @@ func log10BinomialProbability(n, k int, log10p float64) float64 {
 	if log10p == 0.0 {
 		return -math.MaxFloat64
 	}
-	log10MinP := math.Log10(1.0 - math.Pow(10, log10p))
+	log10MinP := log10(1.0 - math.Pow(10, log10p))
 	return log10BinomialCoefficient(n, k) + log10p*float64(k) + log10MinP*float64(n-k)
 }
 
@@ -1121,7 +654,7 @@ func initializeCombinedBQSRTable(bqsrTable bqsrTable) map[string]*combinedBqsrEn
 			sumErrors := calculateExpectedErrors(tableEntry.Observations, tableEntry.reportedQuality) + calculateExpectedErrors(entry.Observations, float64(key.Qual))
 			tableEntry.Observations += entry.Observations
 			tableEntry.Mismatches += entry.Mismatches
-			tableEntry.reportedQuality = -10 * math.Log10(sumErrors/float64(tableEntry.Observations))
+			tableEntry.reportedQuality = -10 * log10(sumErrors/float64(tableEntry.Observations))
 		} else {
 			table[key.ReadGroup] = &combinedBqsrEntry{
 				reportedQuality: float64(key.Qual),
@@ -1136,7 +669,7 @@ func initializeCombinedBQSRTable(bqsrTable bqsrTable) map[string]*combinedBqsrEn
 }
 
 // FinalizeBQSRTables finalizes the first step of base recalibration.
-func (recal BaseRecalibratorTables) FinalizeBQSRTables() {
+func (recal *BaseRecalibratorTables) FinalizeBQSRTables() {
 	parallel.Do(
 		func() {
 			for key, entry := range recal.QualityScores {
@@ -1164,7 +697,7 @@ func errorProbabilityToQuality(prob float64) int {
 	if prob == 0.0 {
 		return maxQualityScore
 	}
-	return maxInt(minInt(int(math.Round(-10*math.Log10(prob))), maxQualityScore), 1)
+	return maxInt(minInt(int(math.Round(-10*log10(prob))), maxQualityScore), 1)
 }
 
 const maxStaticQuantizedQuality = 254
@@ -1244,7 +777,7 @@ func leafPenalty(k int, quantizationIntervals []quantizationInterval, globalErro
 	if k <= minInterestingQual {
 		return 0.0
 	}
-	return math.Abs(math.Log10(interval.errorRate)-math.Log10(globalErrorRate)) * float64(interval.leafNobs)
+	return math.Abs(log10(interval.errorRate)-log10(globalErrorRate)) * float64(interval.leafNobs)
 }
 
 func calculateErrorRate(nobs, nerrors int) float64 {
@@ -1395,12 +928,7 @@ type (
 )
 
 // ApplyBQSR applies the base recalibration result to the QUAL strings of the given reads.
-func (recal BaseRecalibratorTables) ApplyBQSR(quantizeLevels int, sqqList []uint8) sam.Filter {
-	return recal.ApplyBQSRWithMaxCycle(quantizeLevels, sqqList, defaultMaxCycle)
-}
-
-// ApplyBQSRWithMaxCycle applies the base recalibration result to the QUAL strings of the given reads.
-func (recal BaseRecalibratorTables) ApplyBQSRWithMaxCycle(quantizeLevels int, sqqList []uint8, maxCycle int) sam.Filter {
+func (recal *BaseRecalibratorTables) ApplyBQSR(quantizeLevels int, sqqList []uint8, maxCycle int) sam.Filter {
 	return func(hdr *sam.Header) sam.AlignmentFilter {
 		combinedBQSRTable := initializeCombinedBQSRTable(recal.QualityScores)
 		var staticQuantizedScores []uint8
@@ -1459,7 +987,7 @@ func (recal BaseRecalibratorTables) ApplyBQSRWithMaxCycle(quantizeLevels int, sq
 					}
 					empiricalContextEntry := recal.Contexts[contextKey]
 					recalibratedQual := estimateHierarchicalBayesianQuality(epsilon, empiricalReadGroupEntry, empiricalBqEntry, empiricalContextEntry, empiricalCycleEntry)
-					recalibratedQualityScore := quantizedQualityScores[maxInt(1, minInt(fastRound(recalibratedQual), maxRecalibratedQualScore))]
+					recalibratedQualityScore := quantizedQualityScores[maxInt(1, minInt(int(math.Round(recalibratedQual)), maxRecalibratedQualScore))]
 					if len(staticQuantizedScores) != 0 {
 						recalibratedQualityScore = staticQuantizedScores[recalibratedQualityScore]
 					}

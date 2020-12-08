@@ -1,5 +1,5 @@
-// elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017, 2018 imec vzw.
+// elPrep: a high-performance tool for analyzing SAM/BAM files.
+// Copyright (c) 2017-2020 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -27,7 +27,9 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/exascience/elprep/v4/sam"
+	"github.com/exascience/elprep/v5/internal"
+
+	"github.com/exascience/elprep/v5/sam"
 )
 
 // SplitHelp is the help string for this command.
@@ -42,7 +44,7 @@ const SplitHelp = "\nsplit parameters:\n" +
 	"[--contig-group-size nr]\n"
 
 // Split implements the elprep split command.
-func Split() error {
+func Split() {
 	var (
 		contigGroupSize                            int
 		outputPrefix, outputType, profile, logPath string
@@ -133,29 +135,17 @@ func Split() error {
 
 	log.Println("Executing command:\n", command.String())
 
-	fullInput, err := filepath.Abs(input)
-	if err != nil {
-		return err
-	}
-
-	fullOutput, err := filepath.Abs(output)
-	if err != nil {
-		return err
-	}
-
-	err = os.MkdirAll(output, 0700)
-	if err != nil {
-		return err
-	}
+	fullInput := internal.FilepathAbs(input)
+	fullOutput := internal.FilepathAbs(output)
+	internal.MkdirAll(output, 0700)
 
 	if singleEnd {
-		err := timedRun(timed, profile, "Splitting single-end files.", 1, func() (err error) {
-			return sam.SplitSingleEndFilePerChromosome(fullInput, fullOutput, outputPrefix, outputType, contigGroupSize)
+		timedRun(timed, profile, "Splitting single-end files.", 1, func() {
+			sam.SplitSingleEndFilePerChromosome(fullInput, fullOutput, outputPrefix, outputType, contigGroupSize)
 		})
-		return err
+		return
 	}
-	err = timedRun(timed, profile, "Splitting paired-end files.", 1, func() (err error) {
-		return sam.SplitFilePerChromosome(fullInput, fullOutput, outputPrefix, outputType, contigGroupSize)
+	timedRun(timed, profile, "Splitting paired-end files.", 1, func() {
+		sam.SplitFilePerChromosome(fullInput, fullOutput, outputPrefix, outputType, contigGroupSize)
 	})
-	return err
 }

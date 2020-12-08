@@ -1,5 +1,5 @@
-// elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017, 2018 imec vzw.
+// elPrep: a high-performance tool for analyzing SAM/BAM files.
+// Copyright (c) 2017-2020 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -16,7 +16,7 @@
 // License and Additional Terms along with this program. If not, see
 // <https://github.com/ExaScience/elprep/blob/master/LICENSE.txt>.
 
-package sam
+package bgzf
 
 import (
 	"bytes"
@@ -32,6 +32,20 @@ import (
 
 	"github.com/exascience/pargo/pipeline"
 )
+
+// IsGzip determines if the the given byte scanner produces
+// a gzip file. It uses ReadByte and UnreadByte to check
+// only the initial byte from the input.
+func IsGzip(scanner io.ByteScanner) (bool, error) {
+	b, err := scanner.ReadByte()
+	if err != nil {
+		return false, err
+	}
+	if err := scanner.UnreadByte(); err != nil {
+		return false, err
+	}
+	return b == 0x1f, nil
+}
 
 // maxBgzfBlockSize defines the maximum block size for BGZF files.
 const maxBgzfBlockSize = 65536
@@ -56,8 +70,8 @@ type (
 		Size  uint32
 	}
 
-	// BGZFReader reads in parallel from a BGZF file.
-	BGZFReader struct {
+	// Reader reads in parallel from a BGZF file.
+	Reader struct {
 		err     error
 		r       io.Reader
 		gz      *gzip.Reader
@@ -71,14 +85,14 @@ type (
 		block   *bgzfBlock
 	}
 
-	internalBGZFReader BGZFReader
+	internalReader Reader
 )
 
 var blockPool = sync.Pool{New: func() interface{} {
 	return &bgzfBlock{Data: make([]byte, 0, maxBgzfBlockSize)}
 }}
 
-func (bgzf *internalBGZFReader) readBgzfBlock() (block *bgzfBlock, err error) {
+func (bgzf *internalReader) readBgzfBlock() (block *bgzfBlock, err error) {
 	var slen int
 	for i := 0; i < len(bgzf.gz.Extra); i += 4 + slen {
 		if bgzf.gz.Extra[i] == 66 && bgzf.gz.Extra[i+1] == 67 {
@@ -112,7 +126,7 @@ func (bgzf *internalBGZFReader) readBgzfBlock() (block *bgzfBlock, err error) {
 }
 
 // Err implements the corresponding method of pipeline.Source
-func (bgzf *internalBGZFReader) Err() error {
+func (bgzf *internalReader) Err() error {
 	if bgzf.err != io.EOF {
 		return bgzf.err
 	}
@@ -120,12 +134,12 @@ func (bgzf *internalBGZFReader) Err() error {
 }
 
 // Prepare implements the corresponding method of pipeline.Source
-func (bgzf *internalBGZFReader) Prepare(_ context.Context) (size int) {
+func (bgzf *internalReader) Prepare(_ context.Context) (size int) {
 	return -1
 }
 
 // Fetch implements the corresponding method of pipeline.Source
-func (bgzf *internalBGZFReader) Fetch(size int) (fetched int) {
+func (bgzf *internalReader) Fetch(size int) (fetched int) {
 	if bgzf.err != nil {
 		return 0
 	}
@@ -140,27 +154,27 @@ func (bgzf *internalBGZFReader) Fetch(size int) (fetched int) {
 }
 
 // Data implements the corresponding method of pipeline.Source
-func (bgzf *internalBGZFReader) Data() interface{} {
+func (bgzf *internalReader) Data() interface{} {
 	return bgzf.data
 }
 
 var flateReaderPool sync.Pool
 
-// NewBGZFReader returns a BGZFReader for the given flate.Reader
-func NewBGZFReader(r flate.Reader) (*BGZFReader, error) {
+// NewReader returns a Reader for the given flate.Reader
+func NewReader(r flate.Reader) (*Reader, error) {
 	gz, err := gzip.NewReader(r)
 	if err != nil {
 		return nil, fmt.Errorf("%v in NewBGZFReader", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	bgzf := &BGZFReader{
+	bgzf := &Reader{
 		r:       r,
 		gz:      gz,
 		channel: make(chan *bgzfBlock, 1),
 		ctx:     ctx,
 		cancel:  cancel,
 	}
-	bgzf.p.Source((*internalBGZFReader)(bgzf))
+	bgzf.p.Source((*internalReader)(bgzf))
 	bgzf.p.Add(pipeline.LimitedPar(0, pipeline.Receive(func(_ int, data interface{}) interface{} {
 		block := data.(*bgzfBlock)
 		blockReader := bytes.NewReader(block.Data)
@@ -206,7 +220,7 @@ func NewBGZFReader(r flate.Reader) (*BGZFReader, error) {
 }
 
 // Close implements the corresponding method of io.Closer
-func (bgzf *BGZFReader) Close() error {
+func (bgzf *Reader) Close() error {
 	bgzf.cancel()
 	bgzf.w.Wait()
 	if err := bgzf.gz.Close(); err != nil {
@@ -215,7 +229,7 @@ func (bgzf *BGZFReader) Close() error {
 	return bgzf.p.Err()
 }
 
-func (bgzf *BGZFReader) fetchBlock() (err error) {
+func (bgzf *Reader) fetchBlock() (err error) {
 	select {
 	case <-bgzf.ctx.Done():
 		if bgzf.err != nil {
@@ -233,7 +247,7 @@ func (bgzf *BGZFReader) fetchBlock() (err error) {
 }
 
 // Read implements the corresponding method of io.Reader
-func (bgzf *BGZFReader) Read(p []byte) (n int, err error) {
+func (bgzf *Reader) Read(p []byte) (n int, err error) {
 	if bgzf.block == nil {
 		if err = bgzf.fetchBlock(); err != nil {
 			return
@@ -255,8 +269,8 @@ type (
 		bytes []byte
 	}
 
-	// BGZFWriter writes in parallel to a BGZF file.
-	BGZFWriter struct {
+	// Writer writes in parallel to a BGZF file.
+	Writer struct {
 		w       io.Writer
 		p       pipeline.Pipeline
 		wait    sync.WaitGroup
@@ -265,18 +279,18 @@ type (
 		data    interface{}
 	}
 
-	internalBGZFWriter BGZFWriter
+	internalWriter Writer
 )
 
-func (*internalBGZFWriter) Err() error {
+func (*internalWriter) Err() error {
 	return nil
 }
 
-func (writer *internalBGZFWriter) Prepare(_ context.Context) (size int) {
+func (writer *internalWriter) Prepare(_ context.Context) (size int) {
 	return -1
 }
 
-func (writer *internalBGZFWriter) Fetch(size int) (fetched int) {
+func (writer *internalWriter) Fetch(size int) (fetched int) {
 	if block, ok := <-writer.channel; ok {
 		writer.data = block
 		return 1
@@ -285,7 +299,7 @@ func (writer *internalBGZFWriter) Fetch(size int) (fetched int) {
 	return 0
 }
 
-func (writer *internalBGZFWriter) Data() interface{} {
+func (writer *internalWriter) Data() interface{} {
 	return writer.data
 }
 
@@ -297,14 +311,23 @@ var (
 	flateWriterPool sync.Pool
 )
 
-// NewBGZFWriter returns a BGZFWriter for the given io.Writer.
-func NewBGZFWriter(w io.Writer) *BGZFWriter {
-	bgzf := &BGZFWriter{
+// NewWriter returns a Writer for the given io.Writer.
+//
+// Following zlib, levels range from 1 (BestSpeed) to 9 (BestCompression);
+// higher levels typically run slower but compress more. Level 0
+// (NoCompression) does not attempt any compression; it only adds the
+// necessary DEFLATE framing.
+// Level -1 (DefaultCompression) uses the default compression level.
+// Level -2 (HuffmanOnly) will use Huffman compression only, giving
+// a very fast compression for all types of input, but sacrificing considerable
+// compression efficiency.
+func NewWriter(w io.Writer, level int) *Writer {
+	bgzf := &Writer{
 		w:       w,
 		block:   bytesPool.Get().(*bytesBlock),
 		channel: make(chan *bytesBlock, 1),
 	}
-	bgzf.p.Source((*internalBGZFWriter)(bgzf))
+	bgzf.p.Source((*internalWriter)(bgzf))
 	bgzf.p.Add(pipeline.LimitedPar(0, pipeline.Receive(func(n int, data interface{}) interface{} {
 		block := data.(*bytesBlock)
 		gzBytes := bytesPool.Get().(*bytesBlock)
@@ -322,7 +345,7 @@ func NewBGZFWriter(w io.Writer) *BGZFWriter {
 			flateWriter.Reset(gzBuf)
 		} else {
 			var err error
-			flateWriter, err = flate.NewWriter(gzBuf, -1)
+			flateWriter, err = flate.NewWriter(gzBuf, level)
 			if err != nil {
 				bgzf.p.SetErr(err)
 			}
@@ -359,7 +382,7 @@ func NewBGZFWriter(w io.Writer) *BGZFWriter {
 	return bgzf
 }
 
-func (bgzf *BGZFWriter) sendBlock() (err error) {
+func (bgzf *Writer) sendBlock() (err error) {
 	defer func() {
 		if x := recover(); x != nil {
 			err = errors.New(fmt.Sprint(x))
@@ -369,8 +392,8 @@ func (bgzf *BGZFWriter) sendBlock() (err error) {
 	return nil
 }
 
-// Close closes this BGZFWriter.
-func (bgzf *BGZFWriter) Close() error {
+// Close implements the corresponding method of io.Closer
+func (bgzf *Writer) Close() error {
 	if bgzf.block != nil && len(bgzf.block.bytes) > 0 {
 		if err := bgzf.sendBlock(); err != nil {
 			return err
@@ -386,7 +409,7 @@ func (bgzf *BGZFWriter) Close() error {
 }
 
 // Write implements the corresponding method of io.Writer.
-func (bgzf *BGZFWriter) Write(p []byte) (n int, err error) {
+func (bgzf *Writer) Write(p []byte) (n int, err error) {
 	n = len(p)
 	for {
 		blockIndex := len(bgzf.block.bytes)

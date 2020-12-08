@@ -1,5 +1,5 @@
-// elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017, 2018 imec vzw.
+// elPrep: a high-performance tool for analyzing SAM/BAM files.
+// Copyright (c) 2017-2020 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -21,8 +21,11 @@ package sam
 import (
 	"errors"
 	"fmt"
+	"log"
 	"runtime"
 	"sort"
+
+	"github.com/exascience/elprep/v5/internal"
 
 	"github.com/exascience/pargo/pipeline"
 )
@@ -53,7 +56,7 @@ type (
 	// RunPipeline doesn't encounter an error of its own, it should
 	// return the error of its pargo pipeline, if any.
 	PipelineInput interface {
-		RunPipeline(output PipelineOutput, filters []Filter, sortingOrder SortingOrder) error
+		RunPipeline(output PipelineOutput, filters []Filter, sortingOrder SortingOrder)
 	}
 )
 
@@ -66,12 +69,8 @@ func AlignmentToBytes(writer *OutputFile) pipeline.Filter {
 			alns := data.([]*Alignment)
 			records := make([][]byte, 0, len(alns))
 			var buf []byte
-			var err error
 			for _, aln := range alns {
-				buf, err = writer.FormatAlignment(aln, buf)
-				if err != nil {
-					p.SetErr(fmt.Errorf("%v in AlignmentToBytes", err))
-				}
+				buf = writer.FormatAlignment(aln, buf)
 				records = append(records, append([]byte(nil), buf...))
 				buf = buf[:0]
 			}
@@ -91,46 +90,12 @@ const (
 // format into slices of pointers to freshly allocated Alignment
 // values.
 func BytesToAlignment(reader *InputFile) pipeline.Filter {
-	return BytesToAlignmentFI(reader, false)
-}
-
-// BytesToAlignmentFI returns a pargo pipeline.Filter that parses
-// slices of bytes representing alignments according to the SAM/BAM file
-// format into slices of pointers to freshly allocated Alignment
-// values, with an additional option to indicate whether a file index should
-// be recorded with each alignment or not.
-func BytesToAlignmentFI(reader *InputFile, setFileIndex bool) pipeline.Filter {
-	if setFileIndex {
-		return func(p *pipeline.Pipeline, _ pipeline.NodeKind, _ *int) (receiver pipeline.Receiver, _ pipeline.Finalizer) {
-			receiver = func(serial int, data interface{}) interface{} {
-				records := data.([][]byte)
-				alns := make([]*Alignment, 0, len(records))
-				offset := serial * maxBatchSize
-				for index, record := range records {
-					aln, err := reader.ParseAlignment(record)
-					if err != nil {
-						p.SetErr(fmt.Errorf("%v, while parsing SAM alignment %v", err, record))
-						return alns
-					}
-					aln.setFileIndex(offset + index)
-					alns = append(alns, aln)
-				}
-				return alns
-			}
-			return
-		}
-	}
 	return func(p *pipeline.Pipeline, _ pipeline.NodeKind, _ *int) (receiver pipeline.Receiver, _ pipeline.Finalizer) {
 		receiver = func(_ int, data interface{}) interface{} {
 			records := data.([][]byte)
 			alns := make([]*Alignment, 0, len(records))
 			for _, record := range records {
-				aln, err := reader.ParseAlignment(record)
-				if err != nil {
-					p.SetErr(fmt.Errorf("%v, while parsing SAM alignment %v", err, record))
-					return alns
-				}
-				alns = append(alns, aln)
+				alns = append(alns, reader.ParseAlignment(record))
 			}
 			return alns
 		}
@@ -164,10 +129,7 @@ func (sam *Sam) AddNodes(p *pipeline.Pipeline, header *Header, sortingOrder Sort
 
 // AddNodes implements the PipelineOutput interface for SAM/BAM OutputFile values.
 func (f *OutputFile) AddNodes(p *pipeline.Pipeline, header *Header, sortingOrder SortingOrder) {
-	if err := f.FormatHeader(header); err != nil {
-		p.SetErr(fmt.Errorf("%v, while writing a SAM header to output", err))
-		return
-	}
+	f.FormatHeader(header)
 	var nodeCons func(...pipeline.Filter) pipeline.Node
 	switch sortingOrder {
 	case Keep, Unknown:
@@ -184,12 +146,8 @@ func (f *OutputFile) AddNodes(p *pipeline.Pipeline, header *Header, sortingOrder
 	p.Add(
 		pipeline.LimitedPar(0, AlignmentToBytes(f)),
 		nodeCons(pipeline.Receive(func(_ int, data interface{}) interface{} {
-			var err error
 			for _, aln := range data.([][]byte) {
-				_, err = f.Write(aln)
-			}
-			if err != nil {
-				p.SetErr(fmt.Errorf("%v, while writing SAM alignment strings to output", err))
+				f.Write(aln)
 			}
 			return data
 		})),
@@ -281,7 +239,7 @@ func (sam *Sam) NofBatches(n int) {
 
 // RunPipeline implements the PipelineInput interface for Sam values
 // that represent complete SAM/BAM files in memory.
-func (sam *Sam) RunPipeline(output PipelineOutput, hdrFilters []Filter, sortingOrder SortingOrder) error {
+func (sam *Sam) RunPipeline(output PipelineOutput, hdrFilters []Filter, sortingOrder SortingOrder) {
 	header := sam.Header
 	alns := sam.Alignments
 	sam.Header = NewHeader()
@@ -304,9 +262,9 @@ func (sam *Sam) RunPipeline(output PipelineOutput, hdrFilters []Filter, sortingO
 		case Keep, Unknown, Unsorted:
 			// nothing to do
 		default:
-			return fmt.Errorf("unknown sorting order %v", sortingOrder)
+			log.Panicf("unknown sorting order %v", sortingOrder)
 		}
-		return nil
+		return
 	}
 	var p pipeline.Pipeline
 	p.Source(alns)
@@ -317,39 +275,22 @@ func (sam *Sam) RunPipeline(output PipelineOutput, hdrFilters []Filter, sortingO
 	output.AddNodes(&p, header, sortingOrder)
 	p.NofBatches(sam.nofBatches)
 	sam.nofBatches = 0
-	p.Run()
-	return p.Err()
+	internal.RunPipeline(&p)
 }
 
 // RunPipeline implements the PipelineInput interface for SAM/BAM InputFile values.
-func (f *InputFile) RunPipeline(output PipelineOutput, hdrFilters []Filter, sortingOrder SortingOrder) error {
-	return f.RunPipelineFI(output, hdrFilters, sortingOrder, false)
-}
-
-// RunPipelineFI implements a variant of the PipelineInput interface for SAM/BAM InputFile
-// values, with an additional option to indicate whether a file index should be recorded with
-// each alignment or not.
-func (f *InputFile) RunPipelineFI(output PipelineOutput, hdrFilters []Filter, sortingOrder SortingOrder, setFileIndex bool) error {
-	header, err := f.ParseHeader()
-	if err != nil {
-		return err
-	}
+func (f *InputFile) RunPipeline(output PipelineOutput, hdrFilters []Filter, sortingOrder SortingOrder) {
+	header := f.ParseHeader()
 	originalSortingOrder := header.HDSO()
 	alnFilter := ComposeFilters(header, hdrFilters)
 	sortingOrder = effectiveSortingOrder(sortingOrder, header, originalSortingOrder)
 	var p pipeline.Pipeline
 	p.Source(f)
-	if setFileIndex {
-		// needed so that BytesToAlignment can compute file indexes for alignments
-		p.SetVariableBatchSize(maxBatchSize, maxBatchSize)
-	} else {
-		p.SetVariableBatchSize(minBatchSize, maxBatchSize)
-	}
-	p.Add(pipeline.LimitedPar(0, BytesToAlignmentFI(f, setFileIndex)))
+	p.SetVariableBatchSize(minBatchSize, maxBatchSize)
+	p.Add(pipeline.LimitedPar(0, BytesToAlignment(f)))
 	if alnFilter != nil {
 		p.Add(pipeline.LimitedPar(0, pipeline.Receive(alnFilter)))
 	}
 	output.AddNodes(&p, header, sortingOrder)
-	p.Run()
-	return p.Err()
+	internal.RunPipeline(&p)
 }

@@ -1,5 +1,5 @@
-// elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017, 2018 imec vzw.
+// elPrep: a high-performance tool for analyzing SAM/BAM files.
+// Copyright (c) 2017-2020 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -17,6 +17,13 @@
 // <https://github.com/ExaScience/elprep/blob/master/LICENSE.txt>.
 
 package utils
+
+import (
+	"fmt"
+	"io"
+	"log"
+	"strings"
+)
 
 // SmallMapEntry is an entry in a SmallMap.
 type SmallMapEntry struct {
@@ -59,32 +66,60 @@ func (m *SmallMap) Set(key Symbol, value interface{}) {
 	*m = append(*m, SmallMapEntry{key, value})
 }
 
-// Delete returns a SmallMap from which the first entry has been
-// removed that has the same key as the given key.
+// Delete removes the first entry from a SmallMap that has the same key
+// as the given key.
 //
 // It also returns true if an entry was removed, and false if no entry
 // was removed because there was no entry for the given key.
-func (m SmallMap) Delete(key Symbol) (SmallMap, bool) {
-	for index, entry := range m {
+func (m *SmallMap) Delete(key Symbol) bool {
+	for index, entry := range *m {
 		if entry.Key == key {
-			return append(m[:index], m[index+1:]...), true
+			*m = append((*m)[:index], (*m)[index+1:]...)
+			return true
 		}
 	}
-	return m, false
+	return false
 }
 
-// DeleteIf returns a SmallMap from which all entries have been
-// removed that satisfy the given test.
+// DeleteIf removes all entries from a SmallMap that satisfy the
+// given test.
 //
 // It also returns true if any entry was removed, and false if no
 // entry was removed because no entry matched the given test.
-func (m SmallMap) DeleteIf(test func(key Symbol, val interface{}) bool) (SmallMap, bool) {
+func (m *SmallMap) DeleteIf(test func(key Symbol, val interface{}) bool) bool {
 	i := 0
-	for _, entry := range m {
+	for _, entry := range *m {
 		if !test(entry.Key, entry.Value) {
-			m[i] = entry
+			(*m)[i] = entry
 			i++
 		}
 	}
-	return m[:i], i < len(m)
+	*m = (*m)[:i]
+	return i < len(*m)
+}
+
+func (entry SmallMapEntry) format(w io.Writer) {
+	if _, err := io.WriteString(w, *entry.Key); err != nil {
+		log.Panic(err)
+	}
+	if _, err := io.WriteString(w, ": "); err != nil {
+		log.Panic(err)
+	}
+	if _, err := fmt.Fprint(w, entry.Value); err != nil {
+		log.Panic(err)
+	}
+}
+
+func (m SmallMap) String() string {
+	var s strings.Builder
+	s.WriteByte('{')
+	if len(m) > 0 {
+		m[0].format(&s)
+	}
+	for i := 1; i < len(m); i++ {
+		s.WriteString(", ")
+		m[i].format(&s)
+	}
+	s.WriteByte('}')
+	return s.String()
 }

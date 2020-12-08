@@ -1,5 +1,5 @@
-// elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017, 2018 imec vzw.
+// elPrep: a high-performance tool for analyzing SAM/BAM files.
+// Copyright (c) 2017-2020 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -25,35 +25,22 @@ package vcf
 type StringScanner struct {
 	index int
 	data  string
-	err   error
-}
-
-// Err returns the error that occurred during scanning/parsing.
-func (sc *StringScanner) Err() error {
-	return sc.err
 }
 
 // Reset resets the scanner, and initializes it with the given string.
 func (sc *StringScanner) Reset(s string) {
 	sc.index = 0
 	sc.data = s
-	sc.err = nil
 }
 
 // Len returns the number of ASCII characters that still need to be
-// scanned/parsed. Returns 0 if Err() would return a non-nil value.
+// scanned/parsed.
 func (sc *StringScanner) Len() int {
-	if sc.err != nil {
-		return 0
-	}
 	return len(sc.data) - sc.index
 }
 
 // SkipSpace skips ' ' runes
 func (sc *StringScanner) SkipSpace() {
-	if sc.err != nil {
-		return
-	}
 	for end := sc.index; end < len(sc.data); end++ {
 		if sc.data[end] != ' ' {
 			sc.index = end
@@ -64,9 +51,6 @@ func (sc *StringScanner) SkipSpace() {
 }
 
 func (sc *StringScanner) readUntilByte(c byte) (s string, found bool) {
-	if sc.err != nil {
-		return "", false
-	}
 	start := sc.index
 	for end := sc.index; end < len(sc.data); end++ {
 		if sc.data[end] == c {
@@ -79,9 +63,6 @@ func (sc *StringScanner) readUntilByte(c byte) (s string, found bool) {
 }
 
 func (sc *StringScanner) readUntilBytes(bytes []byte) string {
-	if sc.err != nil {
-		return ""
-	}
 	start := sc.index
 	for end := sc.index; end < len(sc.data); end++ {
 		c := sc.data[end]

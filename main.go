@@ -1,5 +1,5 @@
-// elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017-2019 imec vzw.
+// elPrep: a high-performance tool for analyzing SAM/BAM files.
+// Copyright (c) 2017-2020 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -16,7 +16,7 @@
 // License and Additional Terms along with this program. If not, see
 // <https://github.com/ExaScience/elprep/blob/master/LICENSE.txt>.
 
-// elPrep is a high-performance tool for preparing .sam/.bam
+// elPrep is a high-performance tool for analyzing .sam/.bam
 // files for variant calling in sequencing pipelines.
 //
 // Please see https://github.com/exascience/elprep for a documentation
@@ -30,7 +30,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/exascience/elprep/v4/cmd"
+	"github.com/exascience/elprep/v5/cmd"
 )
 
 func printHelp() {
@@ -62,33 +62,31 @@ func main() {
 		os.Exit(1)
 	}
 
-	var err error
 	switch os.Args[1] {
 	case "filter":
-		err = cmd.Filter()
+		cmd.Filter()
 	case "split":
-		err = cmd.Split()
+		cmd.Split()
 	case "merge":
-		err = cmd.Merge()
+		cmd.Merge()
 	case "merge-optical-duplicates-metrics":
-		err = cmd.MergeOpticalDuplicatesMetrics()
+		cmd.MergeOpticalDuplicatesMetrics()
 	case "vcf-to-elsites":
-		err = cmd.VcfToElsites()
+		cmd.VcfToElsites()
 	case "bed-to-elsites":
-		err = cmd.BedToElsites()
+		cmd.BedToElsites()
 	case "fasta-to-elfasta":
-		err = cmd.FastaToElfasta()
+		cmd.FastaToElfasta()
 	case "sfm":
-		err = cmd.Sfm()
+		cmd.Sfm()
 	case "help", "-help", "--help", "-h", "--h":
 		printHelp()
 	case "help-extended", "-help-extended", "--help-extended", "-he", "--he":
 		prinExtendedHelp()
 	default:
-		err = cmd.DeprecatedFilter()
+		log.Println("Error: Calling elPrep without a command.")
+		fmt.Fprintln(os.Stderr, cmd.HelpMessage)
+		printHelp()
+		os.Exit(1)
 	}
-	if err != nil {
-		log.Fatal(err)
-	}
-
 }

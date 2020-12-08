@@ -1,5 +1,5 @@
-// elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017-2019 imec vzw.
+// elPrep: a high-performance tool for analyzing SAM/BAM files.
+// Copyright (c) 2017-2020 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -26,9 +26,9 @@ import (
 
 	"github.com/exascience/pargo/sync"
 
-	"github.com/exascience/elprep/v4/internal"
-	"github.com/exascience/elprep/v4/sam"
-	"github.com/exascience/elprep/v4/utils"
+	"github.com/exascience/elprep/v5/internal"
+	"github.com/exascience/elprep/v5/sam"
+	"github.com/exascience/elprep/v5/utils"
 )
 
 // Map Phred qualities to a reasonable range and an error flag
@@ -62,7 +62,7 @@ func computePhredScore(aln *sam.Alignment) (score int32) {
 		error |= int32(phredScoreTable[pos+1])
 	}
 	if error != 0 {
-		log.Fatal("Invalid QUAL character in ", aln.QUAL)
+		log.Panic("Invalid QUAL character in ", aln.QUAL)
 	}
 	return score
 }
@@ -77,7 +77,6 @@ var (
 // computeUnclippedPosition determines the unclipped position of an
 // alignment, based on its FLAG, POS, and CIGAR string.
 func computeUnclippedPosition(aln *sam.Alignment) (result int32) {
-
 	cigar := aln.CIGAR
 
 	result = aln.POS
@@ -118,7 +117,7 @@ var (
 func adaptedPos(aln *sam.Alignment) int32 {
 	p, ok := aln.Temps.Get(pos)
 	if !ok {
-		log.Fatal("Unclipped position not present in SAM alignment ", aln.QNAME)
+		log.Panic("Unclipped position not present in SAM alignment ", aln.QNAME)
 	}
 	return p.(int32)
 }
@@ -130,7 +129,7 @@ func setAdaptedPos(aln *sam.Alignment, p int32) {
 func adaptedScore(aln *sam.Alignment) int32 {
 	s, ok := aln.Temps.Get(score)
 	if !ok {
-		log.Fatal("Phred score not present in SAM alignment ", aln.QNAME)
+		log.Panic("Phred score not present in SAM alignment ", aln.QNAME)
 	}
 	return s.(int32)
 }
@@ -402,6 +401,8 @@ func classifyPair(aln *sam.Alignment, fragments, pairs *sync.Map) {
 //
 // Duplicate marking is based on an adapted Phred score. In case of
 // ties, the QNAME is used as a tie-breaker.
+//
+// If alsoOpticals is true, ensure that LIBID is added for all reads.
 func MarkDuplicates(alsoOpticals bool) (sam.Filter, *sync.Map, *sync.Map) {
 	splits := 16 * runtime.GOMAXPROCS(0)
 	fragments := sync.NewMap(splits)
@@ -415,7 +416,7 @@ func MarkDuplicates(alsoOpticals bool) (sam.Filter, *sync.Map, *sync.Map) {
 			if found {
 				id, found := rgEntry["ID"]
 				if !found {
-					log.Fatal("Missing mandatory ID entry in an @RG line in a SAM file header.")
+					log.Panic("Missing mandatory ID entry in an @RG line in a SAM file header.")
 				}
 				lbTable[id] = lb
 			}

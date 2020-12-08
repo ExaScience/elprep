@@ -1,5 +1,5 @@
-// elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017, 2018 imec vzw.
+// elPrep: a high-performance tool for analyzing SAM/BAM files.
+// Copyright (c) 2017-2020 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -19,18 +19,19 @@
 package sam
 
 import (
-	"errors"
-	"fmt"
 	"log"
 	"sort"
 	"strconv"
 	"sync"
 	"unicode"
+	"unsafe"
+
+	"github.com/exascience/elprep/v5/internal"
+	"github.com/exascience/elprep/v5/utils/nibbles"
 
 	psort "github.com/exascience/pargo/sort"
 
-	"github.com/exascience/elprep/v4/utils"
-	"github.com/exascience/elprep/v4/utils/nibbles"
+	"github.com/exascience/elprep/v5/utils"
 )
 
 // The SAM file format version and date strings supported by this
@@ -116,16 +117,12 @@ const (
 // successfully parsed into an int32. If the LN field is not present,
 // SQLN returns the maximum possible value for LN and a non-nil error
 // value.
-func SQLN(record utils.StringMap) (int32, error) {
+func SQLN(record utils.StringMap) int32 {
 	ln, found := record["LN"]
 	if !found {
-		return 0x7FFFFFFF, errors.New("LN entry in a SQ header line missing")
+		log.Panic("LN entry in a SQ header line missing")
 	}
-	val, err := strconv.ParseInt(ln, 10, 32)
-	if err != nil {
-		return 0, err
-	}
-	return int32(val), nil
+	return int32(internal.ParseInt(ln, 10, 32))
 }
 
 // SetSQLN sets the LN field value, assumming that the given record
@@ -238,6 +235,19 @@ func init() {
 	}
 }
 
+func nibblesToByteSlice(seq nibbles.Nibbles) []byte {
+	slice := seq.Expand()
+	for i, b := range slice {
+		slice[i] = nibbleToBase[b]
+	}
+	return slice
+}
+
+func nibblesToString(seq nibbles.Nibbles) string {
+	slice := nibblesToByteSlice(seq)
+	return *(*string)(unsafe.Pointer(&slice))
+}
+
 // Sequence encodes a SAM segment SEQuence as in the BAM format.
 // See http://samtools.github.io/hts-specs/SAMv1.pdf - Section 4.2.
 type Sequence nibbles.Nibbles
@@ -264,6 +274,11 @@ func (seq Sequence) SetBase(i int, base byte) {
 		nibble = 15
 	}
 	nibbles.Nibbles(seq).Set(i, nibble)
+}
+
+// AsString returns the sequence representation as in the SAM format
+func (seq Sequence) AsString() string {
+	return nibblesToString(nibbles.Nibbles(seq))
 }
 
 // An Alignment represents a single read alignment with mandatory and
@@ -302,7 +317,7 @@ type Alignment struct {
 	// The segment SEQuence (as in the BAM format).
 	SEQ Sequence
 
-	// The ASCII of Phred-scaled base QUALity+33.
+	// The ASCII of Phred-scaled base QUALity.
 	// A slice of the Phred-scaled base quality values (as in the BAM format,
 	// without the increment of 33 to turn the values into printable ASCII characters).
 	QUAL []byte
@@ -327,8 +342,9 @@ var (
 
 // Symbols for some temporary fields.
 var (
-	LIBID = utils.Intern("LIBID")
-	REFID = utils.Intern("REFID")
+	LIBID     = utils.Intern("LIBID")
+	REFID     = utils.Intern("REFID")
+	NextREFID = utils.Intern("NextREFID")
 )
 
 // RG returns the (potentially empty) RG optional field.
@@ -351,7 +367,7 @@ func (aln *Alignment) SetRG(rg interface{}) {
 func (aln *Alignment) REFID() int32 {
 	refid, ok := aln.Temps.Get(REFID)
 	if !ok {
-		log.Fatal("REFID in SAM alignment ", aln.QNAME, " not set (use the AddREFID filter to fix this)")
+		log.Panic("REFID in SAM alignment ", aln.QNAME, " not set (use the AddREFID filter to fix this)")
 	}
 	return refid.(int32)
 }
@@ -359,6 +375,18 @@ func (aln *Alignment) REFID() int32 {
 // SetREFID sets the REFID temporary field.
 func (aln *Alignment) SetREFID(refid int32) {
 	aln.Temps.Set(REFID, refid)
+}
+
+func (aln *Alignment) NextREFID() int32 {
+	refid, ok := aln.Temps.Get(NextREFID)
+	if !ok {
+		log.Panic("NextREFID in SAM alignment ", aln.QNAME, " not set (use the AddREFID filter to fix this)")
+	}
+	return refid.(int32)
+}
+
+func (aln *Alignment) SetNextREFID(refid int32) {
+	aln.Temps.Set(NextREFID, refid)
 }
 
 // LIBID returns the LIBID temporary field.
@@ -372,19 +400,18 @@ func (aln *Alignment) SetLIBID(libid interface{}) {
 	aln.Temps.Set(LIBID, libid)
 }
 
-var fi = utils.Intern("fi")
-
-func (aln *Alignment) setFileIndex(index int) {
-	aln.Temps.Set(fi, index)
-}
-
-// FileIndex returns the index of the alignment in the original input file.
-// May return -1 if unknown. This function may be deprecated in the future.
-func (aln *Alignment) FileIndex() int {
-	if value, ok := aln.Temps.Get(fi); ok {
-		return value.(int)
+func modFlag(flag uint16) uint16 {
+	if flag&Multiple == 0 {
+		flag &^= NextUnmapped
+		flag &^= NextReversed
 	}
-	return -1
+	if flag&Unmapped != 0 {
+		flag &^= Reversed
+	}
+	if flag&NextUnmapped != 0 {
+		flag &^= NextReversed
+	}
+	return flag
 }
 
 // CoordinateLess compares two alignments according to their
@@ -398,9 +425,46 @@ func CoordinateLess(aln1, aln2 *Alignment) bool {
 		return refid1 >= 0
 	case refid2 < refid1:
 		return refid2 < 0
-	default:
-		return aln1.POS < aln2.POS
+	case aln1.POS < aln2.POS:
+		return true
+	case aln1.POS > aln2.POS:
+		return false
+	case aln1.IsReversed() != aln2.IsReversed():
+		return !aln1.IsReversed()
+	case aln1.QNAME != "" && aln2.QNAME != "":
+		switch {
+		case aln1.QNAME < aln2.QNAME:
+			return true
+		case aln1.QNAME > aln2.QNAME:
+			return false
+		}
 	}
+	flag1 := modFlag(aln1.FLAG)
+	flag2 := modFlag(aln2.FLAG)
+	switch {
+	case flag1 < flag2:
+		return true
+	case flag1 > flag2:
+		return false
+	case aln1.MAPQ < aln2.MAPQ:
+		return true
+	case aln1.MAPQ > aln2.MAPQ:
+		return false
+	case aln1.IsMultiple() && aln2.IsMultiple():
+		nextRefid1 := aln1.NextREFID()
+		nextRefid2 := aln2.NextREFID()
+		switch {
+		case nextRefid1 < nextRefid2:
+			return true // no special treatment of negative values!
+		case nextRefid1 > nextRefid2:
+			return false // no special treatment of negative values!
+		case aln1.PNEXT < aln2.PNEXT:
+			return true
+		case aln1.PNEXT > aln2.PNEXT:
+			return false
+		}
+	}
+	return aln1.TLEN < aln2.TLEN
 }
 
 // QNAMELess compares two alignments according to their
@@ -608,19 +672,15 @@ type CigarOperation struct {
 	Operation byte // 'M', 'I', 'D', 'N', 'S', 'H', 'P', '=', or 'X'
 }
 
-func newCigarOperation(cigar string, i int) (op CigarOperation, j int, err error) {
+func newCigarOperation(cigar string, i int) (op CigarOperation, j int) {
 	for j = i; ; j++ {
 		if char := cigar[j]; !isDigit(char) {
-			length, nerr := strconv.ParseInt(cigar[i:j], 10, 32)
-			if nerr != nil {
-				err = nerr
-				return
-			}
+			length := internal.ParseInt(cigar[i:j], 10, 32)
 			if operation := cigarOperationsTable[char]; operation != 0 {
 				op = CigarOperation{int32(length), operation}
 				j++
 			} else {
-				err = fmt.Errorf("invalid CIGAR operation %v", operation)
+				log.Panicf("invalid CIGAR operation %v", operation)
 			}
 			return
 		}
@@ -632,20 +692,14 @@ var (
 	cigarSliceCacheMutex = sync.RWMutex{}
 )
 
-func slowScanCigarString(cigar string) (slice []CigarOperation, err error) {
+func slowScanCigarString(cigar string) (slice []CigarOperation) {
 	if len(cigar) == 0 {
-		return nil, nil
+		return nil
 	}
-	cigarOperation, i, err := newCigarOperation(cigar, 0)
-	if err != nil {
-		return nil, fmt.Errorf("%v, while scanning CIGAR string %v", err, cigar)
-	}
+	cigarOperation, i := newCigarOperation(cigar, 0)
 	slice = []CigarOperation{cigarOperation}
 	for i < len(cigar) {
-		nextCigarOperation, j, err := newCigarOperation(cigar, i)
-		if err != nil {
-			return nil, fmt.Errorf("%v, while scanning CIGAR string %v", err, cigar)
-		}
+		nextCigarOperation, j := newCigarOperation(cigar, i)
 		if nextCigarOperation.Operation == cigarOperation.Operation {
 			slice[len(slice)-1].Length += nextCigarOperation.Length
 		} else {
@@ -661,7 +715,7 @@ func slowScanCigarString(cigar string) (slice []CigarOperation, err error) {
 		cigarSliceCache[cigar] = slice
 	}
 	cigarSliceCacheMutex.Unlock()
-	return slice, nil
+	return slice
 }
 
 // ScanCigarString converts a CIGAR string to a slice of
@@ -670,12 +724,47 @@ func slowScanCigarString(cigar string) (slice []CigarOperation, err error) {
 //
 // Uses an internal cache to reduce memory overhead. It is safe for
 // multiple goroutines to call ScanCigarString concurrently.
-func ScanCigarString(cigar string) ([]CigarOperation, error) {
+func ScanCigarString(cigar string) []CigarOperation {
 	cigarSliceCacheMutex.RLock()
 	value, found := cigarSliceCache[cigar]
 	cigarSliceCacheMutex.RUnlock()
 	if found {
-		return value, nil
+		return value
 	}
 	return slowScanCigarString(cigar)
+}
+
+var (
+	// CigarOperatorConsumesReadBases maps operators that consume read bases to 1
+	CigarOperatorConsumesReadBases = map[byte]int32{'M': 1, 'I': 1, 'S': 1, '=': 1, 'X': 1}
+	// CigarOperatorConsumesReferenceBases maps operators that consume reference bases to 1
+	CigarOperatorConsumesReferenceBases = map[byte]int32{'M': 1, 'D': 1, 'N': 1, '=': 1, 'X': 1}
+)
+
+// ReadLengthFromCigar sums the lengths of all CIGAR operations that consume read bases.
+func ReadLengthFromCigar(cigar []CigarOperation) int32 {
+	var length int32
+	for _, op := range cigar {
+		length += CigarOperatorConsumesReadBases[op.Operation] * op.Length
+	}
+	return length
+}
+
+// ReferenceLengthFromCigar sums the lengths of all CIGAR operations that consume reference bases
+func ReferenceLengthFromCigar(cigar []CigarOperation) int32 {
+	var length int32
+	for _, op := range cigar {
+		length += CigarOperatorConsumesReferenceBases[op.Operation] * op.Length
+	}
+	return length
+}
+
+// End sums the lengths of all CIGAR operations that consume reference
+// bases and adds them to the alignment's position - 1
+func (aln *Alignment) End() int32 {
+	var length int32
+	for _, op := range aln.CIGAR {
+		length += CigarOperatorConsumesReferenceBases[op.Operation] * op.Length
+	}
+	return aln.POS + length - 1
 }

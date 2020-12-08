@@ -1,5 +1,5 @@
-// elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017, 2018 imec vzw.
+// elPrep: a high-performance tool for analyzing SAM/BAM files.
+// Copyright (c) 2017-2020 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -20,85 +20,43 @@ package bed
 
 import (
 	"bufio"
-	"fmt"
-	"os"
-	"strconv"
+	"log"
 	"strings"
 
-	"github.com/exascience/elprep/v4/utils"
-)
+	"github.com/exascience/elprep/v5/internal"
 
-// Helper function for parsing a track line field.
-func splitTrackField(field string) (string, string) {
-	split := strings.Split(field, "=")
-	return split[0], split[1]
-}
+	"github.com/exascience/elprep/v5/utils"
+)
 
 // ParseBed parses a BED file. See
 // https://genome.ucsc.edu/FAQ/FAQformat.html#format1
-func ParseBed(filename string) (b *Bed, err error) {
-
-	bed := NewBed()
+func ParseBed(filename string) Bed {
+	var bed Bed
 
 	// open file
-	file, err := os.Open(filename)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if nerr := file.Close(); err == nil {
-			err = nerr
-		}
-	}()
+	file := internal.FileOpen(filename)
+	defer internal.Close(file)
 
-	scanner := bufio.NewScanner(file)
-
-	var track *Track // for storing the current track
+	scanner := bufio.NewScanner(utils.HandleBGZF(bufio.NewReader(file)))
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		data := strings.Split(line, "\t")
-		// check if the line is a new track
-		if data[0] == "track" {
-			// create new track, store the old one
-			if track != nil {
-				bed.Tracks = append(bed.Tracks, track)
-			}
-			// all track entries are optional
-			// parse and collect those that are used
-			fields := make(map[string]string)
-			for _, field := range data[1:] {
-				key, val := splitTrackField(field)
-				fields[key] = val
-			}
-			track = NewTrack(fields)
-		} else {
-			// parse a region entry
-			chrom := utils.Intern(data[0])
-			var err error
-			start, err := strconv.Atoi(data[1])
-			if err != nil {
-				return nil, fmt.Errorf("invalid bed region start: %v ", err)
-			}
-			end, err := strconv.Atoi(data[2])
-			if err != nil {
-				return nil, fmt.Errorf("invalid bed region end: %v ", err)
-			}
-			region, err := NewRegion(chrom, int32(start), int32(end), data[3:])
-			if err != nil {
-				return nil, fmt.Errorf("invalid bed region: %v ", err)
-			}
-			AddRegion(bed, region)
-			if track != nil {
-				track.Regions = append(track.Regions, region)
-			}
+		if strings.HasPrefix(line, "#") ||
+			strings.HasPrefix(line, "track") ||
+			strings.HasPrefix(line, "browser") {
+			continue
 		}
-
+		data := strings.Split(line, "\t")
+		chrom := utils.Intern(data[0])
+		start := internal.ParseInt(data[1], 10, 32)
+		end := internal.ParseInt(data[2], 10, 32)
+		region := NewRegion(chrom, int32(start), int32(end), data[3:])
+		AddRegion(&bed, region)
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error while reading bed file: %v ", err)
+		log.Panic(err)
 	}
 	// Make sure bed regions are sorted.
 	sortRegions(bed)
-	return bed, nil
+	return bed
 }

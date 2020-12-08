@@ -1,5 +1,5 @@
-// elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017-2019 imec vzw.
+// elPrep: a high-performance tool for analyzing SAM/BAM files.
+// Copyright (c) 2017-2020 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -22,376 +22,342 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"io"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 
-	"github.com/exascience/elprep/v4/bed"
-	"github.com/exascience/elprep/v4/filters"
-	"github.com/exascience/elprep/v4/sam"
-	"github.com/exascience/elprep/v4/utils"
+	"github.com/exascience/elprep/v5/fasta"
+
+	"github.com/exascience/elprep/v5/internal"
+
+	"github.com/exascience/elprep/v5/bed"
+	"github.com/exascience/elprep/v5/filters"
+	"github.com/exascience/elprep/v5/sam"
+	"github.com/exascience/elprep/v5/utils"
 	psync "github.com/exascience/pargo/sync"
 )
 
-// Run the best practices pipeline. Version that uses an intermediate
-// slice so that sorting and mark-duplicates are supported.
-func runBestPracticesPipelineIntermediateSam(fileIn, fileOut string, sortingOrder sam.SortingOrder, filters, filters2 []sam.Filter, opticalDuplicateFilter func(reads *sam.Sam) error, timed bool, profile string) error {
-	filteredReads := sam.NewSam()
-	phase := int64(1)
-	err := timedRun(timed, profile, "Reading SAM into memory and applying filters.", phase, func() (err error) {
-		pathname, err := filepath.Abs(fileIn)
-		if err != nil {
-			return err
+func parseAndMergeSpreadFile(spreadFile string, reads *sam.Sam) {
+	file := sam.Open(spreadFile)
+	defer file.Close()
+	spreadReads := sam.NewSam()
+	file.RunPipeline(spreadReads, []sam.Filter{func(_ *sam.Header) sam.AlignmentFilter {
+		contigs, ok := reads.Header.Contigs()
+		if !ok {
+			log.Fatal("Cannot call haplotypes on split file without contig information.")
 		}
-		input, err := sam.Open(pathname)
-		if err != nil {
-			return err
+		contigCheck := make(map[string]bool)
+		for _, contig := range contigs {
+			contigCheck[contig] = true
 		}
-		defer func() {
-			nerr := input.Close()
-			if err == nil {
-				err = nerr
-			}
-		}()
-		return input.RunPipeline(filteredReads, filters, sortingOrder)
-	})
-	if err != nil {
-		return err
-	}
-	go runtime.GC()
-	if opticalDuplicateFilter != nil {
-		phase++
-		err = timedRun(timed, profile, "Marking optical duplicates.", phase, func() (err error) {
-			return opticalDuplicateFilter(filteredReads)
-		})
-		if err != nil {
-			return err
+		return func(aln *sam.Alignment) bool {
+			return contigCheck[aln.RNAME]
 		}
-		go runtime.GC()
-	}
-	phase++
-	return timedRun(timed, profile, "Write to file.", phase, func() (err error) {
-		pathname, err := filepath.Abs(fileOut)
-		if err != nil {
-			return err
-		}
-		err = os.MkdirAll(filepath.Dir(pathname), 0700)
-		if err != nil {
-			return err
-		}
-		output, err := sam.Create(pathname)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			nerr := output.Close()
-			if err == nil {
-				err = nerr
-			}
-		}()
-		if sortingOrder != sam.Unsorted {
-			sortingOrder = sam.Keep
-		}
-		return filteredReads.RunPipeline(output, filters2, sortingOrder)
-	})
+	},
+		filters.AddREFID,
+	}, sam.Keep)
+	reads.Alignments = sam.By(sam.CoordinateLess).ParallelStableMerge(reads.Alignments, spreadReads.Alignments)
 }
 
-func runBestPracticesPipelineIntermediateSamWithBQSR(fileIn, fileOut string, sortingOrder sam.SortingOrder, filters1, filters2 []sam.Filter, opticalDuplicateFilter func(reads *sam.Sam) error, baseRecalibrator *filters.BaseRecalibrator, quantizeLevels int, sqqList []uint8, maxCycle int, recalFile string, timed bool, profile string) error {
+func runRemainingPipeline(
+	phase int64,
+	fileOut, outFormat string, sortingOrder sam.SortingOrder,
+	filteredReads *sam.Sam, filters2 []sam.Filter,
+	hc *filters.HaplotypeCaller, sampleName string, vcfOutput string, bedRegions bed.Bed, spreadFile string,
+	timed bool, profile string) {
+	switch fileOut {
+	case "/dev/null", "/dev/zero":
+		// hc must be non-nil
+		phase++
+		timedRun(timed, profile, "Preparing variant calling.", phase, func() {
+			if spreadFile != "" {
+				parseAndMergeSpreadFile(spreadFile, filteredReads)
+			}
+			filters2 = append(filters2, filters.FilterReadsBySampleName(&sampleName), filters.HaplotypeCallAln)
+			filteredReads.RunPipeline(filteredReads, filters2, sortingOrder)
+		})
+		filters2 = nil
+		go runtime.GC()
+		phase++
+		timedRun(timed, profile, "Calling variants.", phase, func() {
+			vcfPathname := internal.FilepathAbs(vcfOutput)
+			internal.MkdirAll(filepath.Dir(vcfPathname), 0700)
+			hc.CallVariants(filteredReads, sampleName, vcfPathname, bedRegions)
+		})
+	default:
+		if hc == nil {
+			// Write output to file
+			phase++
+			timedRun(timed, profile, "Write to file.", phase, func() {
+				pathname := internal.FilepathAbs(fileOut)
+				internal.MkdirAll(filepath.Dir(pathname), 0700)
+				output := sam.Create(pathname, outFormat)
+				defer output.Close()
+				filteredReads.RunPipeline(output, filters2, sortingOrder)
+			})
+		} else {
+			if len(filters2) > 0 {
+				phase++
+				timedRun(timed, profile, "Preparing output of final SAM file.", phase, func() {
+					filteredReads.RunPipeline(filteredReads, filters2, sortingOrder)
+				})
+				filters2 = nil
+				go runtime.GC()
+			}
+			if spreadFile != "" {
+				phase++
+				timedRun(timed, profile, "Merging in spread reads.", phase, func() {
+					parseAndMergeSpreadFile(spreadFile, filteredReads)
+				})
+				go runtime.GC()
+			}
+			keptReads := new(sam.Sam)
+			*keptReads = *filteredReads
+			phase++
+			timedRun(timed, profile, "Write to file.", phase, func() {
+				pathname := internal.FilepathAbs(fileOut)
+				internal.MkdirAll(filepath.Dir(pathname), 0700)
+				output := sam.Create(pathname, outFormat)
+				defer output.Close()
+				filteredReads.RunPipeline(output, nil, sortingOrder)
+			})
+			go runtime.GC()
+			phase++
+			timedRun(timed, profile, "Preparing variant calling.", phase, func() {
+				filters3 := []sam.Filter{filters.FilterReadsBySampleName(&sampleName), filters.HaplotypeCallAln}
+				keptReads.RunPipeline(keptReads, filters3, sortingOrder)
+			})
+			go runtime.GC()
+			phase++
+			timedRun(timed, profile, "Calling variants.", phase, func() {
+				vcfPathname := internal.FilepathAbs(vcfOutput)
+				internal.MkdirAll(filepath.Dir(vcfPathname), 0700)
+				hc.CallVariants(keptReads, sampleName, vcfPathname, bedRegions)
+			})
+		}
+	}
+}
+
+// Run the best practices pipeline. Version that uses an intermediate
+// slice so that sorting, mark-duplicates, BSQR, and HaplotypeCaller are supported.
+func runBestPracticesPipelineIntermediateSam(
+	fileIn, fileOut, outFormat string, sortingOrder sam.SortingOrder,
+	filters1, filters2 []sam.Filter,
+	opticalDuplicateFilter func(reads *sam.Sam),
+	baseRecalibrator *filters.BaseRecalibrator, quantizeLevels int, sqqList []uint8, maxCycle int, recalFile string,
+	hc *filters.HaplotypeCaller, sampleName, vcfOutput string, bedRegions bed.Bed, spreadFile string,
+	timed bool, profile string) {
+
 	// Input and first filters and sorting
 	filteredReads := sam.NewSam()
 	phase := int64(1)
-	err := timedRun(timed, profile, "Reading SAM into memory and applying filters.", phase, func() (err error) {
-		pathname, err := filepath.Abs(fileIn)
-		if err != nil {
-			return err
-		}
-		input, err := sam.Open(pathname)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			nerr := input.Close()
-			if err == nil {
-				err = nerr
-			}
-		}()
-		return input.RunPipeline(filteredReads, filters1, sortingOrder)
+	timedRun(timed, profile, "Reading SAM into memory and applying filters.", phase, func() {
+		input := sam.Open(internal.FilepathAbs(fileIn))
+		defer input.Close()
+		input.RunPipeline(filteredReads, filters1, sortingOrder)
 	})
-	if err != nil {
-		return err
-	}
+	filters1 = nil
 	go runtime.GC()
 	if opticalDuplicateFilter != nil {
 		phase++
-		err = timedRun(timed, profile, "Marking optical duplicates.", phase, func() (err error) {
-			return opticalDuplicateFilter(filteredReads)
+		timedRun(timed, profile, "Marking optical duplicates.", phase, func() {
+			opticalDuplicateFilter(filteredReads)
 		})
-		if err != nil {
-			return err
-		}
+		opticalDuplicateFilter = nil
 		go runtime.GC()
 	}
 	if sortingOrder != sam.Unsorted {
 		sortingOrder = sam.Keep
 	}
 	// Base recalibration
-	var baseRecalibratorTables filters.BaseRecalibratorTables
-	phase++
-	err = timedRun(timed, profile, "Base recalibration", phase, func() error {
-		baseRecalibratorTables = baseRecalibrator.RecalibrateWithMaxCycle(filteredReads, maxCycle)
-		return baseRecalibratorTables.Err()
-	})
-	if err != nil {
-		return err
-	}
-	// Finalize BQSR tables + log recal file
-	phase++
-	err = timedRun(timed, profile, "Finalize BQSR tables", phase, func() error {
-		baseRecalibratorTables.FinalizeBQSRTables()
-		pathname, err := filepath.Abs(recalFile)
-		if err != nil {
-			return err
+	if baseRecalibrator != nil {
+		// filter out reads not in target regions if bedRegions is passed
+		if bedRegions != nil {
+			phase++
+			targetRegionsFilter := filters.RemoveNonOverlappingReads(bedRegions)
+			timedRun(timed, profile, "Filtering out reads not in target regions.", phase, func() {
+				filteredReads.RunPipeline(filteredReads, []sam.Filter{targetRegionsFilter}, sortingOrder)
+			})
+			targetRegionsFilter = nil
+			go runtime.GC()
 		}
-		err = os.MkdirAll(filepath.Dir(pathname), 0700)
-		if err != nil {
-			return err
-		}
-		return baseRecalibratorTables.PrintBQSRTables(pathname)
-	})
-	if err != nil {
-		return err
-	}
-	go runtime.GC()
-	phase++
-	err = timedRun(timed, profile, "Apply BQSR", phase, func() error {
-		n := len(filteredReads.Alignments) / 4096
-		if m := 2 * runtime.GOMAXPROCS(0); m > n {
-			n = m
-		}
-		filteredReads.NofBatches(n)
-		return filteredReads.RunPipeline(filteredReads, []sam.Filter{baseRecalibratorTables.ApplyBQSRWithMaxCycle(quantizeLevels, sqqList, maxCycle)}, sortingOrder)
-	})
-	if err != nil {
-		return err
-	}
-	go runtime.GC()
-	// Write output to file
-	phase++
-	return timedRun(timed, profile, "Write to file.", phase, func() (err error) {
-		pathname, err := filepath.Abs(fileOut)
-		if err != nil {
-			return err
-		}
-		err = os.MkdirAll(filepath.Dir(pathname), 0700)
-		if err != nil {
-			return err
-		}
-		output, err := sam.Create(pathname)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			nerr := output.Close()
-			if err == nil {
-				err = nerr
+		var baseRecalibratorTables *filters.BaseRecalibratorTables
+		phase++
+		timedRun(timed, profile, "Base recalibration.", phase, func() {
+			baseRecalibratorTables = baseRecalibrator.Recalibrate(filteredReads, maxCycle)
+		})
+		baseRecalibrator = nil
+		go runtime.GC()
+		// Finalize BQSR tables + log recal file
+		phase++
+		timedRun(timed, profile, "Finalize BQSR tables.", phase, func() {
+			baseRecalibratorTables.FinalizeBQSRTables()
+			pathname := internal.FilepathAbs(recalFile)
+			internal.MkdirAll(filepath.Dir(pathname), 0700)
+			baseRecalibratorTables.PrintBQSRTables(pathname)
+		})
+		phase++
+		timedRun(timed, profile, "Apply BQSR.", phase, func() {
+			n := len(filteredReads.Alignments) / 4096
+			if m := 2 * runtime.GOMAXPROCS(0); m > n {
+				n = m
 			}
-		}()
-		return filteredReads.RunPipeline(output, filters2, sortingOrder)
+			filteredReads.NofBatches(n)
+			filteredReads.RunPipeline(filteredReads, []sam.Filter{baseRecalibratorTables.ApplyBQSR(quantizeLevels, sqqList, maxCycle)}, sortingOrder)
+		})
+		baseRecalibratorTables = nil
+		go runtime.GC()
+	}
+	runRemainingPipeline(
+		phase, fileOut, outFormat, sortingOrder,
+		filteredReads, filters2,
+		hc, sampleName, vcfOutput, bedRegions, spreadFile,
+		timed, profile)
+}
+
+func runBestPracticesPipelineWithBQSRApplyOnly(
+	input, output, outFormat string, sortingOrder sam.SortingOrder,
+	filters []sam.Filter, baseRecalibratorTables *filters.BaseRecalibratorTables, recalFile string,
+	timed bool, profile string) {
+	// Finalize BQSR tables + log recal file
+	timedRun(timed, profile, "Finalize BQSR tables", 1, func() {
+		baseRecalibratorTables.FinalizeBQSRTables()
+		pathname := internal.FilepathAbs(recalFile)
+		internal.MkdirAll(filepath.Dir(pathname), 0700)
+		baseRecalibratorTables.PrintBQSRTables(pathname)
+	})
+	baseRecalibratorTables = nil
+	go runtime.GC()
+	timedRun(timed, profile, "Running pipeline.", 2, func() {
+		input := sam.Open(internal.FilepathAbs(input))
+		defer input.Close()
+		pathname := internal.FilepathAbs(output)
+		internal.MkdirAll(filepath.Dir(pathname), 0700)
+		output := sam.Create(pathname, outFormat)
+		defer output.Close()
+		input.RunPipeline(output, filters, sortingOrder)
 	})
 }
 
-func runBestPracticesPipelineIntermediateSamWithBQSRApplyOnly(input, output string, sortingOrder sam.SortingOrder, filters []sam.Filter, baseRecalibratorTables filters.BaseRecalibratorTables, recalFile string, timed bool, profile string) error {
+func runBestPracticesPipelineIntermediateSamWithBQSRApplyOnly(
+	input, output, outFormat string, sortingOrder sam.SortingOrder,
+	filters []sam.Filter, baseRecalibratorTables *filters.BaseRecalibratorTables, recalFile string,
+	hc *filters.HaplotypeCaller, sampleName, vcfOutput string, bedRegions bed.Bed, spreadFile string,
+	timed bool, profile string) {
 	// Finalize BQSR tables + log recal file
-	err := timedRun(timed, profile, "Finalize BQSR tables", 1, func() error {
+	timedRun(timed, profile, "Finalize BQSR tables", 1, func() {
 		baseRecalibratorTables.FinalizeBQSRTables()
-		pathname, err := filepath.Abs(recalFile)
-		if err != nil {
-			return err
-		}
-		err = os.MkdirAll(filepath.Dir(pathname), 0700)
-		if err != nil {
-			return err
-		}
-		return baseRecalibratorTables.PrintBQSRTables(recalFile)
+		pathname := internal.FilepathAbs(recalFile)
+		internal.MkdirAll(filepath.Dir(pathname), 0700)
+		baseRecalibratorTables.PrintBQSRTables(pathname)
 	})
-	if err != nil {
-		return err
-	}
-	return timedRun(timed, profile, "Running pipeline.", 2, func() (err error) {
-		pathname, err := filepath.Abs(input)
-		if err != nil {
-			return err
-		}
-		input, err := sam.Open(pathname)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			nerr := input.Close()
-			if err == nil {
-				err = nerr
-			}
-		}()
-		pathname, err = filepath.Abs(output)
-		if err != nil {
-			return err
-		}
-		err = os.MkdirAll(filepath.Dir(pathname), 0700)
-		if err != nil {
-			return err
-		}
-		output, err := sam.Create(pathname)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			nerr := output.Close()
-			if err == nil {
-				err = nerr
-			}
-		}()
-		return input.RunPipeline(output, filters, sortingOrder)
+	baseRecalibratorTables = nil
+	go runtime.GC()
+	filteredReads := sam.NewSam()
+	timedRun(timed, profile, "Running pipeline.", 2, func() {
+		input := sam.Open(internal.FilepathAbs(input))
+		defer input.Close()
+		input.RunPipeline(filteredReads, filters, sortingOrder)
 	})
+	filters = nil
+	go runtime.GC()
+	runRemainingPipeline(
+		3, output, outFormat, sortingOrder,
+		filteredReads, nil,
+		hc, sampleName, vcfOutput, bedRegions, spreadFile,
+		timed, profile)
 }
 
-func runBestPracticesPipelineIntermediateSamWithBQSRCalculateTablesOnly(fileIn, fileOut string, sortingOrder sam.SortingOrder, filters1, filters2 []sam.Filter, opticalDuplicateFilter func(reads *sam.Sam) error, baseRecalibrator *filters.BaseRecalibrator, tableFile string, maxCycle int, timed bool, profile string) error {
+func runBestPracticesPipelineIntermediateSamWithBQSRCalculateTablesOnly(
+	fileIn, fileOut, outFormat string, sortingOrder sam.SortingOrder,
+	filters1, filters2 []sam.Filter,
+	opticalDuplicateFilter func(reads *sam.Sam),
+	baseRecalibrator *filters.BaseRecalibrator, tableFile string, maxCycle int,
+	bedRegions bed.Bed, timed bool, profile string) {
 	// Input and first filters and sorting
 	filteredReads := sam.NewSam()
 	phase := int64(1)
-	err := timedRun(timed, profile, "Reading SAM into memory and applying filters.", phase, func() (err error) {
-		pathname, err := filepath.Abs(fileIn)
-		if err != nil {
-			return err
-		}
-		input, err := sam.Open(pathname)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			nerr := input.Close()
-			if err == nil {
-				err = nerr
-			}
-		}()
-		return input.RunPipeline(filteredReads, filters1, sortingOrder)
+	timedRun(timed, profile, "Reading SAM into memory and applying filters.", phase, func() {
+		input := sam.Open(internal.FilepathAbs(fileIn))
+		defer input.Close()
+		input.RunPipeline(filteredReads, filters1, sortingOrder)
 	})
-	if err != nil {
-		return err
-	}
+	filters1 = nil
 	go runtime.GC()
 	// Marking optical duplicates
 	if opticalDuplicateFilter != nil {
 		phase++
-		err = timedRun(timed, profile, "Marking optical duplicates.", phase, func() (err error) {
-			return opticalDuplicateFilter(filteredReads)
+		timedRun(timed, profile, "Marking optical duplicates.", phase, func() {
+			opticalDuplicateFilter(filteredReads)
 		})
-		if err != nil {
-			return err
-		}
+		opticalDuplicateFilter = nil
+		go runtime.GC()
+	}
+	// Filter out reads based on target regions
+	if bedRegions != nil {
+		phase++
+		targetRegionsFilter := filters.RemoveNonOverlappingReads(bedRegions)
+		timedRun(timed, profile, "Filtering out reads not in target regions.", phase, func() {
+			filteredReads.RunPipeline(filteredReads, []sam.Filter{targetRegionsFilter}, sortingOrder)
+		})
+		targetRegionsFilter = nil
 		go runtime.GC()
 	}
 	// Base recalibration
-	var baseRecalibratorTables filters.BaseRecalibratorTables
+	var baseRecalibratorTables *filters.BaseRecalibratorTables
 	phase++
-	err = timedRun(timed, profile, "Base recalibration", phase, func() error {
-		baseRecalibratorTables = baseRecalibrator.RecalibrateWithMaxCycle(filteredReads, maxCycle)
-		return baseRecalibratorTables.Err()
+	timedRun(timed, profile, "Base recalibration", phase, func() {
+		baseRecalibratorTables = baseRecalibrator.Recalibrate(filteredReads, maxCycle)
 	})
-	if err != nil {
-		return err
-	}
 	// Print bqsr table to file
 	phase++
-	err = timedRun(timed, profile, "Print intermediate BQSR tables", phase, func() error {
-		pathname, err := filepath.Abs(tableFile)
-		if err != nil {
-			return err
-		}
-		err = os.MkdirAll(filepath.Dir(pathname), 0700)
-		if err != nil {
-			return err
-		}
-		return baseRecalibratorTables.PrintBQSRTablesToIntermediateFile(pathname)
+	timedRun(timed, profile, "Print intermediate BQSR tables", phase, func() {
+		pathname := internal.FilepathAbs(tableFile)
+		internal.MkdirAll(filepath.Dir(pathname), 0700)
+		baseRecalibratorTables.PrintBQSRTablesToIntermediateFile(pathname)
 	})
-	if err != nil {
-		return err
-	}
+	baseRecalibratorTables = nil
 	go runtime.GC()
 	// Write output to file
 	phase++
-	return timedRun(timed, profile, "Write to file.", phase, func() (err error) {
-		pathname, err := filepath.Abs(fileOut)
-		if err != nil {
-			return err
-		}
-		err = os.MkdirAll(filepath.Dir(pathname), 0700)
-		if err != nil {
-			return err
-		}
-		output, err := sam.Create(pathname)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			nerr := output.Close()
-			if err == nil {
-				err = nerr
-			}
-		}()
+	timedRun(timed, profile, "Write to file.", phase, func() {
+		pathname := internal.FilepathAbs(fileOut)
+		internal.MkdirAll(filepath.Dir(pathname), 0700)
+		output := sam.Create(pathname, outFormat)
+		defer output.Close()
 		if sortingOrder != sam.Unsorted {
 			sortingOrder = sam.Keep
 		}
-		return filteredReads.RunPipeline(output, filters2, sortingOrder)
+		filteredReads.RunPipeline(output, filters2, sortingOrder)
 	})
 }
 
 // Run the best practices pipeline. Version that doesn't use an
 // intermediate slice when neither sorting nor mark-duplicates are
 // needed.
-func runBestPracticesPipeline(fileIn, fileOut string, sortingOrder sam.SortingOrder, filters []sam.Filter, timed bool, profile string) error {
-	return timedRun(timed, profile, "Running pipeline.", 1, func() (err error) {
-		pathname, err := filepath.Abs(fileIn)
-		if err != nil {
-			return err
-		}
-		input, err := sam.Open(pathname)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			nerr := input.Close()
-			if err == nil {
-				err = nerr
-			}
-		}()
-		pathname, err = filepath.Abs(fileOut)
-		if err != nil {
-			return err
-		}
-		err = os.MkdirAll(filepath.Dir(pathname), 0700)
-		if err != nil {
-			return err
-		}
-		output, err := sam.Create(pathname)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			nerr := output.Close()
-			if err == nil {
-				err = nerr
-			}
-		}()
-		return input.RunPipeline(output, filters, sortingOrder)
+func runBestPracticesPipeline(
+	fileIn, fileOut, outFormat string, sortingOrder sam.SortingOrder,
+	filters []sam.Filter,
+	timed bool, profile string) {
+	timedRun(timed, profile, "Running pipeline.", 1, func() {
+		input := sam.Open(internal.FilepathAbs(fileIn))
+		defer input.Close()
+		pathname := internal.FilepathAbs(fileOut)
+		internal.MkdirAll(filepath.Dir(pathname), 0700)
+		output := sam.Create(pathname, outFormat)
+		defer output.Close()
+		input.RunPipeline(output, filters, sortingOrder)
 	})
 }
 
 // FilterHelp is the help string for this command.
 const FilterHelp = "\nfilter parameters:\n" +
 	"elprep filter sam-file sam-output-file\n" +
+	"[--output-type [sam | bam]]\n" +
 	"[--replace-reference-sequences sam-file]\n" +
 	"[--filter-unmapped-reads]\n" +
 	"[--filter-unmapped-reads-strict]\n" +
@@ -408,26 +374,36 @@ const FilterHelp = "\nfilter parameters:\n" +
 	"[--keep-optional-fields [none | list]]\n" +
 	"[--sorting-order [keep | unknown | unsorted | queryname | coordinate]]\n" +
 	"[--clean-sam]\n" +
+	"[--reference elfasta]\n" +
 	"[--bqsr recal-file]\n" +
-	"[--bqsr-reference elfasta]\n" +
 	"[--quantize-levels nr]\n" +
 	"[--sqq list]\n" +
 	"[--max-cycle nr]\n" +
 	"[--known-sites list]\n" +
+	"[--haplotypecaller vcf-file]\n" +
+	"[--reference-confidence [GVCF | BP_RESOLUTION | NONE]\n" +
+	"[--sample-name sample-name]\n" +
+	"[--activity-profile igv-file]\n" +
+	"[--assembly-regions igv-file]\n" +
+	"[--assembly-region-padding nr]\n" +
+	"[--target-regions]\n" +
 	"[--nr-of-threads nr]\n" +
 	"[--timed]\n" +
 	"[--log-path path]\n"
 
-	//FilterExtendedHelp is the extended help string for this command.
+// FilterExtendedHelp is the extended help string for this command.
 const FilterExtendedHelp = FilterHelp +
 	"[--mark-optical-duplicates-intermediate file]\n" +
 	"[--bqsr-tables-only table-file]\n" +
 	"[--bqsr-apply path]\n" +
-	"[--recal-file file]\n"
+	"[--recal-file file]\n" +
+	"[--spread-file file]\n" +
+	"[--pg-cmd-line cmd]\n"
 
 // Filter implements the elprep filter command.
-func Filter() error {
+func Filter() {
 	var (
+		outputType                                               string
 		replaceReferenceSequences                                string
 		filterUnmappedReads, filterUnmappedReadsStrict           bool
 		filterMappingQuality                                     int
@@ -435,7 +411,7 @@ func Filter() error {
 		filterNonExactMappingReadsStrict                         bool
 		filterNonOverlappingReads                                string
 		replaceReadGroup                                         string
-		markDuplicates, markDuplicatesDet, removeDuplicates      bool
+		markDuplicates, removeDuplicates                         bool
 		markOpticalDuplicates, markOpticalDuplicatesIntermediate string
 		opticalDuplicatesPixelDistance                           int
 		removeOptionalFields                                     string
@@ -443,7 +419,6 @@ func Filter() error {
 		sortingOrderString                                       string
 		cleanSam                                                 bool
 		bqsr                                                     string
-		referenceElFasta                                         string
 		bqsrTablesOnly                                           string
 		bqsrApplyFromTables                                      string
 		quantizeLevels                                           int
@@ -451,16 +426,27 @@ func Filter() error {
 		maxCycle                                                 int
 		knownSites                                               string
 		recalFile                                                string
-		deterministic                                            bool
 		nrOfThreads                                              int
 		timed                                                    bool
 		profile                                                  string
 		logPath                                                  string
 		renameChromosomes                                        bool
+		referenceElFasta                                         string
+		vcfOutput                                                string
+		assemblyRegionPadding                                    int
+		referenceConfidence                                      string
+		sampleName                                               string
+		activityProfile, assemblyRegions                         string
+		targetRegions                                            string
+		spreadFile                                               string
+		pgCmdLine                                                string
+		randomSeedFile                                           string
+		clearDuplicateFlag                                       bool
 	)
 
 	var flags flag.FlagSet
 
+	flags.StringVar(&outputType, "output-type", "", "format of the output file")
 	flags.StringVar(&replaceReferenceSequences, "replace-reference-sequences", "", "replace the existing header by a new one")
 	flags.BoolVar(&filterUnmappedReads, "filter-unmapped-reads", false, "remove all unmapped alignments")
 	flags.BoolVar(&filterUnmappedReadsStrict, "filter-unmapped-reads-strict", false, "remove all unmapped alignments, taking also POS and RNAME into account")
@@ -473,7 +459,6 @@ func Filter() error {
 	flags.StringVar(&markOpticalDuplicates, "mark-optical-duplicates", "", "mark optical duplicates")
 	flags.StringVar(&markOpticalDuplicatesIntermediate, "mark-optical-duplicates-intermediate", "", "mark optical duplicates intermediate file (only for split files)")
 	flags.IntVar(&opticalDuplicatesPixelDistance, "optical-duplicates-pixel-distance", 100, "pixel distance used for optical duplicate marking")
-	flags.BoolVar(&markDuplicatesDet, "mark-duplicates-deterministic", false, "mark duplicates deterministically")
 	flags.BoolVar(&removeDuplicates, "remove-duplicates", false, "remove duplicates")
 	flags.StringVar(&removeOptionalFields, "remove-optional-fields", "", "remove the given optional fields")
 	flags.StringVar(&keepOptionalFields, "keep-optional-fields", "", "remove all except for the given optional fields")
@@ -482,18 +467,32 @@ func Filter() error {
 	flags.StringVar(&bqsr, "bqsr", "", "base quality score recalibration")
 	flags.StringVar(&bqsrTablesOnly, "bqsr-tables-only", "", "base quality score recalibration table calculation (only with split/merge)")
 	flags.StringVar(&bqsrApplyFromTables, "bqsr-apply", "", "base quality score recalibration application (only with split/merge)")
-	flags.StringVar(&referenceElFasta, "bqsr-reference", "", "reference used for base quality score recalibration (elfasta format)")
 	flags.IntVar(&quantizeLevels, "quantize-levels", 0, "number of levels to be used for quantizing recalibrated base qualities (only with --bqsr)")
 	flags.StringVar(&sqq, "sqq", "", "levels to be used for statically quantizing recalibrated base qualities (only with --bqsr)")
 	flags.IntVar(&maxCycle, "max-cycle", 500, "maximum cycle length (only with --bqsr)")
 	flags.StringVar(&knownSites, "known-sites", "", "list of vcf files containing known sites for base recalibration (only with --bqsr)")
 	flags.StringVar(&recalFile, "recal-file", "", "log file for recalibration tables (only with --bqsr-apply)")
-	flags.BoolVar(&deterministic, "deterministic", false, "run elprep deterministically")
 	flags.IntVar(&nrOfThreads, "nr-of-threads", 0, "number of worker threads")
 	flags.BoolVar(&timed, "timed", false, "measure the runtime")
 	flags.StringVar(&profile, "profile", "", "write a runtime profile to the specified file(s)")
 	flags.StringVar(&logPath, "log-path", "", "write log files to the specified directory")
 	flags.BoolVar(&renameChromosomes, "rename-chromosomes", false, "")
+	flags.StringVar(&referenceElFasta, "reference", "", "reference used for base quality score recalibration and haplotypecaller (elfasta format)")
+	flags.StringVar(&vcfOutput, "haplotypecaller", "", "invoke the haplotypecaller")
+	flags.IntVar(&assemblyRegionPadding, "assembly-region-padding", 100, "padding around assembly regions during variant calling (only with --haplotypecaller)")
+	flags.StringVar(&referenceConfidence, "reference-confidence", "GVCF", "reference confidence mode (GVCF, BP_RESOLUTION, NONE) (only with --haplotypecaller)")
+	flags.StringVar(&sampleName, "sample-name", "", "sample name to use in haplotypecaller (only with --haplotypecaller)")
+	flags.StringVar(&activityProfile, "activity-profile", "", "IGV file to write the activity profile to (only with --haplotypecaller)")
+	flags.StringVar(&assemblyRegions, "assembly-regions", "", "IGV file to write the assembly regions to (only with --haplotypecaller)")
+	flags.StringVar(&targetRegions, "target-regions", "", "bed file specifying which regions in the genome to look at (only with --bqsr and --haplotypecaller)")
+	flags.StringVar(&spreadFile, "spread-file", "", "spread file for calling haplotype caller on a split file (only with --haplotypecaller)")
+	flags.StringVar(&pgCmdLine, "pg-cmd-line", "", "program command line to be stored in the header (only for sfm subcommands)")
+	if internal.PedanticMode {
+		flags.StringVar(&randomSeedFile, "random-seed-file", "", "random seed file (only for sfm subcommands in pedantic mode")
+	}
+	flags.BoolVar(&clearDuplicateFlag, "clear-duplicate-flag", false, "clear the duplicate flag in every read")
+
+	flags.StringVar(&internal.BQSRTablenamePrefix, "bqsr-tablename-prefix", "GATK", "prefix to be used in BQSR table reports")
 
 	parseFlags(flags, 4, FilterHelp)
 
@@ -505,6 +504,10 @@ func Filter() error {
 	// sanity checks
 
 	var sanityChecksFailed bool
+
+	if !checkOutputFormat(outputType) {
+		sanityChecksFailed = true
+	}
 
 	if !checkExist("", input) {
 		sanityChecksFailed = true
@@ -534,7 +537,7 @@ func Filter() error {
 	if bqsrApplyFromTables != "" && !checkExist("--bqsr-apply", bqsrApplyFromTables) {
 		sanityChecksFailed = true
 	}
-	if referenceElFasta != "" && !checkExist("--bqsr-reference", referenceElFasta) {
+	if referenceElFasta != "" && !checkExist("--reference", referenceElFasta) {
 		sanityChecksFailed = true
 	}
 
@@ -580,11 +583,6 @@ func Filter() error {
 		log.Println("Error: Invalid nr-of-threads: ", nrOfThreads)
 	}
 
-	if markDuplicatesDet {
-		log.Println("--mark-duplicates-deterministic is deprecated; just use --mark-duplicates instead.")
-		markDuplicates = true
-	}
-
 	if markOpticalDuplicates != "" && !markDuplicates {
 		sanityChecksFailed = true
 		log.Println("Error: Cannot use --mark-optical-duplicates without also using --mark-duplicates.")
@@ -628,6 +626,71 @@ func Filter() error {
 		sanityChecksFailed = true
 	}
 
+	if vcfOutput == "" {
+		switch output {
+		case "/dev/null", "/dev/zero":
+			sanityChecksFailed = true
+			log.Println("Error: Neither writing a SAM output, nor a VCF output.")
+		}
+	} else if !checkCreate("--haplotypecaller", vcfOutput) || !checkHaplotypecallerOptions(referenceElFasta) {
+		sanityChecksFailed = true
+	}
+
+	if activityProfile != "" && !checkCreate("--activity-profile", activityProfile) {
+		sanityChecksFailed = true
+	}
+
+	if assemblyRegions != "" && !checkCreate("--assembly-regions", assemblyRegions) {
+		sanityChecksFailed = true
+	}
+
+	referenceConfidence = strings.ToUpper(referenceConfidence)
+	switch referenceConfidence {
+	case "GVCF", "BP_RESOLUTION", "NONE":
+	default:
+		sanityChecksFailed = true
+		log.Println("Error: --reference-confidence must be one of GVCF, BP_RESOLUTION, or NONE")
+	}
+
+	if assemblyRegionPadding < 0 {
+		sanityChecksFailed = true
+		log.Println("Error: --assembly-region-padding must be >= 0")
+	} else if assemblyRegionPadding > math.MaxInt32 {
+		sanityChecksFailed = true
+		log.Println("Error: --assembly-region-padding to large")
+	}
+
+	if targetRegions != "" {
+		if bqsr == "" && vcfOutput == "" && bqsrTablesOnly == "" {
+			sanityChecksFailed = true
+			log.Println("Error: --target-regions used without --bqsr or --bqsr-tables-only or --haplotypecaller")
+		}
+	}
+
+	if targetRegions != "" && filterNonOverlappingReads != "" {
+		if targetRegions != filterNonOverlappingReads {
+			log.Println("Warning: using --filter-non-overlapping-reads and --target-regions with different .bed files.")
+		}
+	}
+
+	if filterNonOverlappingReads != "" && vcfOutput == "" && targetRegions == "" {
+		log.Println("Warning: using --filter-non-overlapping-reads and --haplotypecaller, but not --target-regions. Haplotypecaller will run for full genome.")
+	}
+
+	if spreadFile != "" {
+		if vcfOutput == "" {
+			sanityChecksFailed = true
+			log.Println("Error: Cannot use --spread-file without --haplotypecaller")
+		}
+		if !checkExist("--spread-file", spreadFile) {
+			sanityChecksFailed = true
+		}
+	}
+
+	if randomSeedFile != "" && !checkExist("--random-seed-file", randomSeedFile) {
+		sanityChecksFailed = true
+	}
+
 	if sanityChecksFailed {
 		fmt.Fprint(os.Stderr, FilterHelp)
 		os.Exit(1)
@@ -637,6 +700,10 @@ func Filter() error {
 
 	var command bytes.Buffer
 	fmt.Fprint(&command, os.Args[0], " filter ", input, " ", output)
+
+	if outputType != "" {
+		fmt.Fprint(&command, " --output-type ", outputType)
+	}
 
 	var filters1, filters2 []sam.Filter
 
@@ -664,14 +731,26 @@ func Filter() error {
 		fmt.Fprint(&command, " --filter-non-exact-mapping-reads-strict")
 	}
 
+	var filterNonOverlappingReadsBed bed.Bed
+
 	if filterNonOverlappingReads != "" {
-		parsedBed, err := bed.ParseBed(filterNonOverlappingReads)
-		if err != nil {
-			return err
-		}
-		filterNonOverlappingReadsFilter := filters.RemoveNonOverlappingReads(parsedBed)
+		filterNonOverlappingReadsBed = bed.ParseBed(filterNonOverlappingReads)
+		filterNonOverlappingReadsFilter := filters.RemoveNonOverlappingReads(filterNonOverlappingReadsBed)
 		filters1 = append(filters1, filterNonOverlappingReadsFilter)
 		fmt.Fprint(&command, " --filter-non-overlapping-reads ", filterNonOverlappingReads)
+	}
+
+	if clearDuplicateFlag {
+		filters1 = append(filters1, filters.ClearDuplicateFlag)
+	}
+
+	var targetRegionsBed bed.Bed
+
+	if targetRegions != "" {
+		fmt.Fprint(&command, " --target-regions ", targetRegions)
+		// parse the bed, used for haplotype-caller and/or bqsr
+		targetRegionsBed = bed.ParseBed(targetRegions)
+		// filter only executed after mark optical duplicates
 	}
 
 	if renameChromosomes {
@@ -685,25 +764,18 @@ func Filter() error {
 	}
 
 	if replaceReferenceSequences != "" {
-		replaceReferenceSequencesFilter, err := filters.ReplaceReferenceSequenceDictionaryFromSamFile(replaceReferenceSequences)
-		if err != nil {
-			return err
-		}
-		filters1 = append(filters1, replaceReferenceSequencesFilter)
+		filters1 = append(filters1, filters.ReplaceReferenceSequenceDictionaryFromSamFile(replaceReferenceSequences))
 		fmt.Fprint(&command, " --replace-reference-sequences ", replaceReferenceSequences)
 	}
 
 	if replaceReadGroup != "" {
-		record, err := sam.ParseHeaderLineFromString(replaceReadGroup)
-		if err != nil {
-			return err
-		}
-		filters1 = append(filters1, filters.AddOrReplaceReadGroup(record))
-		fmt.Fprint(&command, " --replace-read-group ", replaceReadGroup)
+		filters1 = append(filters1, filters.AddOrReplaceReadGroup(sam.ParseHeaderLineFromString(replaceReadGroup)))
+		fmt.Fprint(&command, " --replace-read-group \"", replaceReadGroup, "\"")
 	}
 
-	if (replaceReferenceSequences != "") || markDuplicates ||
-		(sortingOrder == sam.Coordinate) || (sortingOrder == sam.Queryname) {
+	if replaceReferenceSequences != "" || markDuplicates ||
+		sortingOrder == sam.Coordinate || sortingOrder == sam.Queryname ||
+		vcfOutput != "" {
 		filters1 = append(filters1, filters.AddREFID)
 	}
 
@@ -717,27 +789,21 @@ func Filter() error {
 		fmt.Fprint(&command, " --mark-duplicates")
 	}
 
-	var opticalDuplicatesFilter func(alns *sam.Sam) error
+	var opticalDuplicatesFilter func(alns *sam.Sam)
 
 	if markOpticalDuplicates != "" {
-		opticalDuplicatesFilter = func(alns *sam.Sam) error {
-			ctr := filters.MarkOpticalDuplicatesWithPixelDistance(alns, pairs, deterministic, opticalDuplicatesPixelDistance)
-			if err := ctr.Err(); err != nil {
-				return err
-			}
-			return filters.PrintDuplicatesMetrics(input, output, markOpticalDuplicates, removeDuplicates, ctr)
+		opticalDuplicatesFilter = func(alns *sam.Sam) {
+			ctr := filters.MarkOpticalDuplicates(alns, pairs, opticalDuplicatesPixelDistance)
+			filters.PrintDuplicatesMetrics(markOpticalDuplicates, command.String(), ctr)
 		}
 		fmt.Fprint(&command, " --mark-optical-duplicates ", markOpticalDuplicates)
 		fmt.Fprint(&command, " --optical-duplicates-pixel-distance ", opticalDuplicatesPixelDistance)
 	}
 
 	if markOpticalDuplicatesIntermediate != "" {
-		opticalDuplicatesFilter = func(alns *sam.Sam) error {
-			ctr := filters.MarkOpticalDuplicatesWithPixelDistance(alns, pairs, deterministic, opticalDuplicatesPixelDistance)
-			if err := ctr.Err(); err != nil {
-				return err
-			}
-			return filters.PrintDuplicatesMetricsToIntermediateFile(markOpticalDuplicatesIntermediate, ctr)
+		opticalDuplicatesFilter = func(alns *sam.Sam) {
+			ctr := filters.MarkOpticalDuplicates(alns, pairs, opticalDuplicatesPixelDistance)
+			filters.PrintDuplicatesMetricsToIntermediateFile(markOpticalDuplicatesIntermediate, ctr)
 		}
 		fmt.Fprint(&command, " --mark-optical-duplicates-intermediate ", markOpticalDuplicatesIntermediate)
 		fmt.Fprint(&command, " --optical-duplicates-pixel-distance ", opticalDuplicatesPixelDistance)
@@ -758,7 +824,6 @@ func Filter() error {
 	if bqsr != "" {
 		// filters created later
 		fmt.Fprint(&command, " --bqsr ", bqsr)
-		fmt.Fprint(&command, " --bqsr-reference ", referenceElFasta)
 		fmt.Fprint(&command, " --quantize-levels ", quantizeLevels)
 		fmt.Fprint(&command, " --max-cycle ", maxCycle)
 	}
@@ -766,7 +831,6 @@ func Filter() error {
 	if bqsrTablesOnly != "" {
 		// filters created later
 		fmt.Fprint(&command, " --bqsr-tables-only ", bqsrTablesOnly)
-		fmt.Fprint(&command, " --bqsr-reference ", referenceElFasta)
 		fmt.Fprint(&command, " --max-cycle ", maxCycle)
 	}
 
@@ -777,18 +841,39 @@ func Filter() error {
 		fmt.Fprint(&command, " --max-cycle ", maxCycle)
 	}
 
+	if vcfOutput != "" {
+		fmt.Fprint(&command, " --haplotypecaller ", vcfOutput)
+		fmt.Fprint(&command, " --reference-confidence ", referenceConfidence)
+		if sampleName != "" {
+			fmt.Fprint(&command, " --sample-name ", sampleName)
+		}
+		if activityProfile != "" {
+			fmt.Fprint(&command, " --activity-profile ", activityProfile)
+		}
+		if assemblyRegions != "" {
+			fmt.Fprint(&command, " --assembly-regions ", assemblyRegions)
+		}
+		fmt.Fprint(&command, " --assembly-region-padding ", assemblyRegionPadding)
+	}
+
+	if bqsr != "" || bqsrTablesOnly != "" || vcfOutput != "" {
+		fmt.Fprint(&command, " --reference ", referenceElFasta)
+	}
+
+	if spreadFile != "" {
+		fmt.Fprint(&command, " --spread-file ", spreadFile)
+	}
+
 	var sqqList []uint8
 
 	if (bqsr != "" || (bqsrApplyFromTables != "")) && sqq != "" {
 		sqqs := strings.Split(sqq, ",")
 		for _, sqq := range sqqs {
-			if i, err := strconv.ParseUint(strings.TrimSpace(sqq), 10, 32); err != nil {
-				return err
-			} else if i > 93 {
-				return fmt.Errorf("invalid sqq value %v", i)
-			} else {
-				sqqList = append(sqqList, uint8(i))
+			i := internal.ParseUint(strings.TrimSpace(sqq), 10, 32)
+			if i > 93 {
+				log.Panicf("invalid sqq value %v", i)
 			}
+			sqqList = append(sqqList, uint8(i))
 		}
 		fmt.Fprint(&command, " --sqq ", sqq)
 	}
@@ -832,10 +917,6 @@ func Filter() error {
 
 	fmt.Fprint(&command, " --sorting-order ", sortingOrder)
 
-	if deterministic {
-		fmt.Fprint(&command, " --deterministic")
-	}
-
 	if nrOfThreads > 0 {
 		runtime.GOMAXPROCS(nrOfThreads)
 		fmt.Fprint(&command, " --nr-of-threads ", nrOfThreads)
@@ -853,51 +934,117 @@ func Filter() error {
 		fmt.Fprint(&command, " --log-path ", logPath)
 	}
 
+	if randomSeedFile != "" {
+		fmt.Fprint(&command, " --random-seed-file ", randomSeedFile)
+	}
+
+	if pgCmdLine != "" {
+		fmt.Fprint(&command, " --pg-cmd-line ", pgCmdLine)
+	}
+
 	commandString := command.String()
 
+	pgCmdString := commandString
+	if pgCmdLine != "" {
+		pgCmdString = pgCmdLine
+	}
 	filters1 = append([]sam.Filter{filters.AddPGLine(utils.StringMap{
-		"ID": ProgramName + " " + ProgramVersion,
-		"PN": ProgramName,
-		"VN": ProgramVersion,
-		"DS": ProgramURL,
-		"CL": commandString,
+		"ID": utils.ProgramName + " " + utils.ProgramVersion,
+		"PN": utils.ProgramName,
+		"VN": utils.ProgramVersion,
+		"DS": utils.ProgramURL,
+		"CL": pgCmdString,
 	})}, filters1...)
 
 	// executing command
 
 	log.Println("Executing command:\n", commandString)
 
-	if bqsr != "" {
-		recalFile, err := filepath.Abs(bqsr)
-		if err != nil {
-			return err
-		}
-		baseRecalibrator := filters.NewBaseRecalibrator(knownSitesList, referenceElFasta)
-		return runBestPracticesPipelineIntermediateSamWithBQSR(input, output, sortingOrder, filters1, filters2, opticalDuplicatesFilter, baseRecalibrator, quantizeLevels, sqqList, maxCycle, recalFile, timed, profile)
+	var referenceMap *fasta.MappedFasta
+	if referenceElFasta != "" {
+		referenceMap = fasta.OpenElfasta(referenceElFasta)
+		defer referenceMap.Close()
 	}
 
 	if bqsrTablesOnly != "" {
-		baseRecalibrator := filters.NewBaseRecalibrator(knownSitesList, referenceElFasta)
-		return runBestPracticesPipelineIntermediateSamWithBQSRCalculateTablesOnly(input, output, sortingOrder, filters1, filters2, opticalDuplicatesFilter, baseRecalibrator, bqsrTablesOnly, maxCycle, timed, profile)
+		baseRecalibrator := filters.NewBaseRecalibrator(knownSitesList, referenceMap)
+		runBestPracticesPipelineIntermediateSamWithBQSRCalculateTablesOnly(
+			input, output, outputType, sortingOrder,
+			filters1, filters2, opticalDuplicatesFilter,
+			baseRecalibrator, bqsrTablesOnly, maxCycle, targetRegionsBed,
+			timed, profile)
+		return
 	}
 
 	if bqsrApplyFromTables != "" {
-		recalFile, err := filepath.Abs(recalFile)
-		if err != nil {
-			return err
+		recalFile := internal.FilepathAbs(recalFile)
+		baseRecalibratorTables := filters.LoadAndCombineBQSRTables(bqsrApplyFromTables)
+		filters2 = append(filters2, baseRecalibratorTables.ApplyBQSR(quantizeLevels, sqqList, maxCycle))
+		if vcfOutput != "" {
+			var activityProfileOut, assemblyRegionsOut io.WriteCloser
+			if activityProfile != "" {
+				activityProfileOut = internal.FileCreate(activityProfile)
+				defer internal.Close(activityProfileOut)
+			}
+			if assemblyRegions != "" {
+				assemblyRegionsOut = internal.FileCreate(assemblyRegions)
+				defer internal.Close(assemblyRegionsOut)
+			}
+			haplotypeCaller := filters.NewHaplotypeCaller(
+				referenceMap, referenceConfidence, int32(assemblyRegionPadding),
+				activityProfileOut, assemblyRegionsOut,
+				randomSeedFile, pgCmdString,
+			)
+			defer haplotypeCaller.Close()
+			runBestPracticesPipelineIntermediateSamWithBQSRApplyOnly(
+				input, output, outputType, sortingOrder,
+				append(filters2, filters.AddREFID), baseRecalibratorTables, recalFile,
+				haplotypeCaller, sampleName, vcfOutput, targetRegionsBed, spreadFile,
+				timed, profile)
+			return
 		}
-		baseRecalibratorTables, err := filters.LoadAndCombineBQSRTables(bqsrApplyFromTables)
-		if err != nil {
-			return err
-		}
-		filters2 = append(filters2, baseRecalibratorTables.ApplyBQSRWithMaxCycle(quantizeLevels, sqqList, maxCycle))
-		return runBestPracticesPipelineIntermediateSamWithBQSRApplyOnly(input, output, sortingOrder, filters2, baseRecalibratorTables, recalFile, timed, profile)
+		runBestPracticesPipelineWithBQSRApplyOnly(
+			input, output, outputType, sortingOrder,
+			filters2, baseRecalibratorTables, recalFile,
+			timed, profile)
+		return
 	}
 
 	if markDuplicates ||
-		(sortingOrder == sam.Coordinate) || (sortingOrder == sam.Queryname) ||
-		((replaceReferenceSequences != "") && (sortingOrder == sam.Keep)) {
-		return runBestPracticesPipelineIntermediateSam(input, output, sortingOrder, filters1, filters2, opticalDuplicatesFilter, timed, profile)
+		sortingOrder == sam.Coordinate || sortingOrder == sam.Queryname ||
+		(replaceReferenceSequences != "" && sortingOrder == sam.Keep) ||
+		bqsr != "" || vcfOutput != "" {
+		var baseRecalibrator *filters.BaseRecalibrator
+		if bqsr != "" {
+			baseRecalibrator = filters.NewBaseRecalibrator(knownSitesList, referenceMap)
+		}
+		var haplotypeCaller *filters.HaplotypeCaller
+		if vcfOutput != "" {
+			var activityProfileOut, assemblyRegionsOut io.WriteCloser
+			if activityProfile != "" {
+				activityProfileOut = internal.FileCreate(activityProfile)
+				defer internal.Close(activityProfileOut)
+			}
+			if assemblyRegions != "" {
+				assemblyRegionsOut = internal.FileCreate(assemblyRegions)
+				defer internal.Close(assemblyRegionsOut)
+			}
+			haplotypeCaller = filters.NewHaplotypeCaller(
+				referenceMap, referenceConfidence, int32(assemblyRegionPadding),
+				activityProfileOut, assemblyRegionsOut,
+				randomSeedFile, pgCmdString,
+			)
+			defer haplotypeCaller.Close()
+		}
+		runBestPracticesPipelineIntermediateSam(
+			input, output, outputType, sortingOrder,
+			filters1, filters2,
+			opticalDuplicatesFilter,
+			baseRecalibrator, quantizeLevels, sqqList, maxCycle, internal.FilepathAbs(bqsr),
+			haplotypeCaller, sampleName, vcfOutput, targetRegionsBed, spreadFile,
+			timed, profile)
+		return
 	}
-	return runBestPracticesPipeline(input, output, sortingOrder, append(filters1, filters2...), timed, profile)
+
+	runBestPracticesPipeline(input, output, outputType, sortingOrder, append(filters1, filters2...), timed, profile)
 }

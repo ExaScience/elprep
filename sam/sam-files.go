@@ -1,5 +1,5 @@
-// elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017, 2018 imec vzw.
+// elPrep: a high-performance tool for analyzing SAM/BAM files.
+// Copyright (c) 2017-2020 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -20,30 +20,26 @@ package sam
 
 import (
 	"bufio"
-	"errors"
-	"fmt"
 	"io"
+	"log"
 	"os"
 	"strconv"
 	"strings"
 
-	"github.com/exascience/elprep/v4/utils"
-	"github.com/exascience/elprep/v4/utils/nibbles"
+	"github.com/exascience/elprep/v5/utils/nibbles"
+
+	"github.com/exascience/elprep/v5/internal"
+
+	"github.com/exascience/elprep/v5/utils"
 	"github.com/exascience/pargo/pipeline"
 )
 
 // parseSamHeaderField parses a field in a header line in a SAM file. See
 // http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.3.
 func (sc *stringScanner) parseSamHeaderField() (tag, value string) {
-	if sc.err != nil {
-		return
-	}
 	tag, ok := sc.readUntil(':')
-	if !ok || (len(tag) != 2) {
-		if sc.err == nil {
-			sc.err = fmt.Errorf("invalid field tag %v", tag)
-		}
-		return "", ""
+	if !ok || len(tag) != 2 {
+		log.Panicf("invalid field tag %v", tag)
 	}
 	value, _ = sc.readUntil('\t')
 	return tag, value
@@ -55,17 +51,11 @@ func (sc *stringScanner) parseSamHeaderField() (tag, value string) {
 // The @ record type code must have already been
 // scanned. parseSamHeaderLine cannot be used for @CO lines.
 func (sc *stringScanner) parseSamHeaderLine() utils.StringMap {
-	if sc.err != nil {
-		return nil
-	}
 	record := make(utils.StringMap)
 	for sc.len() > 0 {
 		tag, value := sc.parseSamHeaderField()
 		if !record.SetUniqueEntry(tag, value) {
-			if sc.err == nil {
-				sc.err = fmt.Errorf("duplicate field tag %v in a SAM header line", tag)
-			}
-			break
+			log.Panicf("duplicate field tag %v in a SAM header line", tag)
 		}
 	}
 	return record
@@ -76,17 +66,17 @@ func (sc *stringScanner) parseSamHeaderLine() utils.StringMap {
 //
 // Returns a freshly allocated header and a non-nil error value
 // if an error occurred during parsing.
-func ParseSamHeader(reader *bufio.Reader) (hdr *Header, err error) {
+func ParseSamHeader(reader *bufio.Reader) (hdr *Header) {
 	hdr = NewHeader()
 	var sc stringScanner
 	for first := true; ; first = false {
 		switch data, err := reader.Peek(1); {
 		case err == io.EOF:
-			return hdr, nil
+			return hdr
 		case err != nil:
-			return nil, err
+			log.Panic(err)
 		case data[0] != '@':
-			return hdr, nil
+			return hdr
 		}
 		bytes, err := reader.ReadSlice('\n')
 		length := len(bytes)
@@ -94,14 +84,14 @@ func ParseSamHeader(reader *bufio.Reader) (hdr *Header, err error) {
 		case err == nil:
 			length--
 		case err != io.EOF:
-			return nil, err
+			log.Panic(err)
 		}
 		line := bytes[4:length]
 		sc.reset(line)
 		switch string(bytes[0:4]) {
 		case "@HD\t":
 			if !first {
-				return nil, errors.New("@HD line not in first line when parsing a SAM header")
+				log.Panic("@HD line not in first line when parsing a SAM header")
 			}
 			hdr.HD = sc.parseSamHeaderLine()
 		case "@SQ\t":
@@ -118,15 +108,12 @@ func ParseSamHeader(reader *bufio.Reader) (hdr *Header, err error) {
 				hdr.CO = append(hdr.CO, string(bytes[3:]))
 			case IsHeaderUserTag(code):
 				if bytes[3] != '\t' {
-					return nil, fmt.Errorf("header code %v not followed by a tab when parsing a SAM header", code)
+					log.Panicf("header code %v not followed by a tab when parsing a SAM header", code)
 				}
 				hdr.AddUserRecord(code, sc.parseSamHeaderLine())
 			default:
-				return nil, fmt.Errorf("unknown SAM record type code %v", code)
+				log.Panicf("unknown SAM record type code %v", code)
 			}
-		}
-		if sc.err != nil {
-			return nil, sc.err
 		}
 	}
 }
@@ -135,14 +122,14 @@ func ParseSamHeader(reader *bufio.Reader) (hdr *Header, err error) {
 // efficient than calling ParseHeader and ignoring its result.
 //
 // Returns a non-nil error value if an error occurred.
-func SkipSamHeader(reader *bufio.Reader) (err error) {
+func SkipSamHeader(reader *bufio.Reader) {
 	for {
 		data, err := reader.Peek(1)
 		if err != nil {
 			if err == io.EOF {
-				return nil
+				return
 			}
-			return err
+			log.Panic(err)
 		}
 		if data[0] != '@' {
 			break
@@ -151,23 +138,22 @@ func SkipSamHeader(reader *bufio.Reader) (err error) {
 			byte, err := reader.ReadByte()
 			if err != nil {
 				if err == io.EOF {
-					return nil
+					return
 				}
-				return err
+				log.Panic(err)
 			}
 			if byte == '\n' {
 				break
 			}
 		}
 	}
-	return nil
 }
 
-func splitHeaderField(field string) (tag, value string, err error) {
+func splitHeaderField(field string) (tag, value string) {
 	if field[2] != ':' {
-		return "", "", fmt.Errorf("incorrectly formatted SAM file field %v", field)
+		log.Panicf("incorrectly formatted SAM file field %v", field)
 	}
-	return field[:2], field[3:], nil
+	return field[:2], field[3:]
 }
 
 // ParseHeaderLineFromString parses a SAM header line from a string,
@@ -177,18 +163,16 @@ func splitHeaderField(field string) (tag, value string, err error) {
 //
 // The @ record type code must have already been
 // scanned. ParseHeaderLineFromString cannot be used for @CO lines.
-func ParseHeaderLineFromString(line string) (utils.StringMap, error) {
+func ParseHeaderLineFromString(line string) utils.StringMap {
 	record := make(utils.StringMap)
 	fields := strings.Fields(line)
 	for _, field := range fields {
-		switch tag, value, err := splitHeaderField(field); {
-		case err != nil:
-			return nil, err
-		case !record.SetUniqueEntry(tag, value):
-			return nil, fmt.Errorf("duplicate field tag %v in a SAM header line", tag)
+		tag, value := splitHeaderField(field)
+		if !record.SetUniqueEntry(tag, value) {
+			log.Panicf("duplicate field tag %v in a SAM header line", tag)
 		}
 	}
-	return record, nil
+	return record
 }
 
 // samFieldParser is the signature for all parsers for optional fields in
@@ -199,9 +183,6 @@ type samFieldParser func(*stringScanner, utils.Symbol) (utils.Symbol, interface{
 // a byte. See http://samtools.github.io/hts-specs/SAMv1.pdf - Section
 // 1.5.
 func (sc *stringScanner) parseSamChar(tag utils.Symbol) (utils.Symbol, interface{}) {
-	if sc.err != nil {
-		return tag, nil
-	}
 	value, _ := sc.readByteUntil('\t')
 	return tag, value
 }
@@ -210,39 +191,22 @@ func (sc *stringScanner) parseSamChar(tag utils.Symbol) (utils.Symbol, interface
 // as an int64. See http://samtools.github.io/hts-specs/SAMv1.pdf -
 // Section 1.5.
 func (sc *stringScanner) parseSamInteger(tag utils.Symbol) (utils.Symbol, interface{}) {
-	if sc.err != nil {
-		return tag, nil
-	}
 	value, _ := sc.readUntil('\t')
-	val, err := strconv.ParseInt(value, 10, 64)
-	if (err != nil) && (sc.err == nil) {
-		sc.err = err
-	}
-	return tag, val
+	return tag, internal.ParseInt(value, 10, 64)
 }
 
 // parseSamFloat parses a single tab-delimited float and returns it as a
 // float32. See http://samtools.github.io/hts-specs/SAMv1.pdf -
 // Section 1.5.
 func (sc *stringScanner) parseSamFloat(tag utils.Symbol) (utils.Symbol, interface{}) {
-	if sc.err != nil {
-		return tag, nil
-	}
 	value, _ := sc.readUntil('\t')
-	val, err := strconv.ParseFloat(value, 32)
-	if (err != nil) && (sc.err == nil) {
-		sc.err = err
-	}
-	return tag, float32(val)
+	return tag, float32(internal.ParseFloat(value, 32))
 }
 
 // parseSamString parses a single tab-delimited string and returns
 // it. See http://samtools.github.io/hts-specs/SAMv1.pdf - Section
 // 1.5.
 func (sc *stringScanner) parseSamString(tag utils.Symbol) (utils.Symbol, interface{}) {
-	if sc.err != nil {
-		return tag, nil
-	}
 	value, _ := sc.readUntil('\t')
 	switch tag {
 	case CC, LB, PG, PU, RG:
@@ -256,20 +220,10 @@ func (sc *stringScanner) parseSamString(tag utils.Symbol) (utils.Symbol, interfa
 // and returns it as a ByteArray. See
 // http://samtools.github.io/hts-specs/SAMv1.pdf - Section 1.5.
 func (sc *stringScanner) parseSamByteArray(tag utils.Symbol) (utils.Symbol, interface{}) {
-	if sc.err != nil {
-		return tag, nil
-	}
 	value, _ := sc.readUntil('\t')
 	result := ByteArray(make([]byte, 0, len(value)>>1))
 	for i := 0; i < len(value); i += 2 {
-		val, err := strconv.ParseUint(value[i:i+2], 16, 8)
-		if err != nil {
-			if sc.err == nil {
-				sc.err = err
-			}
-			return tag, nil
-		}
-		result = append(result, byte(val))
+		result = append(result, byte(internal.ParseUint(value[i:i+2], 16, 8)))
 	}
 	return tag, result
 }
@@ -280,29 +234,16 @@ func (sc *stringScanner) parseSamByteArray(tag utils.Symbol) (utils.Symbol, inte
 // []float32. See http://samtools.github.io/hts-specs/SAMv1.pdf -
 // Section 1.5.
 func (sc *stringScanner) parseSamNumericArray(tag utils.Symbol) (utils.Symbol, interface{}) {
-	if sc.err != nil {
-		return tag, nil
-	}
 	ntype, ok := sc.readByteUntil(',')
 	if !ok {
-		if sc.err == nil {
-			sc.err = errors.New("missing entry in numeric array")
-		}
-		return tag, nil
+		log.Panic("missing entry in numeric array")
 	}
 	switch ntype {
 	case 'c':
 		var result []int8
 		for {
 			entry, sep := sc.readUntil2(',', '\t')
-			val, err := strconv.ParseInt(entry, 10, 8)
-			if err != nil {
-				if sc.err == nil {
-					sc.err = err
-				}
-				return tag, nil
-			}
-			result = append(result, int8(val))
+			result = append(result, int8(internal.ParseInt(entry, 10, 8)))
 			if sep != ',' {
 				break
 			}
@@ -312,14 +253,7 @@ func (sc *stringScanner) parseSamNumericArray(tag utils.Symbol) (utils.Symbol, i
 		var result []uint8
 		for {
 			entry, sep := sc.readUntil2(',', '\t')
-			val, err := strconv.ParseUint(entry, 10, 8)
-			if err != nil {
-				if sc.err == nil {
-					sc.err = err
-				}
-				return tag, nil
-			}
-			result = append(result, uint8(val))
+			result = append(result, uint8(internal.ParseUint(entry, 10, 8)))
 			if sep != ',' {
 				break
 			}
@@ -329,14 +263,7 @@ func (sc *stringScanner) parseSamNumericArray(tag utils.Symbol) (utils.Symbol, i
 		var result []int16
 		for {
 			entry, sep := sc.readUntil2(',', '\t')
-			val, err := strconv.ParseInt(entry, 10, 16)
-			if err != nil {
-				if sc.err == nil {
-					sc.err = err
-				}
-				return tag, nil
-			}
-			result = append(result, int16(val))
+			result = append(result, int16(internal.ParseUint(entry, 10, 16)))
 			if sep != ',' {
 				break
 			}
@@ -346,14 +273,7 @@ func (sc *stringScanner) parseSamNumericArray(tag utils.Symbol) (utils.Symbol, i
 		var result []uint16
 		for {
 			entry, sep := sc.readUntil2(',', '\t')
-			val, err := strconv.ParseUint(entry, 10, 16)
-			if err != nil {
-				if sc.err == nil {
-					sc.err = err
-				}
-				return tag, nil
-			}
-			result = append(result, uint16(val))
+			result = append(result, uint16(internal.ParseUint(entry, 10, 16)))
 			if sep != ',' {
 				break
 			}
@@ -363,14 +283,7 @@ func (sc *stringScanner) parseSamNumericArray(tag utils.Symbol) (utils.Symbol, i
 		var result []int32
 		for {
 			entry, sep := sc.readUntil2(',', '\t')
-			val, err := strconv.ParseInt(entry, 10, 32)
-			if err != nil {
-				if sc.err == nil {
-					sc.err = err
-				}
-				return tag, nil
-			}
-			result = append(result, int32(val))
+			result = append(result, int32(internal.ParseInt(entry, 10, 32)))
 			if sep != ',' {
 				break
 			}
@@ -380,14 +293,7 @@ func (sc *stringScanner) parseSamNumericArray(tag utils.Symbol) (utils.Symbol, i
 		var result []uint32
 		for {
 			entry, sep := sc.readUntil2(',', '\t')
-			val, err := strconv.ParseUint(entry, 10, 32)
-			if err != nil {
-				if sc.err == nil {
-					sc.err = err
-				}
-				return tag, nil
-			}
-			result = append(result, uint32(val))
+			result = append(result, uint32(internal.ParseUint(entry, 10, 32)))
 			if sep != ',' {
 				break
 			}
@@ -397,24 +303,15 @@ func (sc *stringScanner) parseSamNumericArray(tag utils.Symbol) (utils.Symbol, i
 		var result []float32
 		for {
 			entry, sep := sc.readUntil2(',', '\t')
-			val, err := strconv.ParseFloat(entry, 32)
-			if err != nil {
-				if sc.err == nil {
-					sc.err = err
-				}
-				return tag, nil
-			}
-			result = append(result, float32(val))
+			result = append(result, float32(internal.ParseFloat(entry, 32)))
 			if sep != ',' {
 				break
 			}
 		}
 		return tag, result
 	default:
-		if sc.err == nil {
-			sc.err = fmt.Errorf("invalid numeric array type %v", ntype)
-		}
-		return tag, nil
+		log.Panicf("invalid numeric array type %v", ntype)
+		return nil, nil
 	}
 }
 
@@ -435,45 +332,27 @@ var optionalFieldParseTable = map[byte]samFieldParser{
 // character), int32, float32, string, ByteArray, []int8, []uint8,
 // []int16, []uint16, []int32, []uint32, or []float32.
 func (sc *stringScanner) parseSamOptionalField() (tag utils.Symbol, value interface{}) {
-	if sc.err != nil {
-		return nil, nil
-	}
 	tagname, ok := sc.readUntil(':')
-	if !ok || (len(tagname) != 2) {
-		if sc.err == nil {
-			sc.err = fmt.Errorf("invalid field tag %v in SAM alignment line", tagname)
-		}
-		return nil, nil
+	if !ok || len(tagname) != 2 {
+		log.Panicf("invalid field tag %v in SAM alignment line", tagname)
 	}
 	tag = utils.Intern(tagname)
 	typebyte, ok := sc.readByteUntil(':')
 	if !ok {
-		if sc.err == nil {
-			sc.err = fmt.Errorf("invalid field type %v in SAM alignment line", typebyte)
-		}
-		return nil, nil
+		log.Panicf("invalid field type %v in SAM alignment line", typebyte)
 	}
 	return optionalFieldParseTable[typebyte](sc, tag)
 }
 
 func (sc *stringScanner) doString() string {
-	if sc.err != nil {
-		return ""
-	}
 	value, ok := sc.readUntil('\t')
 	if !ok {
-		if sc.err == nil {
-			sc.err = errors.New("missing tabulator in SAM alignment line")
-		}
-		return ""
+		log.Panic("missing tabulator in SAM alignment line")
 	}
 	return value
 }
 
 func (sc *stringScanner) doSeq() (seq Sequence) {
-	if sc.err != nil {
-		return
-	}
 	var n nibbles.Nibbles
 	for end := sc.index; end < len(sc.data); end++ {
 		ch := sc.data[end]
@@ -487,33 +366,16 @@ func (sc *stringScanner) doSeq() (seq Sequence) {
 		}
 		n = n.Append(nibble)
 	}
-	if sc.err == nil {
-		sc.err = errors.New("missing tabulator in SAM alignment line")
-	}
-	sc.index = len(sc.data)
+	log.Panic("missing tabulator in SAM alignment line")
 	return
 }
 
 func (sc *stringScanner) doInt32() int32 {
-	if sc.err != nil {
-		return 0
-	}
-	value, err := strconv.ParseInt(sc.doString(), 10, 32)
-	if (err != nil) && (sc.err == nil) {
-		sc.err = err
-	}
-	return int32(value)
+	return int32(internal.ParseInt(sc.doString(), 10, 32))
 }
 
 func (sc *stringScanner) doUint(bitSize int) uint64 {
-	if sc.err != nil {
-		return 0
-	}
-	value, err := strconv.ParseUint(sc.doString(), 10, bitSize)
-	if (err != nil) && (sc.err == nil) {
-		sc.err = err
-	}
-	return value
+	return internal.ParseUint(sc.doString(), 10, bitSize)
 }
 
 // parseSamAlignment parses a read alignment line in a SAM file and
@@ -529,15 +391,7 @@ func (sc *stringScanner) parseSamAlignment() *Alignment {
 	aln.POS = sc.doInt32()
 	aln.MAPQ = byte(sc.doUint(8))
 	cigarString := sc.doString()
-	if sc.err != nil {
-		return nil
-	}
-	cigar, err := ScanCigarString(cigarString)
-	if err != nil {
-		sc.err = err
-		return nil
-	}
-	aln.CIGAR = cigar
+	aln.CIGAR = ScanCigarString(cigarString)
 	aln.RNEXT = *utils.Intern(sc.doString())
 	aln.PNEXT = sc.doInt32()
 	aln.TLEN = sc.doInt32()
@@ -620,7 +474,7 @@ func (hdr *Header) FormatSam(out []byte) []byte {
 // string (Z), ByteArray (H), []int8 (B:c), []uint8 (B:C), []int16
 // (B:s), []uint16 (B:S), []int32 (B:i), []uint32 (B:I), and []float32
 // (B:f).
-func formatSamTag(out []byte, tag utils.Symbol, value interface{}) ([]byte, error) {
+func formatSamTag(out []byte, tag utils.Symbol, value interface{}) []byte {
 	out = append(out, '\t')
 	out = append(out, *tag...)
 
@@ -677,10 +531,10 @@ func formatSamTag(out []byte, tag utils.Symbol, value interface{}) ([]byte, erro
 			out = strconv.AppendFloat(append(out, ','), float64(v), 'g', -1, 32)
 		}
 	default:
-		return nil, fmt.Errorf("unknown SAM alignment TAG type %v", value)
+		log.Panicf("unknown SAM alignment TAG type %v", value)
 	}
 
-	return out, nil
+	return out
 }
 
 func cigarToString(b []byte, cigar []CigarOperation) []byte {
@@ -694,11 +548,11 @@ func cigarToString(b []byte, cigar []CigarOperation) []byte {
 	return b
 }
 
-// formatSamAlignment writes a SAM file read alignment line by appending its
+// FormatAlignment writes a SAM file read alignment line by appending its
 // ASCII-string representation to out and returning the result. See
 // http://samtools.github.io/hts-specs/SAMv1.pdf - Sections 1.4 and
 // 1.5.
-func formatSamAlignment(aln *Alignment, out []byte) ([]byte, error) {
+func FormatAlignment(aln *Alignment, out []byte) []byte {
 	out = append(append(out, aln.QNAME...), '\t')
 	out = append(strconv.AppendUint(out, uint64(aln.FLAG), 10), '\t')
 	out = append(append(out, aln.RNAME...), '\t')
@@ -728,14 +582,11 @@ func formatSamAlignment(aln *Alignment, out []byte) ([]byte, error) {
 		out = append(out, qual+33)
 	}
 
-	var err error
 	for _, entry := range aln.TAGS {
-		if out, err = formatSamTag(out, entry.Key, entry.Value); err != nil {
-			return nil, err
-		}
+		out = formatSamTag(out, entry.Key, entry.Value)
 	}
 
-	return append(out, '\n'), nil
+	return append(out, '\n')
 }
 
 // samReader is an AlignmentFileReader for a SAM InputFile.
@@ -746,42 +597,44 @@ type samReader struct {
 }
 
 // Close the SAM input file.
-func (reader *samReader) Close() (err error) {
+func (reader *samReader) Close() {
 	if reader.rc != os.Stdin {
-		return reader.rc.Close()
+		internal.Close(reader.rc)
 	}
-	return nil
 }
 
 const maxTokenSize = 16 * 64 * 1024
 
 // ParseHeader implements the method of the AlignmentFileReader interface.
-func (reader *samReader) ParseHeader() (hdr *Header, err error) {
-	if hdr, err = ParseSamHeader(reader.buf); err == nil {
-		reader.BytesScanner = pipeline.NewBytesScanner(reader.buf)
-		reader.BytesScanner.Buffer(nil, maxTokenSize)
-	}
+func (reader *samReader) ParseHeader() (hdr *Header) {
+	hdr = ParseSamHeader(reader.buf)
+	reader.BytesScanner = pipeline.NewBytesScanner(reader.buf)
+	reader.BytesScanner.Buffer(nil, maxTokenSize)
 	return
 }
 
 // SkipHeader implements the method of the AlignmentFileReader interface.
-func (reader *samReader) SkipHeader() (err error) {
-	if err = SkipSamHeader(reader.buf); err == nil {
-		reader.BytesScanner = pipeline.NewBytesScanner(reader.buf)
-		reader.BytesScanner.Buffer(nil, maxTokenSize)
-	}
-	return
+func (reader *samReader) SkipHeader() {
+	SkipSamHeader(reader.buf)
+	reader.BytesScanner = pipeline.NewBytesScanner(reader.buf)
+	reader.BytesScanner.Buffer(nil, maxTokenSize)
+}
+
+// ParseAlignmentFromBytes parses a SAM alignment from its string representation
+func ParseAlignmentFromBytes(s []byte) *Alignment {
+	var sc stringScanner
+	sc.reset(s)
+	return sc.parseSamAlignment()
 }
 
 // ParseAlignment implements the method of the AlignmentFileReader interface.
-func (*samReader) ParseAlignment(record []byte) (*Alignment, error) {
-	var sc stringScanner
-	sc.reset(record)
-	aln := sc.parseSamAlignment()
-	if sc.err != nil {
-		return nil, sc.err
-	}
-	return aln, nil
+func (*samReader) ParseAlignment(record []byte) *Alignment {
+	return ParseAlignmentFromBytes(record)
+}
+
+// ParseAlignment parses a SAM alignment from its string representation
+func ParseAlignment(s string) *Alignment {
+	return ParseAlignmentFromBytes([]byte(s))
 }
 
 // samWriter is an AlignmentFileWriter for a SAM OutputFile.
@@ -790,25 +643,27 @@ type samWriter struct {
 }
 
 // Close the SAM output file.
-func (writer *samWriter) Close() error {
+func (writer *samWriter) Close() {
 	if writer.wc != os.Stdout {
-		return writer.wc.Close()
+		internal.Close(writer.wc)
 	}
-	return nil
 }
 
 // FormatHeader implements the method of the AlignmentFileWriter interface.
-func (writer *samWriter) FormatHeader(hdr *Header) error {
-	_, err := writer.wc.Write(hdr.FormatSam(nil))
-	return err
+func (writer *samWriter) FormatHeader(hdr *Header) {
+	internal.Write(writer.wc, hdr.FormatSam(nil))
 }
 
 // FormatAlignment implements the method of the AlignmentFileWriter interface.
-func (*samWriter) FormatAlignment(aln *Alignment, out []byte) ([]byte, error) {
-	return formatSamAlignment(aln, out)
+func (*samWriter) FormatAlignment(aln *Alignment, out []byte) []byte {
+	return FormatAlignment(aln, out)
 }
 
 // Write implements the method of the io.Writer interface.
-func (writer *samWriter) Write(p []byte) (n int, err error) {
-	return writer.wc.Write(p)
+func (writer *samWriter) Write(p []byte) int {
+	n, err := writer.wc.Write(p)
+	if err != nil {
+		log.Panic(err)
+	}
+	return n
 }

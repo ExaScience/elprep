@@ -1,5 +1,5 @@
-// elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017-2019 imec vzw.
+// elPrep: a high-performance tool for analyzing SAM/BAM files.
+// Copyright (c) 2017-2020 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -21,13 +21,16 @@ package intervals
 import (
 	"bufio"
 	"fmt"
-	"os"
-	"path/filepath"
+	"log"
 	"sort"
 	"strconv"
 
-	"github.com/exascience/elprep/v4/bed"
-	"github.com/exascience/elprep/v4/vcf"
+	"github.com/exascience/elprep/v5/internal"
+
+	"github.com/exascience/elprep/v5/utils"
+
+	"github.com/exascience/elprep/v5/bed"
+	"github.com/exascience/elprep/v5/vcf"
 	"github.com/exascience/pargo/parallel"
 	"github.com/exascience/pargo/pipeline"
 	psort "github.com/exascience/pargo/sort"
@@ -173,25 +176,11 @@ func Intersect(intervals []Interval, start, end int32) []Interval {
 const ElsitesHeader = "# elsites format version 1.0\n"
 
 // ToElsitesFile stores intervals in an elPrep-defined .elsites file.
-func ToElsitesFile(intervals map[string][]Interval, filename string) (err error) {
-	pathname, err := filepath.Abs(filename)
-	if err != nil {
-		return err
-	}
-	output, err := os.Create(pathname)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if nerr := output.Close(); nerr != nil {
-			if err == nil {
-				err = nerr
-			}
-		}
-	}()
-	if _, err = output.WriteString(ElsitesHeader); err != nil {
-		return err
-	}
+func ToElsitesFile(intervals map[string][]Interval, filename string) {
+	pathname := internal.FilepathAbs(filename)
+	output := internal.FileCreate(pathname)
+	defer internal.Close(output)
+	internal.WriteString(output, ElsitesHeader)
 	for chrom, ivals := range intervals {
 		var buf []byte
 		for _, ival := range ivals {
@@ -202,37 +191,22 @@ func ToElsitesFile(intervals map[string][]Interval, filename string) (err error)
 			buf = strconv.AppendInt(buf, int64(ival.End), 10)
 			buf = append(buf, '\n')
 		}
-		if _, err := output.Write(buf); err != nil {
-			return err
-		}
+		internal.Write(output, buf)
 	}
-	return nil
 }
 
 // FromElsitesFile loads intervals from an elPrep-defined .elsites file.
-func FromElsitesFile(filename string) (intervals map[string][]Interval, err error) {
-	pathname, err := filepath.Abs(filename)
-	if err != nil {
-		return nil, err
-	}
-	in, err := os.Open(pathname)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if nerr := in.Close(); nerr != nil {
-			if err == nil {
-				err = nerr
-			}
-		}
-	}()
+func FromElsitesFile(filename string) map[string][]Interval {
+	pathname := internal.FilepathAbs(filename)
+	in := internal.FileOpen(pathname)
+	defer internal.Close(in)
 	input := bufio.NewReader(in)
 	header, err := input.ReadString('\n')
 	if err != nil {
-		return nil, err
+		log.Panic(err)
 	}
 	if header != ElsitesHeader {
-		return nil, fmt.Errorf("%v is not a .elsites file - invalid header", filename)
+		log.Panicf("%v is not a .elsites file - invalid header", filename)
 	}
 	var p pipeline.Pipeline
 	p.Source(pipeline.NewScanner(input))
@@ -261,139 +235,104 @@ func FromElsitesFile(filename string) (intervals map[string][]Interval, err erro
 				p.SetErr(fmt.Errorf("invalid sites line %v", str))
 				return intervals
 			}
-			var interval Interval
-			value, err := strconv.ParseInt(str[j:i], 10, 32)
-			if err != nil {
-				p.SetErr(err)
-				return intervals
-			}
-			interval.Start = int32(value)
-			value, err = strconv.ParseInt(str[i+1:], 10, 32)
-			if err != nil {
-				p.SetErr(err)
-				return intervals
-			}
-			interval.End = int32(value)
-			intervals[chrom] = append(intervals[chrom], interval)
+			intervals[chrom] = append(intervals[chrom], Interval{
+				Start: int32(internal.ParseInt(str[j:i], 10, 32)),
+				End:   int32(internal.ParseInt(str[i+1:], 10, 32)),
+			})
 		}
 		return intervals
 	})))
-	intervals = make(map[string][]Interval)
+	intervals := make(map[string][]Interval)
 	p.Add(pipeline.Ord(pipeline.Receive(func(_ int, data interface{}) interface{} {
 		for chrom, ivals := range data.(map[string][]Interval) {
 			intervals[chrom] = append(intervals[chrom], ivals...)
 		}
 		return data
 	})))
-	p.Run()
-	if err = p.Err(); err != nil {
-		return nil, err
-	}
-	return
+	internal.RunPipeline(&p)
+	return intervals
 }
 
-// FromBed returns a slice of intervals that correspond to the BED file entries.
-func FromBed(bed *bed.Bed) (intervals map[string][]Interval) {
+// FromBed returns a mapping from contigs to slices of intervals that correspond to the BED file entries.
+func FromBed(bd bed.Bed) (intervals map[string][]Interval) {
 	intervals = make(map[string][]Interval)
-	for _, regions := range bed.RegionMap {
-		for _, region := range regions {
+	for _, regions := range bd {
+		regionsSlice := regions.Value.([]*bed.Region)
+		for _, region := range regionsSlice {
 			intervals[*region.Chrom] = append(intervals[*region.Chrom], Interval{Start: region.Start, End: region.End})
 		}
 	}
 	return
 }
 
-// FromBedFile returns a slice of intervals that correspond to the BED file entries.
-func FromBedFile(filename string) (map[string][]Interval, error) {
-	pathname, err := filepath.Abs(filename)
-	if err != nil {
-		return nil, err
-	}
-	bed, err := bed.ParseBed(pathname)
-	if err != nil {
-		return nil, err
-	}
-	return FromBed(bed), nil
-}
-
-// FromVcf returns a slice of intervals that correspond to the Vcf file entries.
-func FromVcf(vcf *vcf.Vcf) (intervals map[string][]Interval, err error) {
-	intervals = make(map[string][]Interval)
-	for _, variant := range vcf.Variants {
-		start := variant.Start()
-		end, err := variant.End()
-		if err != nil {
-			return nil, err
+// FromBedOrdered returns a mapping from contigs to slices of intervals that correspond to the BED file entries,
+// with entries in the same order as they are encountered in the BED file.
+func FromBedOrdered(bd bed.Bed) (intervals utils.SmallMap) {
+	for _, regions := range bd {
+		regionsSlice := regions.Value.([]*bed.Region)
+		var ivals []Interval
+		for _, region := range regionsSlice {
+			ivals = append(ivals, Interval{Start: region.Start, End: region.End})
 		}
-		intervals[variant.Chrom] = append(intervals[variant.Chrom], Interval{Start: start, End: end})
+		intervals = append(intervals, utils.SmallMapEntry{Key: regions.Key, Value: ivals})
 	}
 	return
 }
 
-// FromVcfFile returns a slice of intervals that correspond to the Vcf file entries.
-func FromVcfFile(filename string) (intervals map[string][]Interval, err error) {
-	pathname, err := filepath.Abs(filename)
-	if err != nil {
-		return nil, err
+// FromBedOrdered returns a mapping from contigs to slices of intervals that correspond to the BED file entries,
+// with entries in the same order as they are encountered in the BED file.
+func FromBedFileOrdered(filename string) utils.SmallMap {
+	return FromBedOrdered(bed.ParseBed(internal.FilepathAbs(filename)))
+}
+
+// FromBed returns a mapping from contigs to slices of intervals that correspond to the BED file entries.
+func FromBedFile(filename string) map[string][]Interval {
+	return FromBed(bed.ParseBed(internal.FilepathAbs(filename)))
+}
+
+// FromVcf returns a mapping from contigs to slices of intervals that correspond to the Vcf file entries.
+func FromVcf(vcf *vcf.Vcf) map[string][]Interval {
+	intervals := make(map[string][]Interval)
+	for _, variant := range vcf.Variants {
+		intervals[variant.Chrom] = append(intervals[variant.Chrom], Interval{
+			Start: variant.Start(),
+			End:   variant.End(),
+		})
 	}
-	input, err := vcf.Open(pathname, false)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if nerr := input.Close(); nerr != nil {
-			if err == nil {
-				intervals = nil
-				err = nerr
-			}
-		}
-	}()
-	reader := (*bufio.Reader)(input.VcfReader())
-	header, _, err := vcf.ParseHeader(reader)
-	if err != nil {
-		return nil, err
-	}
-	variantParser, err := header.NewVariantParser()
-	if err != nil {
-		return nil, err
-	}
+	return intervals
+}
+
+// FromVcf returns a mapping from contigs to slices of intervals that correspond to the Vcf file entries.
+func FromVcfFile(filename string) map[string][]Interval {
+	pathname := internal.FilepathAbs(filename)
+	input := vcf.Open(pathname)
+	defer input.Close()
+	header, _ := vcf.ParseHeader(input.Reader)
+	variantParser := header.NewVariantParser()
 	variantParser.NSamples = 0 // no need to parse the samples just to retrieve the region information
 	var p pipeline.Pipeline
-	p.Source(pipeline.NewScanner(reader))
-	p.Add(pipeline.LimitedPar(0, func(p *pipeline.Pipeline, _ pipeline.NodeKind, _ *int) (receiver pipeline.Receiver, _ pipeline.Finalizer) {
-		receiver = func(_ int, data interface{}) interface{} {
-			strings := data.([]string)
-			intervals := make(map[string][]Interval)
-			var sc vcf.StringScanner
-			for _, str := range strings {
-				sc.Reset(str)
-				variant := sc.ParseVariant(variantParser)
-				if err := sc.Err(); err != nil {
-					p.SetErr(fmt.Errorf("%v, while parsing VCF variant %v", err, str))
-					return intervals
-				}
-				start := variant.Start()
-				end, err := variant.End()
-				if err != nil {
-					p.SetErr(fmt.Errorf("%v, while parsing VCF variant %v", err, str))
-					return intervals
-				}
-				intervals[variant.Chrom] = append(intervals[variant.Chrom], Interval{Start: start, End: end})
-			}
-			return intervals
+	p.Source(pipeline.NewScanner(input.Reader))
+	p.Add(pipeline.LimitedPar(0, pipeline.Receive(func(_ int, data interface{}) interface{} {
+		strings := data.([]string)
+		intervals := make(map[string][]Interval)
+		var sc vcf.StringScanner
+		for _, str := range strings {
+			sc.Reset(str)
+			variant := sc.ParseVariant(variantParser)
+			intervals[variant.Chrom] = append(intervals[variant.Chrom], Interval{
+				Start: variant.Start(),
+				End:   variant.End(),
+			})
 		}
-		return
-	}))
-	intervals = make(map[string][]Interval)
+		return intervals
+	})))
+	intervals := make(map[string][]Interval)
 	p.Add(pipeline.Ord(pipeline.Receive(func(_ int, data interface{}) interface{} {
 		for chrom, ivals := range data.(map[string][]Interval) {
 			intervals[chrom] = append(intervals[chrom], ivals...)
 		}
 		return data
 	})))
-	p.Run()
-	if err = p.Err(); err != nil {
-		return nil, err
-	}
-	return
+	internal.RunPipeline(&p)
+	return intervals
 }

@@ -1,5 +1,5 @@
-// elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017, 2018 imec vzw.
+// elPrep: a high-performance tool for analyzing SAM/BAM files.
+// Copyright (c) 2017-2020 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -23,17 +23,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"errors"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"math"
 	"os"
-	"strconv"
 
-	"github.com/exascience/elprep/v4/utils"
-	"github.com/exascience/elprep/v4/utils/nibbles"
+	"github.com/exascience/elprep/v5/internal"
+
+	"github.com/exascience/elprep/v5/utils"
+	"github.com/exascience/elprep/v5/utils/bgzf"
+	"github.com/exascience/elprep/v5/utils/nibbles"
 )
 
 // BAMReference is a an entry in a slice of BAM-encoded sequence dictionary entries.
@@ -43,27 +43,19 @@ type BAMReference struct {
 	Length int32
 }
 
-func parseBamHeaderReferences(reader io.Reader, text []byte) (references []BAMReference, err error) {
+func parseBamHeaderReferences(reader io.Reader, text []byte) (references []BAMReference) {
 	var nRef int32
-	if err = binary.Read(reader, binary.LittleEndian, &nRef); err != nil {
-		return nil, err
-	}
+	internal.BinaryRead(reader, &nRef)
 	for i := int32(0); i < nRef; i++ {
 		var lName int32
-		if err = binary.Read(reader, binary.LittleEndian, &lName); err != nil {
-			return nil, err
-		}
+		internal.BinaryRead(reader, &lName)
 		for cap(text) < int(lName) {
 			text = append(text[:cap(text)], 0)
 		}
 		text = text[:int(lName)]
-		if _, err := io.ReadFull(reader, text); err != nil {
-			return nil, err
-		}
+		internal.ReadFull(reader, text)
 		var lRef int32
-		if err = binary.Read(reader, binary.LittleEndian, &lRef); err != nil {
-			return nil, err
-		}
+		internal.BinaryRead(reader, &lRef)
 		references = append(references, BAMReference{
 			Name:   *utils.Intern(string(text[:len(text)-1])),
 			Length: lRef,
@@ -81,35 +73,26 @@ const bamMagic = "BAM\x01"
 //
 // Returns a freshly allocated header, the BAM-encoded sequence dictionary,
 // and a non-nil error value if an error occurred during parsing.
-func ParseBamHeader(reader io.Reader) (hdr *Header, references []BAMReference, err error) {
+func ParseBamHeader(reader io.Reader) (*Header, []BAMReference) {
 	text := make([]byte, 4)
-	if _, err := io.ReadFull(reader, text); err != nil {
-		return nil, nil, err
-	} else if string(text) != bamMagic {
-		return nil, nil, errors.New("invalid BAM file header")
+	internal.ReadFull(reader, text)
+	if string(text) != bamMagic {
+		log.Panic("invalid BAM file header")
 	}
 	var lText int32
-	if err = binary.Read(reader, binary.LittleEndian, &lText); err != nil {
-		return nil, nil, err
-	}
+	internal.BinaryRead(reader, &lText)
 	for cap(text) < int(lText) {
 		text = append(text[:cap(text)], 0)
 	}
 	text = text[:int(lText)]
-	if _, err := io.ReadFull(reader, text); err != nil {
-		return nil, nil, err
-	}
+	internal.ReadFull(reader, text)
 	for i, b := range text {
 		if b == 0 {
 			text = text[:i]
 			break
 		}
 	}
-	if hdr, err = ParseSamHeader(bufio.NewReader(bytes.NewReader(text))); err != nil {
-		return nil, nil, err
-	}
-	references, err = parseBamHeaderReferences(reader, text)
-	return
+	return ParseSamHeader(bufio.NewReader(bytes.NewReader(text))), parseBamHeaderReferences(reader, text)
 }
 
 // SkipBamHeader skips the complete header in a BAM file. This is more
@@ -117,24 +100,22 @@ func ParseBamHeader(reader io.Reader) (hdr *Header, references []BAMReference, e
 //
 // Returns the BAM-encoded sequence dictionary and a non-nil error value
 // if an error occurred during parsing.
-func SkipBamHeader(reader io.Reader) (references []BAMReference, err error) {
+func SkipBamHeader(reader io.Reader) []BAMReference {
 	text := make([]byte, 4)
-	if _, err := io.ReadFull(reader, text); err != nil {
-		return nil, err
-	} else if string(text) != bamMagic {
-		return nil, err
+	internal.ReadFull(reader, text)
+	if string(text) != bamMagic {
+		log.Panic("invalid BAM file header")
 	}
 	var lText int32
-	if err = binary.Read(reader, binary.LittleEndian, &lText); err != nil {
-		return nil, err
-	}
+	internal.BinaryRead(reader, &lText)
+	var err error
 	if s, ok := reader.(io.Seeker); ok {
 		_, err = s.Seek(int64(lText), io.SeekCurrent)
 	} else {
 		_, err = io.CopyN(ioutil.Discard, reader, int64(lText))
 	}
 	if err != nil {
-		return nil, err
+		log.Panic(err)
 	}
 	return parseBamHeaderReferences(reader, text)
 }
@@ -210,8 +191,8 @@ func parseBamString(record []byte, index int) (value interface{}, newIndex int) 
 			return
 		}
 	}
-	log.Fatal("missing NUL byte in an optional string field in a BAM alignment record")
-	panic("Unreachable code.")
+	log.Panic("missing NUL byte in an optional string field in a BAM alignment record")
+	return nil, -1
 }
 
 // parseBamByteArray parses an H optional field in a BAM alignment record and returns
@@ -222,17 +203,13 @@ func parseBamByteArray(record []byte, index int) (value interface{}, newIndex in
 		if record[end] == '0' {
 			result := ByteArray(make([]byte, 0, (end-index)>>1))
 			for i := index; i < end; i += 2 {
-				val, err := strconv.ParseUint(string(record[i:i+2]), 16, 8)
-				if err != nil {
-					log.Fatal(err)
-				}
-				result = append(result, byte(val))
+				result = append(result, byte(internal.ParseUint(string(record[i:i+2]), 16, 8)))
 			}
 			return result, end + 1
 		}
 	}
-	log.Fatal("missing NUL byte in an optional hex-formatted string field in a BAM alignment record")
-	panic("Unreachable code.")
+	log.Panic("missing NUL byte in an optional hex-formatted string field in a BAM alignment record")
+	return nil, -1
 }
 
 // parseBamNumericArray parses a B optional field in a BAM alignment record and
@@ -286,9 +263,9 @@ func parseBamNumericArray(record []byte, index int) (value interface{}, newIndex
 		}
 		return result, index + (count << 2)
 	default:
-		log.Fatal("invalid subtype in a numeric array in a BAM alignment record")
+		log.Panic("invalid subtype in a numeric array in a BAM alignment record")
+		return nil, -1
 	}
-	panic("Unreachable code.")
 }
 
 var optionalBAMFieldParseTable = map[byte]bamFieldParser{
@@ -337,7 +314,7 @@ const (
 // parseBamAlignment parses a read alignment record in a BAM file and
 // returns a freshly allocated alignment. See
 // http://samtools.github.io/hts-specs/SAMv1.pdf - Sections 4.2.
-func parseBamAlignment(record []byte, references []BAMReference) (*Alignment, error) {
+func parseBamAlignment(record []byte, references []BAMReference) *Alignment {
 	aln := new(Alignment)
 
 	refID := int32(binary.LittleEndian.Uint32(record[refIDIndex : refIDIndex+4]))
@@ -419,7 +396,7 @@ func parseBamAlignment(record []byte, references []BAMReference) (*Alignment, er
 		index = newIndex
 	}
 
-	return aln, nil
+	return aln
 }
 
 func enlarge(out []byte, by int) (int, []byte) {
@@ -455,8 +432,7 @@ func (hdr *Header) FormatBam(out []byte) []byte {
 		copy(out[index:], sn)
 		out[index+len(sn)] = 0
 		index += len(sn) + 1
-		ln, _ := SQLN(sq)
-		binary.LittleEndian.PutUint32(out[index:index+4], uint32(ln))
+		binary.LittleEndian.PutUint32(out[index:index+4], uint32(SQLN(sq)))
 	}
 
 	return out
@@ -502,7 +478,7 @@ const minus1 = 0xFFFFFFFF
 // float32 (f), string (Z), ByteArray (H), []int8 (B:c), []uint8 (B:C),
 // []int16 (B:s), []uint16 (B:S), []int32 (B:i), []uint32 (B:I), and
 // []float32 (B:f).
-func formatBamTag(out []byte, tag utils.Symbol, value interface{}) ([]byte, error) {
+func formatBamTag(out []byte, tag utils.Symbol, value interface{}) []byte {
 	var index int
 
 	index, out = enlarge(out, 2)
@@ -528,7 +504,7 @@ func formatBamTag(out []byte, tag utils.Symbol, value interface{}) ([]byte, erro
 				out[index] = 'i'
 				binary.LittleEndian.PutUint32(out[index+1:index+5], uint32(val))
 			} else {
-				return nil, fmt.Errorf("integer value too small in BAM alignment tag %v", value)
+				log.Panicf("integer value too small in BAM alignment tag %v", value)
 			}
 		} else {
 			if val <= math.MaxUint8 {
@@ -544,7 +520,7 @@ func formatBamTag(out []byte, tag utils.Symbol, value interface{}) ([]byte, erro
 				out[index] = 'I'
 				binary.LittleEndian.PutUint32(out[index+1:index+5], uint32(val))
 			} else {
-				return nil, fmt.Errorf("integer value too large in BAM alignment tag %v", value)
+				log.Panicf("integer value too large in BAM alignment tag %v", value)
 			}
 		}
 	case float32:
@@ -647,16 +623,16 @@ func formatBamTag(out []byte, tag utils.Symbol, value interface{}) ([]byte, erro
 			binary.LittleEndian.PutUint32(out[index:index+4], math.Float32bits(v))
 		}
 	default:
-		return nil, fmt.Errorf("unknown BAM alignment TAG type %v", value)
+		log.Panicf("unknown BAM alignment TAG type %v", value)
 	}
 
-	return out, nil
+	return out
 }
 
 // formatBamAlignment writes a BAM file read alignment record by appending its
 // binary representation to out and returning the result. See
 // http://samtools.github.io/hts-specs/SAMv1.pdf - Section 4.2.
-func formatBamAlignment(aln *Alignment, out []byte, dictTable map[string]uint32) ([]byte, error) {
+func formatBamAlignment(aln *Alignment, out []byte, dictTable map[string]uint32) []byte {
 	var index int
 
 	index, out = enlarge(out, 4)
@@ -738,10 +714,7 @@ func formatBamAlignment(aln *Alignment, out []byte, dictTable map[string]uint32)
 	copy(out[index:], aln.QUAL)
 
 	for _, entry := range aln.TAGS {
-		var err error
-		if out, err = formatBamTag(out, entry.Key, entry.Value); err != nil {
-			return nil, err
-		}
+		out = formatBamTag(out, entry.Key, entry.Value)
 	}
 
 	if len(aln.CIGAR) > math.MaxUint16 {
@@ -760,50 +733,42 @@ func formatBamAlignment(aln *Alignment, out []byte, dictTable map[string]uint32)
 
 	binary.LittleEndian.PutUint32(out[blockSizeIndex:blockSizeIndex+4], uint32(len(out)-blockSizeIndex-4))
 
-	return out, nil
+	return out
 }
 
 // bamReader is an AlignmentFileReader for a BAM InputFile.
 type bamReader struct {
 	rc         io.Closer
-	bgzf       *BGZFReader
+	bgzf       *bgzf.Reader
 	references []BAMReference
-	err        error
 	buf        []byte
 	data       interface{}
 }
 
 // Close the BAM input file.
-func (reader *bamReader) Close() (err error) {
-	err = reader.bgzf.Close()
+func (reader *bamReader) Close() {
+	internal.Close(reader.bgzf)
 	if reader.rc != os.Stdin {
-		if nerr := reader.rc.Close(); err == nil {
-			err = nerr
-		}
+		internal.Close(reader.rc)
 	}
-	return
 }
 
 // ParseHeader implements the method of the AlignmentFileReader interface.
-func (reader *bamReader) ParseHeader() (hdr *Header, err error) {
-	hdr, reader.references, err = ParseBamHeader(reader.bgzf)
-	if err != nil {
-		return nil, err
-	}
+func (reader *bamReader) ParseHeader() (hdr *Header) {
+	hdr, reader.references = ParseBamHeader(reader.bgzf)
 	reader.buf = make([]byte, 4)
 	return
 }
 
 // SkipHeader implements the method of the AlignmentFileReader interface.
-func (reader *bamReader) SkipHeader() (err error) {
-	reader.references, err = SkipBamHeader(reader.bgzf)
+func (reader *bamReader) SkipHeader() {
+	reader.references = SkipBamHeader(reader.bgzf)
 	reader.buf = make([]byte, 4)
-	return
 }
 
 // Err implements the method of the pipeline.Source interface.
 func (reader *bamReader) Err() error {
-	return reader.err
+	return nil
 }
 
 // Prepare implements the method of the pipeline.Source interface.
@@ -817,9 +782,7 @@ func (reader *bamReader) Fetch(size int) (fetched int) {
 	for fetched = 0; fetched < size; fetched++ {
 		if _, err := io.ReadFull(reader.bgzf, reader.buf); err != nil {
 			if err != io.EOF {
-				reader.err = err
-				reader.data = nil
-				return 0
+				log.Panic(err)
 			}
 			break
 		}
@@ -828,15 +791,7 @@ func (reader *bamReader) Fetch(size int) (fetched int) {
 			reader.buf = append(reader.buf[:cap(reader.buf)], 0)
 		}
 		reader.buf = reader.buf[:size]
-		if _, err := io.ReadFull(reader.bgzf, reader.buf); err != nil {
-			if err == io.EOF {
-				reader.err = io.ErrUnexpectedEOF
-			} else {
-				reader.err = err
-			}
-			reader.data = nil
-			return 0
-		}
+		internal.ReadFull(reader.bgzf, reader.buf)
 		records = append(records, append([]byte(nil), reader.buf...))
 		reader.buf = reader.buf[:4]
 	}
@@ -850,45 +805,44 @@ func (reader *bamReader) Data() interface{} {
 }
 
 // ParseAlignment implements the method of the AlignmentFileReader interface.
-func (reader *bamReader) ParseAlignment(record []byte) (*Alignment, error) {
+func (reader *bamReader) ParseAlignment(record []byte) *Alignment {
 	return parseBamAlignment(record, reader.references)
 }
 
 // bamWriter is an AlignmentFileWriter for a BAM OutputFile.
 type bamWriter struct {
 	dictTable map[string]uint32
-	bgzf      *BGZFWriter
+	bgzf      *bgzf.Writer
 	wc        io.Closer
 }
 
-func (writer *bamWriter) Close() (err error) {
-	err = writer.bgzf.Close()
+func (writer *bamWriter) Close() {
+	internal.Close(writer.bgzf)
 	if writer.wc != os.Stdout {
-		if nerr := writer.wc.Close(); err == nil {
-			err = nerr
-		}
+		internal.Close(writer.wc)
 	}
-	return
 }
 
 // FormatHeader implements the method of the AlignmentFileWriter interface.
-func (writer *bamWriter) FormatHeader(hdr *Header) error {
+func (writer *bamWriter) FormatHeader(hdr *Header) {
 	dictTable := make(map[string]uint32)
 	dictTable["*"] = minus1
 	for index, entry := range hdr.SQ {
 		dictTable[entry["SN"]] = uint32(index)
 	}
 	writer.dictTable = dictTable
-	_, err := writer.Write(hdr.FormatBam(nil))
-	return err
+	writer.Write(hdr.FormatBam(nil))
 }
 
 // FormatAlignment implements the method of the AlignmentFileWriter interface.
-func (writer *bamWriter) FormatAlignment(aln *Alignment, out []byte) ([]byte, error) {
+func (writer *bamWriter) FormatAlignment(aln *Alignment, out []byte) []byte {
 	return formatBamAlignment(aln, out, writer.dictTable)
 }
 
-// Write implements the method of the io.Writer interface.
-func (writer *bamWriter) Write(p []byte) (n int, err error) {
-	return writer.bgzf.Write(p)
+func (writer *bamWriter) Write(p []byte) int {
+	n, err := writer.bgzf.Write(p)
+	if err != nil {
+		log.Panic(err)
+	}
+	return n
 }

@@ -1,5 +1,5 @@
-// elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017-2019 imec vzw.
+// elPrep: a high-performance tool for analyzing SAM/BAM files.
+// Copyright (c) 2017-2020 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -24,10 +24,10 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"runtime"
 
-	"github.com/exascience/elprep/v4/filters"
+	"github.com/exascience/elprep/v5/filters"
+	"github.com/exascience/elprep/v5/internal"
 )
 
 // MergeOpticalDuplicatesMetricsHelp is the help string for this command.
@@ -39,7 +39,7 @@ const MergeOpticalDuplicatesMetricsHelp = "\nmerge-optical-duplicates-metrics pa
 	"[--log-path path]\n"
 
 // Merge implements the elprep merge command.
-func MergeOpticalDuplicatesMetrics() error {
+func MergeOpticalDuplicatesMetrics() {
 	var (
 		profile, logPath        string
 		nrOfThreads             int
@@ -79,10 +79,7 @@ func MergeOpticalDuplicatesMetrics() error {
 		sanityChecksFailed = true
 	}
 
-	metricsDir, err := filepath.Abs(intermediateMetrics)
-	if err != nil {
-		return err
-	}
+	metricsDir := internal.FilepathAbs(intermediateMetrics)
 
 	if nrOfThreads < 0 {
 		sanityChecksFailed = true
@@ -114,19 +111,17 @@ func MergeOpticalDuplicatesMetrics() error {
 
 	// executing command
 
-	log.Println("Executing command:\n", command.String())
+	commandString := command.String()
 
-	var ctr filters.DuplicatesCtrMap
+	log.Println("Executing command:\n", commandString)
+
+	var ctr map[string]*filters.DuplicatesCtr
 
 	// merge intermediate metrics files
-	err = timedRun(timed, profile, "Loading and combining duplicate metrics.", 1, func() error {
+	timedRun(timed, profile, "Loading and combining duplicate metrics.", 1, func() {
 		ctr = filters.LoadAndCombineDuplicateMetrics(metricsDir)
-		return ctr.Err()
 	})
-	if err != nil {
-		return err
-	}
-	return timedRun(timed, profile, "Printing comdined duplicate metrics.", 2, func() error {
-		return filters.PrintDuplicatesMetrics(input, output, metrics, removeDuplicates, ctr)
+	timedRun(timed, profile, "Printing comdined duplicate metrics.", 2, func() {
+		filters.PrintDuplicatesMetrics(metrics, commandString, ctr)
 	})
 }

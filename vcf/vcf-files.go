@@ -1,5 +1,5 @@
-// elPrep: a high-performance tool for preparing SAM/BAM files.
-// Copyright (c) 2017, 2018 imec vzw.
+// elPrep: a high-performance tool for analyzing SAM/BAM files.
+// Copyright (c) 2017-2020 imec vzw.
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -20,18 +20,23 @@ package vcf
 
 import (
 	"bufio"
-	"errors"
-	"fmt"
+	"bytes"
 	"io"
+	"log"
+	"math"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 
-	"github.com/exascience/elprep/v4/utils"
+	"github.com/exascience/pargo/pipeline"
+
+	"github.com/exascience/elprep/v5/internal"
+
+	"github.com/exascience/elprep/v5/utils"
+	"github.com/exascience/elprep/v5/utils/bgzf"
 )
 
 const (
@@ -41,11 +46,31 @@ const (
 	typeKey        = "Type"
 )
 
+var (
+	specialToNormalString = strings.NewReplacer(
+		"%3A", ":",
+		"%3B", ";",
+		"%3D", "=",
+		"%25", "%",
+		"%2C", ",",
+		"%0D", "\r",
+		"%0A", "\n",
+		"%09", "\t",
+	)
+	normalToSpecialString = strings.NewReplacer(
+		":", "%3A",
+		";", "%3B",
+		"=", "%3D",
+		"%", "%25",
+		",", "%2C",
+		"\r", "%0D",
+		"\n", "%0A",
+		"\t", "%09",
+	)
+)
+
 // ParseMetaField parses a VCF meta field
 func (sc *StringScanner) ParseMetaField() (key, value string) {
-	if sc.err != nil {
-		return
-	}
 	sc.SkipSpace()
 	start := sc.index
 	for ; sc.index < len(sc.data); sc.index++ {
@@ -56,12 +81,10 @@ func (sc *StringScanner) ParseMetaField() (key, value string) {
 	key = sc.data[start:sc.index]
 	sc.SkipSpace()
 	if sc.index >= len(sc.data) || sc.data[sc.index] != '=' {
-		if sc.err == nil {
-			sc.err = fmt.Errorf("invalid key=pair pair in a VCF meta-information line: %v", sc.data)
-		}
-		return
+		log.Panicf("invalid key=pair pair in a VCF meta-information line: %v", sc.data)
 	}
 	sc.index++
+	sc.SkipSpace()
 	start = sc.index
 	if sc.data[sc.index] == '"' {
 		start++
@@ -78,27 +101,19 @@ func (sc *StringScanner) ParseMetaField() (key, value string) {
 			_ = buf.WriteByte(sc.data[sc.index])
 		}
 		sc.index = len(sc.data)
-		if sc.err == nil {
-			sc.err = fmt.Errorf("missing closing \" in a VCF meta-information line: %v", sc.data)
-		}
-		return key, buf.String()
+		log.Panicf("missing closing \" in a VCF meta-information line: %v", sc.data)
 	}
 	for ; sc.index < len(sc.data); sc.index++ {
 		if c := sc.data[sc.index]; (c == ' ') || (c == ',') || (c == '>') {
 			return key, sc.data[start:sc.index]
 		}
 	}
-	if sc.err == nil {
-		sc.err = fmt.Errorf("missing closing > in a VCF meta-information line: %v", sc.data)
-	}
-	return key, sc.data[start:]
+	log.Panicf("missing closing > in a VCF meta-information line: %v", sc.data)
+	return "", ""
 }
 
 // ParseMetaInformation parses VCF meta information
 func (sc *StringScanner) ParseMetaInformation() interface{} {
-	if sc.err != nil {
-		return nil
-	}
 	if sc.data[sc.index] != '<' {
 		start := sc.index
 		sc.index = len(sc.data)
@@ -111,25 +126,19 @@ func (sc *StringScanner) ParseMetaInformation() interface{} {
 		switch key {
 		case idKey:
 			if meta.ID != nil {
-				if sc.err == nil {
-					sc.err = fmt.Errorf("multiple IDs in a VCF meta-information line: %v", sc.data)
-				}
+				log.Panicf("multiple IDs in a VCF meta-information line: %v", sc.data)
 			} else {
 				meta.ID = utils.Intern(value)
 			}
 		case descriptionKey:
 			if meta.Description != "" {
-				if sc.err == nil {
-					sc.err = fmt.Errorf("multiple Descriptions in a VCF meta-information line: %v", sc.data)
-				}
+				log.Panicf("multiple Descriptions in a VCF meta-information line: %v", sc.data)
 			} else {
 				meta.Description = value
 			}
 		default:
 			if !meta.Fields.SetUniqueEntry(key, value) {
-				if sc.err == nil {
-					sc.err = fmt.Errorf("duplicate field key %v in a VCF meta-information line: %v", key, sc.data)
-				}
+				log.Panicf("duplicate field key %v in a VCF meta-information line: %v", key, sc.data)
 			}
 		}
 		sc.SkipSpace()
@@ -140,27 +149,18 @@ func (sc *StringScanner) ParseMetaInformation() interface{} {
 			sc.index++
 			break
 		}
-		if sc.err == nil {
-			sc.err = fmt.Errorf("invalid syntax in a VCF meta-information line: %v", sc.data)
-		}
-		break
+		log.Panicf("invalid syntax in a VCF meta-information line: %v", sc.data)
 	}
 	if meta.ID == nil {
-		if sc.err == nil {
-			sc.err = fmt.Errorf("missing ID in a VCF meta-information line: %v", sc.data)
-		}
+		log.Panicf("missing ID in a VCF meta-information line: %v", sc.data)
 	}
 	return meta
 }
 
 // ParseFormatInformation parses VCF format information
 func (sc *StringScanner) ParseFormatInformation() *FormatInformation {
-	if sc.err != nil {
-		return nil
-	}
 	if sc.data[sc.index] != '<' {
-		sc.err = fmt.Errorf("Missing open angle bracket in a VCF INFO/FORMAT meta-information line: %v", sc.data)
-		return nil
+		log.Panicf("Missing open angle bracket in a VCF INFO/FORMAT meta-information line: %v", sc.data)
 	}
 	sc.index++
 	format := NewFormatInformation()
@@ -169,25 +169,19 @@ func (sc *StringScanner) ParseFormatInformation() *FormatInformation {
 		switch key {
 		case idKey:
 			if format.ID != nil {
-				if sc.err == nil {
-					sc.err = fmt.Errorf("multiple IDs in a VCF INFO/FORMAT meta-information line: %v", sc.data)
-				}
+				log.Panicf("multiple IDs in a VCF INFO/FORMAT meta-information line: %v", sc.data)
 			} else {
 				format.ID = utils.Intern(value)
 			}
 		case descriptionKey:
 			if format.Description != "" {
-				if sc.err == nil {
-					sc.err = fmt.Errorf("multiple Descriptions in a VCF INFO/FORMAT meta-information line: %v", sc.data)
-				}
+				log.Panicf("multiple Descriptions in a VCF INFO/FORMAT meta-information line: %v", sc.data)
 			} else {
 				format.Description = value
 			}
 		case numberKey:
 			if format.Number > InvalidNumber {
-				if sc.err == nil {
-					sc.err = fmt.Errorf("multiple Number entries in a VCF INFO/FORMAT meta-information line: %v", sc.data)
-				}
+				log.Panicf("multiple Number entries in a VCF INFO/FORMAT meta-information line: %v", sc.data)
 			} else {
 				switch value {
 				case "a", "A":
@@ -199,21 +193,12 @@ func (sc *StringScanner) ParseFormatInformation() *FormatInformation {
 				case ".":
 					format.Number = NumberDot
 				default:
-					n, err := strconv.ParseInt(value, 10, 32)
-					if err != nil {
-						if sc.err == nil {
-							sc.err = err
-						}
-					} else {
-						format.Number = int32(n)
-					}
+					format.Number = int32(internal.ParseInt(value, 10, 32))
 				}
 			}
 		case typeKey:
 			if format.Type != InvalidType {
-				if sc.err == nil {
-					sc.err = fmt.Errorf("Multiple types in a VCF INFO/FORMAT meta-information line: %v", sc.data)
-				}
+				log.Panicf("Multiple types in a VCF INFO/FORMAT meta-information line: %v", sc.data)
 			} else {
 				switch value {
 				case "Integer":
@@ -227,16 +212,12 @@ func (sc *StringScanner) ParseFormatInformation() *FormatInformation {
 				case "String":
 					format.Type = String
 				default:
-					if sc.err == nil {
-						sc.err = fmt.Errorf("Unknown type in a VCF INFO/FORMAT meta-information line: %v", sc.data)
-					}
+					log.Panicf("Unknown type in a VCF INFO/FORMAT meta-information line: %v", sc.data)
 				}
 			}
 		default:
 			if !format.Fields.SetUniqueEntry(key, value) {
-				if sc.err == nil {
-					sc.err = fmt.Errorf("duplicate field key %v in a VCF meta-information line: %v", key, sc.data)
-				}
+				log.Panicf("duplicate field key %v in a VCF meta-information line: %v", key, sc.data)
 			}
 		}
 		sc.SkipSpace()
@@ -247,74 +228,63 @@ func (sc *StringScanner) ParseFormatInformation() *FormatInformation {
 			sc.index++
 			break
 		}
-		if sc.err == nil {
-			sc.err = fmt.Errorf("invalid syntax in a VCF INFO/FORMAT meta-information line: %v", sc.data)
-		}
-		break
+		log.Panicf("invalid syntax in a VCF INFO/FORMAT meta-information line: %v", sc.data)
 	}
 	if format.ID == nil {
-		if sc.err == nil {
-			sc.err = fmt.Errorf("missing ID in a VCF INFO/FORMAT meta-information line: %v", sc.data)
-		}
+		log.Panicf("missing ID in a VCF INFO/FORMAT meta-information line: %v", sc.data)
 	}
 	if format.Number <= InvalidNumber {
-		if sc.err == nil {
-			sc.err = fmt.Errorf("missing number entry in a VCF INFO/FORMAT meta-information line: %v", sc.data)
-		}
+		log.Panicf("missing number entry in a VCF INFO/FORMAT meta-information line: %v", sc.data)
 	}
 	if format.Type == InvalidType {
-		if sc.err == nil {
-			sc.err = fmt.Errorf("missing type in a VCF INFO/FORMAT meta-information line: %v", sc.data)
-		}
+		log.Panicf("missing type in a VCF INFO/FORMAT meta-information line: %v", sc.data)
 	}
 	return format
 }
 
-func getLine(reader *bufio.Reader) (line string, err error) {
-	line, err = reader.ReadString('\n')
+func getLine(reader *bufio.Reader) string {
+	line, err := reader.ReadString('\n')
 	switch {
 	case err == nil:
-		line = line[:len(line)-1]
-	case err == io.EOF:
-		err = nil
+		if l := len(line); l > 1 && line[l-2] == '\r' {
+			line = line[:l-2]
+		} else {
+			line = line[:l-1]
+		}
+	case err != io.EOF:
+		log.Panic(err)
 	}
-	return
+	return line
 }
 
 // ParseHeader parses a VCF header
-func ParseHeader(reader *bufio.Reader) (hdr *Header, lines int, err error) {
-	line, err := getLine(reader)
-	if err != nil {
-		return nil, 0, err
-	}
+func ParseHeader(reader *bufio.Reader) (hdr *Header, lines int) {
+	line := getLine(reader)
 	lines++
 	if line[:len(fileFormatVersionLinePrefix)] != fileFormatVersionLinePrefix {
-		return nil, 0, errors.New("invalid first line in a VCF file")
+		log.Panic("invalid first line in a VCF file")
 	}
 	hdr = NewHeader()
 	hdr.FileFormat = line
 	var sc StringScanner
 	for {
-		if data, e := reader.Peek(1); (e != nil) || (data[0] != '#') {
-			return nil, 0, errors.New("unexpected end of VCF header")
+		if data, err := reader.Peek(1); err != nil || data[0] != '#' {
+			log.Panic("unexpected end of VCF header")
 		}
 		_, _ = reader.ReadByte()
-		if data, e := reader.Peek(1); e != nil {
-			return nil, 0, errors.New("unexpected end of VCF header")
+		if data, err := reader.Peek(1); err != nil {
+			log.Panic("unexpected end of VCF header")
 		} else if data[0] != '#' {
 			break
 		}
 		_, _ = reader.ReadByte()
-		line, err = getLine(reader)
-		if err != nil {
-			return nil, 0, err
-		}
+		line = getLine(reader)
 		lines++
 		sc.Reset(line)
 		if key, found := sc.readUntilByte('='); !found {
-			return nil, 0, errors.New("invalid syntax in a VCF header")
+			log.Panic("invalid syntax in a VCF header")
 		} else if key == "fileformat" {
-			return nil, 0, errors.New("multiple file format meta-information lines in a VCF file")
+			log.Panic("multiple file format meta-information lines in a VCF file")
 		} else if key == "INFO" {
 			hdr.Infos = append(hdr.Infos, sc.ParseFormatInformation())
 		} else if key == "FORMAT" {
@@ -322,24 +292,51 @@ func ParseHeader(reader *bufio.Reader) (hdr *Header, lines int, err error) {
 		} else {
 			hdr.Meta[key] = append(hdr.Meta[key], sc.ParseMetaInformation())
 		}
-		if sc.err != nil {
-			return nil, 0, sc.err
-		}
 	}
-	line, err = getLine(reader)
-	if err != nil {
-		return nil, 0, err
-	}
+	line = getLine(reader)
 	lines++
 	sc.Reset(line)
+	hdr.Columns = nil
 	for sc.Len() > 0 {
 		column, _ := sc.readUntilByte('\t')
 		hdr.Columns = append(hdr.Columns, column)
 	}
-	if sc.err != nil {
-		return nil, 0, sc.err
+	return hdr, lines
+}
+
+func skipLine(reader *bufio.Reader) []byte {
+	line, err := reader.ReadBytes('\n')
+	if err != nil && err != io.EOF {
+		log.Panic(err)
 	}
-	return hdr, lines, nil
+	return line
+}
+
+// SkipHeader skips a VCF header. This is more efficient
+// than calling ParseHeader and ignoring its result.
+func SkipHeader(reader *bufio.Reader) (lines int) {
+	line := skipLine(reader)
+	lines++
+	if string(line)[:len(fileFormatVersionLinePrefix)] != fileFormatVersionLinePrefix {
+		log.Panic("invalid first line in a VCF file")
+	}
+	for {
+		if data, err := reader.Peek(1); err != nil || data[0] != '#' {
+			log.Panic("unexpected end of VCF header")
+		}
+		_, _ = reader.ReadByte()
+		if data, err := reader.Peek(1); err != nil {
+			log.Panic("unexpected end of VCF header")
+		} else if data[0] != '#' {
+			break
+		}
+		_, _ = reader.ReadByte()
+		skipLine(reader)
+		lines++
+	}
+	skipLine(reader)
+	lines++
+	return lines
 }
 
 // FieldParser is an abstraction for parsing VCF fields
@@ -349,9 +346,7 @@ func make1InfoParser(entryParser FieldParser) FieldParser {
 	return func(sc *StringScanner) (result interface{}) {
 		sc.SkipSpace()
 		if (sc.index >= len(sc.data)) || (sc.data[sc.index] != '=') {
-			if sc.err == nil {
-				sc.err = fmt.Errorf("missing = in a VCF INFO/FORMAT meta-information line: %v", sc.data)
-			}
+			log.Panicf("missing = in a VCF INFO/FORMAT meta-information line: %v", sc.data)
 			return nil
 		}
 		sc.SkipSpace()
@@ -365,14 +360,12 @@ func makeNInfoParser(entryParser FieldParser) FieldParser {
 	return func(sc *StringScanner) interface{} {
 		sc.SkipSpace()
 		if (sc.index >= len(sc.data)) || (sc.data[sc.index] != '=') {
-			if sc.err == nil {
-				sc.err = fmt.Errorf("missing = in a VCF INFO/FORMAT meta-information line: %v", sc.data)
-			}
+			log.Panicf("missing = in a VCF INFO/FORMAT meta-information line: %v", sc.data)
 			return nil
 		}
 		sc.SkipSpace()
 		var result []interface{}
-		for sc.err == nil {
+		for {
 			result = append(result, entryParser(sc))
 			sc.SkipSpace()
 			if (sc.index >= len(sc.data)) || (sc.data[sc.index] != ',') {
@@ -388,15 +381,12 @@ var endOfInfoEntry = []byte{' ', ',', ';', '\t'}
 
 // ParseGenericInfo parses a VCF info section without specific format information
 func (sc *StringScanner) ParseGenericInfo() interface{} {
-	if sc.err != nil {
-		return nil
-	}
 	sc.SkipSpace()
 	if (sc.index < len(sc.data)) && (sc.data[sc.index] == '=') {
 		var result []interface{}
 		sc.index++
 		sc.SkipSpace()
-		for sc.err == nil {
+		for {
 			result = append(result, sc.readUntilBytes(endOfInfoEntry))
 			sc.SkipSpace()
 			if (sc.index >= len(sc.data)) || (sc.data[sc.index] != ',') {
@@ -411,26 +401,12 @@ func (sc *StringScanner) ParseGenericInfo() interface{} {
 
 // ParseInfoInteger parses an integer in a VCF info section
 func (sc *StringScanner) ParseInfoInteger() interface{} {
-	i, err := strconv.ParseInt(sc.readUntilBytes(endOfInfoEntry), 10, 32)
-	if err != nil {
-		if sc.err == nil {
-			sc.err = err
-		}
-		return nil
-	}
-	return int(i)
+	return int(internal.ParseInt(sc.readUntilBytes(endOfInfoEntry), 10, 32))
 }
 
 // ParseInfoFloat parses a floating point number in a VCF info section
 func (sc *StringScanner) ParseInfoFloat() interface{} {
-	f, err := strconv.ParseFloat(sc.readUntilBytes(endOfInfoEntry), 64)
-	if err != nil {
-		if sc.err == nil {
-			sc.err = err
-		}
-		return nil
-	}
-	return f
+	return internal.ParseFloat(sc.readUntilBytes(endOfInfoEntry), 64)
 }
 
 // ParseInfoFlag parses a boolean flag in a VCF info section (always returns true)
@@ -441,11 +417,8 @@ func (sc *StringScanner) ParseInfoFlag() interface{} {
 
 // ParseInfoCharacter parses a rune in a VCF info section
 func (sc *StringScanner) ParseInfoCharacter() interface{} {
-	if sc.err != nil {
-		return nil
-	}
 	if sc.index >= len(sc.data) {
-		sc.err = errors.New("missing Character entry in a VCF INFO meta-information line")
+		log.Panic("missing Character entry in a VCF INFO meta-information line")
 		return nil
 	}
 	if ch := sc.data[sc.index]; ch < utf8.RuneSelf {
@@ -454,9 +427,7 @@ func (sc *StringScanner) ParseInfoCharacter() interface{} {
 	}
 	rune, size := utf8.DecodeRune([]byte(sc.data[sc.index:]))
 	if rune == utf8.RuneError {
-		if sc.err == nil {
-			sc.err = errors.New("invalid rune encountered in a VCF INFO meta-information line")
-		}
+		log.Panic("invalid rune encountered in a VCF INFO meta-information line")
 	}
 	sc.index += size
 	return rune
@@ -464,123 +435,79 @@ func (sc *StringScanner) ParseInfoCharacter() interface{} {
 
 // ParseInfoString parses a string in a VCF info section
 func (sc *StringScanner) ParseInfoString() interface{} {
-	return sc.readUntilBytes(endOfInfoEntry)
+	return specialToNormalString.Replace(sc.readUntilBytes(endOfInfoEntry))
 }
 
 // CreateInfoParser creates a specific VCF info section parser for the given format information
-func CreateInfoParser(format *FormatInformation) (FieldParser, error) {
+func CreateInfoParser(format *FormatInformation) FieldParser {
 	if format.Type == Flag {
 		if format.Number != 0 {
-			return nil, errors.New("INFO Type Flag with Number != 0")
+			log.Panic("INFO Type Flag with Number != 0")
 		}
-		return (*StringScanner).ParseInfoFlag, nil
+		return (*StringScanner).ParseInfoFlag
 	}
 	if format.Number == 1 {
 		switch format.Type {
 		case Integer:
-			return make1InfoParser((*StringScanner).ParseInfoInteger), nil
+			return make1InfoParser((*StringScanner).ParseInfoInteger)
 		case Float:
-			return make1InfoParser((*StringScanner).ParseInfoFloat), nil
+			return make1InfoParser((*StringScanner).ParseInfoFloat)
 		case Character:
-			return make1InfoParser((*StringScanner).ParseInfoCharacter), nil
+			return make1InfoParser((*StringScanner).ParseInfoCharacter)
 		case String:
-			return make1InfoParser((*StringScanner).ParseInfoString), nil
+			return make1InfoParser((*StringScanner).ParseInfoString)
 		default:
-			return nil, errors.New("invalid INFO Type")
+			log.Panic("invalid INFO Type")
+			return nil
 		}
 	}
 	switch format.Type {
 	case Integer:
-		return makeNInfoParser((*StringScanner).ParseInfoInteger), nil
+		return makeNInfoParser((*StringScanner).ParseInfoInteger)
 	case Float:
-		return makeNInfoParser((*StringScanner).ParseInfoFloat), nil
+		return makeNInfoParser((*StringScanner).ParseInfoFloat)
 	case Character:
-		return makeNInfoParser((*StringScanner).ParseInfoCharacter), nil
+		return makeNInfoParser((*StringScanner).ParseInfoCharacter)
 	case String:
-		return makeNInfoParser((*StringScanner).ParseInfoString), nil
+		return makeNInfoParser((*StringScanner).ParseInfoString)
 	default:
-		return nil, errors.New("invalid INFO Type")
+		log.Panic("invalid INFO Type")
+		return nil
 	}
 }
 
 var endOfFormatEntry = []byte{' ', ',', ':', '\t'}
 
-// ParseGenericFormat parses a VCF format section without specific format information
-func (sc *StringScanner) ParseGenericFormat() interface{} {
-	if sc.err != nil {
-		return nil
-	}
-	sc.SkipSpace()
-	if (sc.index < len(sc.data)) && (sc.data[sc.index] == '=') {
-		var result []interface{}
-		sc.index++
-		sc.SkipSpace()
-		for sc.err == nil {
-			result = append(result, sc.readUntilBytes(endOfFormatEntry))
-			sc.SkipSpace()
-			if (sc.index >= len(sc.data)) || (sc.data[sc.index] != ',') {
-				break
-			}
-			sc.index++
-		}
-		return result
-	}
-	return true
-}
-
 // ParseFormatInteger parses an integer in a VCF format section
 func (sc *StringScanner) ParseFormatInteger() interface{} {
-	if sc.err != nil || sc.index >= len(sc.data) {
+	if sc.index >= len(sc.data) {
 		return nil
 	}
 	if sc.data[sc.index] == '.' {
 		sc.index++
 		return nil
 	}
-	i, err := strconv.ParseInt(sc.readUntilBytes(endOfFormatEntry), 10, 32)
-	if err != nil {
-		if sc.err == nil {
-			sc.err = err
-		}
-		return nil
-	}
-	return int(i)
-}
-
-func containsByte(b byte, bytes []byte) bool {
-	for _, bb := range bytes {
-		if b == bb {
-			return true
-		}
-	}
-	return false
+	return int(internal.ParseInt(sc.readUntilBytes(endOfFormatEntry), 10, 32))
 }
 
 // ParseFormatFloat parses a floating point number in a VCF format section
 func (sc *StringScanner) ParseFormatFloat() interface{} {
-	if sc.err != nil || sc.index >= len(sc.data) {
+	if sc.index >= len(sc.data) {
 		return nil
 	}
 	if sc.data[sc.index] == '.' {
 		next := sc.index + 1
-		if (next >= len(sc.data)) || containsByte(sc.data[next], endOfFormatEntry) {
+		if (next >= len(sc.data)) || (bytes.IndexByte(endOfFormatEntry, sc.data[next]) >= 0) {
 			sc.index = next
 			return nil
 		}
 	}
-	f, err := strconv.ParseFloat(sc.readUntilBytes(endOfFormatEntry), 64)
-	if err != nil {
-		if sc.err == nil {
-			sc.err = err
-		}
-		return nil
-	}
-	return f
+	return internal.ParseFloat(sc.readUntilBytes(endOfFormatEntry), 64)
 }
 
 // ParseFormatCharacter parses a rune in a VCF format section
 func (sc *StringScanner) ParseFormatCharacter() interface{} {
-	if sc.err != nil || sc.index >= len(sc.data) {
+	if sc.index >= len(sc.data) {
 		return nil
 	}
 	if ch := sc.data[sc.index]; ch < utf8.RuneSelf {
@@ -592,9 +519,7 @@ func (sc *StringScanner) ParseFormatCharacter() interface{} {
 	}
 	rune, size := utf8.DecodeRune([]byte(sc.data[sc.index:]))
 	if rune == utf8.RuneError {
-		if sc.err == nil {
-			sc.err = errors.New("invalid rune encountered in a VCF FORMAT meta-information line")
-		}
+		log.Panic("invalid rune encountered in a VCF FORMAT meta-information line")
 	}
 	sc.index += size
 	return rune
@@ -602,17 +527,17 @@ func (sc *StringScanner) ParseFormatCharacter() interface{} {
 
 // ParseFormatString parses a string in a VCF format section
 func (sc *StringScanner) ParseFormatString() interface{} {
-	if sc.err != nil || sc.index >= len(sc.data) {
+	if sc.index >= len(sc.data) {
 		return nil
 	}
 	if sc.data[sc.index] == '.' {
 		next := sc.index + 1
-		if (next >= len(sc.data)) || containsByte(sc.data[next], endOfFormatEntry) {
+		if (next >= len(sc.data)) || (bytes.IndexByte(endOfFormatEntry, sc.data[next]) >= 0) {
 			sc.index = next
 			return nil
 		}
 	}
-	return sc.readUntilBytes(endOfFormatEntry)
+	return specialToNormalString.Replace(sc.readUntilBytes(endOfFormatEntry))
 }
 
 func make1FormatParser(entryParser FieldParser) FieldParser {
@@ -628,7 +553,7 @@ func makeNFormatParser(entryParser FieldParser) FieldParser {
 	return func(sc *StringScanner) interface{} {
 		sc.SkipSpace()
 		var result []interface{}
-		for sc.err == nil {
+		for {
 			result = append(result, entryParser(sc))
 			sc.SkipSpace()
 			if (sc.index >= len(sc.data)) || (sc.data[sc.index] != ',') {
@@ -641,37 +566,39 @@ func makeNFormatParser(entryParser FieldParser) FieldParser {
 }
 
 // CreateFormatParser creates a specific VCF format section parser for the given format information
-func CreateFormatParser(format *FormatInformation) (FieldParser, error) {
+func CreateFormatParser(format *FormatInformation) FieldParser {
 	if format.Number == 1 {
 		switch format.Type {
 		case Integer:
-			return make1FormatParser((*StringScanner).ParseFormatInteger), nil
+			return make1FormatParser((*StringScanner).ParseFormatInteger)
 		case Float:
-			return make1FormatParser((*StringScanner).ParseFormatFloat), nil
+			return make1FormatParser((*StringScanner).ParseFormatFloat)
 		case Character:
-			return make1FormatParser((*StringScanner).ParseFormatCharacter), nil
+			return make1FormatParser((*StringScanner).ParseFormatCharacter)
 		case String:
-			return make1FormatParser((*StringScanner).ParseFormatString), nil
+			return make1FormatParser((*StringScanner).ParseFormatString)
 		default:
-			return nil, errors.New("invalid FORMAT Type")
+			log.Panic("invalid FORMAT Type")
+			return nil
 		}
 	}
 	switch format.Type {
 	case Integer:
-		return makeNFormatParser((*StringScanner).ParseFormatInteger), nil
+		return makeNFormatParser((*StringScanner).ParseFormatInteger)
 	case Float:
-		return makeNFormatParser((*StringScanner).ParseFormatFloat), nil
+		return makeNFormatParser((*StringScanner).ParseFormatFloat)
 	case Character:
-		return makeNFormatParser((*StringScanner).ParseFormatCharacter), nil
+		return makeNFormatParser((*StringScanner).ParseFormatCharacter)
 	case String:
-		return makeNFormatParser((*StringScanner).ParseFormatString), nil
+		return makeNFormatParser((*StringScanner).ParseFormatString)
 	default:
-		return nil, errors.New("invalid FORMAT Type")
+		log.Panic("invalid FORMAT Type")
+		return nil
 	}
 }
 
 func (sc *StringScanner) missingEntry() bool {
-	if (sc.err != nil) || (sc.index >= len(sc.data)) {
+	if sc.index >= len(sc.data) {
 		return true
 	}
 	if sc.data[sc.index] == '.' {
@@ -684,14 +611,22 @@ func (sc *StringScanner) missingEntry() bool {
 	return false
 }
 
-func (sc *StringScanner) scanChar(ch byte) {
-	if sc.err != nil {
-		return
-	}
-	if (sc.index >= len(sc.data)) || (sc.data[sc.index] != ch) {
-		sc.err = errors.New("missing tabulator in VCF data line")
+func (sc *StringScanner) scanTab() {
+	if sc.index >= len(sc.data) || sc.data[sc.index] != '\t' {
+		log.Panic("missing tabulator in VCF data line")
 	}
 	sc.index++
+}
+
+func (sc *StringScanner) maybeScanTab() bool {
+	if sc.index >= len(sc.data) {
+		return false
+	}
+	if sc.data[sc.index] != '\t' {
+		log.Panic("missing tabulator in VCF data line")
+	}
+	sc.index++
+	return true
 }
 
 func (sc *StringScanner) doString() string {
@@ -700,9 +635,7 @@ func (sc *StringScanner) doString() string {
 	}
 	value, ok := sc.readUntilByte('\t')
 	if !ok {
-		if sc.err == nil {
-			sc.err = errors.New("missing tabulator in VCF data line")
-		}
+		log.Panic("missing tabulator in VCF data line")
 		return ""
 	}
 	return value
@@ -714,16 +647,10 @@ func (sc *StringScanner) doInt32() int32 {
 	}
 	value, ok := sc.readUntilByte('\t')
 	if !ok {
-		if sc.err == nil {
-			sc.err = errors.New("missing tabulator in VCF data line")
-		}
+		log.Panic("missing tabulator in VCF data line")
 		return -1
 	}
-	i, err := strconv.ParseInt(value, 10, 32)
-	if (err != nil) && (sc.err == nil) {
-		sc.err = err
-	}
-	return int32(i)
+	return int32(internal.ParseInt(value, 10, 32))
 }
 
 func (sc *StringScanner) doFloat() interface{} {
@@ -732,30 +659,24 @@ func (sc *StringScanner) doFloat() interface{} {
 	}
 	value, ok := sc.readUntilByte('\t')
 	if !ok {
-		if sc.err == nil {
-			sc.err = errors.New("missing tabulator in VCF data line")
-		}
+		log.Panic("missing tabulator in VCF data line")
 		return nil
 	}
-	f, err := strconv.ParseFloat(value, 64)
-	if (err != nil) && (sc.err == nil) {
-		sc.err = err
-	}
-	return f
+	return internal.ParseFloat(value, 64)
 }
 
 func (sc *StringScanner) doStringList(separator []byte) (result []string) {
 	if sc.missingEntry() {
 		return nil
 	}
-	for sc.err == nil {
+	for {
 		result = append(result, sc.readUntilBytes(separator))
 		if (sc.index >= len(sc.data)) || (sc.data[sc.index] != separator[0]) {
 			break
 		}
 		sc.index++
 	}
-	sc.scanChar('\t')
+	sc.scanTab()
 	return result
 }
 
@@ -770,15 +691,15 @@ func (sc *StringScanner) doFilter() []utils.Symbol {
 	}
 	str := sc.readUntilBytes(filterSeparator)
 	if str == "PASS" {
-		sc.scanChar('\t')
+		sc.scanTab()
 		return passList
 	}
 	result := []utils.Symbol{utils.Intern(str)}
-	for (sc.err == nil) && (sc.index < len(sc.data)) && (sc.data[sc.index] == ';') {
+	for (sc.index < len(sc.data)) && (sc.data[sc.index] == ';') {
 		sc.index++
 		result = append(result, utils.Intern(sc.readUntilBytes(filterSeparator)))
 	}
-	sc.scanChar('\t')
+	sc.scanTab()
 	return result
 }
 
@@ -794,9 +715,6 @@ func (sc *StringScanner) doInfo(infoParsers utils.SmallMap) (result utils.SmallM
 		} else {
 			value = sc.ParseGenericInfo()
 		}
-		if sc.err != nil {
-			return nil
-		}
 		result = append(result, utils.SmallMapEntry{Key: key, Value: value})
 		sc.SkipSpace()
 		if (sc.index >= len(sc.data)) || (sc.data[sc.index] != ':') {
@@ -810,9 +728,6 @@ func (sc *StringScanner) doSymbolList() (result []utils.Symbol) {
 	for {
 		sc.SkipSpace()
 		str := sc.readUntilBytes(formatSeparator)
-		if sc.err != nil {
-			return nil
-		}
 		result = append(result, utils.Intern(str))
 		sc.SkipSpace()
 		if (sc.index >= len(sc.data)) || (sc.data[sc.index] != ':') {
@@ -831,24 +746,22 @@ type VariantParser struct {
 }
 
 // NewVariantParser creates a VariantParser for the given VCF header.
-func (header *Header) NewVariantParser() (*VariantParser, error) {
+func (header *Header) NewVariantParser() *VariantParser {
 	var vp VariantParser
 	for _, format := range header.Infos {
-		parser, err := CreateInfoParser(format)
-		if err != nil {
-			return nil, err
-		}
-		vp.InfoParsers = append(vp.InfoParsers, utils.SmallMapEntry{Key: format.ID, Value: parser})
+		vp.InfoParsers = append(vp.InfoParsers, utils.SmallMapEntry{
+			Key:   format.ID,
+			Value: CreateInfoParser(format),
+		})
 	}
 	for _, format := range header.Formats {
-		parser, err := CreateFormatParser(format)
-		if err != nil {
-			return nil, err
-		}
-		vp.FormatParsers = append(vp.FormatParsers, utils.SmallMapEntry{Key: format.ID, Value: parser})
+		vp.FormatParsers = append(vp.FormatParsers, utils.SmallMapEntry{
+			Key:   format.ID,
+			Value: CreateFormatParser(format),
+		})
 	}
 	vp.NSamples = len(header.Columns) - len(DefaultHeaderColumns) - 1
-	return &vp, nil
+	return &vp
 }
 
 var (
@@ -857,7 +770,7 @@ var (
 )
 
 // ParseVariant parses a VCF variant line
-func (sc *StringScanner) ParseVariant(vp *VariantParser) *Variant {
+func (sc *StringScanner) ParseVariant(vp *VariantParser) Variant {
 	var variant Variant
 	variant.Chrom = sc.doString()
 	variant.Pos = sc.doInt32()
@@ -867,27 +780,91 @@ func (sc *StringScanner) ParseVariant(vp *VariantParser) *Variant {
 	variant.Qual = sc.doFloat()
 	variant.Filter = sc.doFilter()
 	variant.Info = sc.doInfo(vp.InfoParsers)
-	if vp.NSamples > 0 {
-		sc.scanChar('\t')
+	if vp.NSamples > 0 && sc.maybeScanTab() {
 		variant.GenotypeFormat = sc.doSymbolList()
+		if variant.GenotypeFormat[0] == GT {
+			format := variant.GenotypeFormat[1:]
+			parsers := make([]func(sc *StringScanner) interface{}, len(format))
+			for p, f := range format {
+				if parser, ok := vp.FormatParsers.Get(f); ok {
+					parsers[p] = parser.(FieldParser)
+				} else {
+					parsers[p] = (*StringScanner).ParseFormatString
+				}
+			}
+			for i := 0; i < vp.NSamples; i++ {
+				if !sc.maybeScanTab() {
+					break
+				}
+				var sample Genotype
+				value := sc.ParseFormatString().(string)
+				if len(value) > 0 {
+					var sep byte
+					for k := 0; k < len(value); k++ {
+						if ch := value[k]; ch == '|' {
+							sample.Phased = true
+							sep = '|'
+							break
+						} else if ch == '/' {
+							sample.Phased = false
+							sep = '/'
+							break
+						}
+					}
+					sample.GT = make([]int32, 0, 2)
+					for {
+						end := strings.IndexByte(value, sep)
+						if end < 0 {
+							if value == "." {
+								sample.GT = append(sample.GT, -1)
+							} else {
+								sample.GT = append(sample.GT, int32(internal.ParseInt(value, 10, 32)))
+							}
+							break
+						}
+						if sub := value[:end]; sub == "." {
+							sample.GT = append(sample.GT, -1)
+						} else {
+							sample.GT = append(sample.GT, int32(internal.ParseInt(sub, 10, 32)))
+						}
+						value = value[end+1:]
+					}
+				}
+				if (sc.index < len(sc.data)) && (sc.data[sc.index] == ':') {
+					sc.index++
+					sample.Data = make(utils.SmallMap, 0, len(parsers))
+					for j := 0; j < len(parsers); j++ {
+						key := format[j]
+						value := parsers[j](sc)
+						sample.Data = append(sample.Data, utils.SmallMapEntry{Key: key, Value: value})
+						if (sc.index >= len(sc.data)) || (sc.data[sc.index] != ':') {
+							break
+						}
+						sc.index++
+					}
+				}
+				variant.GenotypeData = append(variant.GenotypeData, sample)
+			}
+			return variant
+		}
 		parsers := make([]func(sc *StringScanner) interface{}, len(variant.GenotypeFormat))
-		for p, format := range variant.GenotypeFormat {
-			if parser, ok := vp.FormatParsers.Get(format); ok {
+		for p, f := range variant.GenotypeFormat {
+			if parser, ok := vp.FormatParsers.Get(f); ok {
 				parsers[p] = parser.(FieldParser)
 			} else {
-				parsers[p] = (*StringScanner).ParseGenericFormat
+				parsers[p] = (*StringScanner).ParseFormatString
 			}
 		}
 		for i := 0; i < vp.NSamples; i++ {
-			sample := make(utils.SmallMap, 0, len(parsers))
-			sc.scanChar('\t')
+			if !sc.maybeScanTab() {
+				break
+			}
+			var sample Genotype
+			sample.Data = make(utils.SmallMap, 0, len(parsers))
 			for j := 0; j < len(parsers); j++ {
 				key := variant.GenotypeFormat[j]
 				value := parsers[j](sc)
-				if sc.err != nil {
-					return nil
-				}
-				sample = append(sample, utils.SmallMapEntry{Key: key, Value: value})
+				sample.Data = append(sample.Data, utils.SmallMapEntry{Key: key, Value: value})
 				if (sc.index >= len(sc.data)) || (sc.data[sc.index] != ':') {
 					break
 				}
@@ -896,23 +873,20 @@ func (sc *StringScanner) ParseVariant(vp *VariantParser) *Variant {
 			variant.GenotypeData = append(variant.GenotypeData, sample)
 		}
 	}
-	if sc.err != nil {
-		return nil
-	}
-	return &variant
+	return variant
 }
 
 // FormatString outputs a string to a VCF file, adding necessary double quotes and escapes
-func FormatString(out io.ByteWriter, str string) error {
-	_ = out.WriteByte('"')
+func FormatString(out io.ByteWriter, str string) {
+	internal.WriteByte(out, '"')
 	for i := 0; i < len(str); i++ {
 		b := str[i]
 		if b == '"' || b == '\\' {
-			_ = out.WriteByte('\\')
+			internal.WriteByte(out, '\\')
 		}
-		_ = out.WriteByte(b)
+		internal.WriteByte(out, b)
 	}
-	return out.WriteByte('"')
+	internal.WriteByte(out, '"')
 }
 
 func needsQuotes(s string) bool {
@@ -925,118 +899,126 @@ func needsQuotes(s string) bool {
 }
 
 // FormatMetaInformation outputs VCF meta information, which can be just a string or *MetaInformation
-func FormatMetaInformation(out *bufio.Writer, meta interface{}) error {
+func FormatMetaInformation(out *bufio.Writer, meta interface{}) {
 	switch m := meta.(type) {
 	case string:
-		_, _ = out.WriteString(m)
-		return out.WriteByte('\n')
+		internal.WriteString(out, m)
+		internal.WriteByte(out, '\n')
 	case *MetaInformation:
-		_, _ = out.WriteString("<ID=")
-		_, _ = out.WriteString(*m.ID)
+		internal.WriteString(out, "<ID=")
+		internal.WriteString(out, *m.ID)
 		for key, value := range m.Fields {
-			_ = out.WriteByte(',')
-			_, _ = out.WriteString(key)
-			_ = out.WriteByte('=')
+			internal.WriteByte(out, ',')
+			internal.WriteString(out, key)
+			internal.WriteByte(out, '=')
 			if needsQuotes(value) {
-				_ = FormatString(out, value)
+				FormatString(out, value)
 			} else {
-				_, _ = out.WriteString(value)
+				internal.WriteString(out, value)
 			}
 		}
 		if m.Description != "" {
-			_, _ = out.WriteString(",Description=")
-			_ = FormatString(out, m.Description)
+			internal.WriteString(out, ",Description=")
+			FormatString(out, m.Description)
 		}
-		_, err := out.WriteString(">\n")
-		return err
+		internal.WriteString(out, ">\n")
 	default:
-		return errors.New("invalid MetaInformation type")
+		log.Panic("invalid MetaInformation type")
 	}
 }
 
 // FormatFormatInformation outputs VCF info or format information
-func FormatFormatInformation(out *bufio.Writer, format *FormatInformation, infoNotFormat bool) error {
-	_, _ = out.WriteString("<ID=")
-	_, _ = out.WriteString(*format.ID)
-	_, _ = out.WriteString(",Number=")
+func FormatFormatInformation(out *bufio.Writer, format *FormatInformation, infoNotFormat bool) {
+	internal.WriteString(out, "<ID=")
+	internal.WriteString(out, *format.ID)
+	internal.WriteString(out, ",Number=")
 	if format.Number >= 0 {
-		_, _ = out.WriteString(strconv.FormatInt(int64(format.Number), 10))
+		internal.WriteString(out, strconv.FormatInt(int64(format.Number), 10))
 	} else {
 		switch format.Number {
 		case NumberA:
-			_ = out.WriteByte('A')
+			internal.WriteByte(out, 'A')
 		case NumberR:
-			_ = out.WriteByte('R')
+			internal.WriteByte(out, 'R')
 		case NumberG:
-			_ = out.WriteByte('G')
+			internal.WriteByte(out, 'G')
 		case NumberDot:
-			_ = out.WriteByte('.')
+			internal.WriteByte(out, '.')
 		default:
-			return errors.New("unknown Number kind in a VCF meta-information line")
+			log.Panic("unknown Number kind in a VCF meta-information line")
 		}
 	}
-	_, _ = out.WriteString(",Type=")
+	internal.WriteString(out, ",Type=")
 	switch format.Type {
 	case Integer:
-		_, _ = out.WriteString("Integer")
+		internal.WriteString(out, "Integer")
 	case Float:
-		_, _ = out.WriteString("Float")
+		internal.WriteString(out, "Float")
 	case Flag:
-		_, _ = out.WriteString("Flag")
+		internal.WriteString(out, "Flag")
 	case Character:
-		_, _ = out.WriteString("Character")
+		internal.WriteString(out, "Character")
 	case String:
-		_, _ = out.WriteString("String")
+		internal.WriteString(out, "String")
 	default:
-		return errors.New("invalid Type in a VCF meta-information line")
+		log.Panic("invalid Type in a VCF meta-information line")
 	}
 	for key, value := range format.Fields {
-		_ = out.WriteByte(',')
-		_, _ = out.WriteString(key)
-		_ = out.WriteByte('=')
+		internal.WriteByte(out, ',')
+		internal.WriteString(out, key)
+		internal.WriteByte(out, '=')
 		if (infoNotFormat && (key == "Source" || key == "Version")) || needsQuotes(value) {
-			_ = FormatString(out, value)
+			FormatString(out, value)
 		} else {
-			_, _ = out.WriteString(value)
+			internal.WriteString(out, value)
 		}
 	}
 	if format.Description != "" {
-		_, _ = out.WriteString(",Description=")
-		_ = FormatString(out, format.Description)
+		internal.WriteString(out, ",Description=")
+		FormatString(out, format.Description)
 	}
-	_, err := out.WriteString(">\n")
-	return err
+	internal.WriteString(out, ">\n")
 }
 
 // Format outputs a VCF header
-func (header *Header) Format(out *bufio.Writer) (err error) {
-	_, _ = out.WriteString(header.FileFormat)
-	_ = out.WriteByte('\n')
-	for _, info := range header.Infos {
-		_, _ = out.WriteString("##INFO=")
-		_ = FormatFormatInformation(out, info, true)
+func (header *Header) Format(out *bufio.Writer) {
+	internal.WriteString(out, header.FileFormat)
+	internal.WriteByte(out, '\n')
+	keys := []string{"FORMAT", "INFO"}
+	for key := range header.Meta {
+		keys = append(keys, key)
 	}
-	for _, format := range header.Formats {
-		_, _ = out.WriteString("##FORMAT=")
-		_ = FormatFormatInformation(out, format, false)
-	}
-	for key, metas := range header.Meta {
-		for _, meta := range metas {
-			_, _ = out.WriteString("##")
-			_, _ = out.WriteString(key)
-			_ = out.WriteByte('=')
-			_ = FormatMetaInformation(out, meta)
+	sort.Strings(keys)
+	for _, key := range keys {
+		switch key {
+		case "FORMAT":
+			for _, format := range header.Formats {
+				internal.WriteString(out, "##FORMAT=")
+				FormatFormatInformation(out, format, false)
+			}
+		case "INFO":
+			for _, info := range header.Infos {
+				internal.WriteString(out, "##INFO=")
+				FormatFormatInformation(out, info, true)
+			}
+		default:
+			for _, meta := range header.Meta[key] {
+				internal.WriteString(out, "##")
+				internal.WriteString(out, key)
+				internal.WriteByte(out, '=')
+				FormatMetaInformation(out, meta)
+			}
 		}
 	}
-	_ = out.WriteByte('#')
+	internal.WriteByte(out, '#')
 	if len(header.Columns) > 0 {
-		_, _ = out.WriteString(header.Columns[0])
+		internal.WriteString(out, header.Columns[0])
 		for _, col := range header.Columns[1:] {
-			_ = out.WriteByte('\t')
-			_, _ = out.WriteString(col)
+			internal.WriteByte(out, '\t')
+			internal.WriteString(out, col)
 		}
 	}
-	return out.WriteByte('\n')
+	internal.WriteByte(out, '\n')
 }
 
 func formatStringList(out []byte, list []string, separator byte) []byte {
@@ -1063,152 +1045,144 @@ func formatSymbolList(out []byte, list []utils.Symbol, separator byte) []byte {
 	return out
 }
 
-func formatValue(out []byte, value interface{}) ([]byte, error) {
+func formatValue(out []byte, value interface{}) []byte {
 	switch v := value.(type) {
 	case int:
-		return strconv.AppendInt(out, int64(v), 10), nil
+		return strconv.AppendInt(out, int64(v), 10)
 	case float64:
-		/*
-			if math.Floor(v) != v {
-				return strconv.AppendFloat(out, v, 'f', 2, 64)
+		if v < 1 {
+			if v < 0.01 {
+				if math.Abs(v) < 1e-20 {
+					return append(out, "0.00"...)
+				}
+				return strconv.AppendFloat(out, v, 'e', 3, 64)
 			}
-		*/
-		return strconv.AppendFloat(out, v, 'f', -1, 64), nil
+			return strconv.AppendFloat(out, v, 'f', 3, 64)
+		}
+		return strconv.AppendFloat(out, v, 'f', 2, 64)
 	case rune:
 		if v < utf8.RuneSelf {
-			return append(out, byte(v)), nil
+			return append(out, byte(v))
 		}
 		pos := len(out)
 		out = append(out, '1', '2', '3', '4', '5', '6')
 		buf := out[pos:]
-		return out[:pos+utf8.EncodeRune(buf, v)], nil
+		return out[:pos+utf8.EncodeRune(buf, v)]
 	case string:
-		return append(out, v...), nil
+		return append(out, normalToSpecialString.Replace(v)...)
 	default:
-		return nil, errors.New("invalid value type")
+		log.Panic("invalid value type")
+		return nil
 	}
 }
 
-func formatInfoEntry(out []byte, entry utils.SmallMapEntry) ([]byte, error) {
+func formatInfoEntry(out []byte, entry utils.SmallMapEntry) []byte {
 	out = append(out, (*entry.Key)...)
 	switch e := entry.Value.(type) {
 	case bool:
 		if !e {
-			return nil, errors.New("unexpected boolean value")
+			log.Panic("unexpected boolean value")
 		}
-		return out, nil
+		return out
 	case []interface{}:
 		out = append(out, '=')
 		if len(e) == 0 {
-			return out, nil
+			return out
 		}
-		var err error
-		out, err = formatValue(out, e[0])
-		if err != nil {
-			return nil, err
-		}
+		out = formatValue(out, e[0])
 		for _, v := range e[1:] {
-			out = append(out, ',')
-			out, err = formatValue(out, v)
-			if err != nil {
-				return nil, err
-			}
+			out = formatValue(append(out, ','), v)
 		}
-		return out, nil
+		return out
 	default:
-		out = append(out, '=')
-		return formatValue(out, entry.Value)
+		return formatValue(append(out, '='), entry.Value)
 	}
 }
 
-func formatInfo(out []byte, info utils.SmallMap) ([]byte, error) {
+func formatInfo(out []byte, info utils.SmallMap) []byte {
 	if len(info) == 0 {
-		return out, nil
+		return append(out, '.')
 	}
-	var err error
-	out, err = formatInfoEntry(out, info[0])
-	if err != nil {
-		return nil, err
-	}
+	out = formatInfoEntry(out, info[0])
 	for _, entry := range info[1:] {
-		out = append(out, ';')
-		out, err = formatInfoEntry(out, entry)
-		if err != nil {
-			return nil, err
-		}
+		out = formatInfoEntry(append(out, ';'), entry)
 	}
-	return out, nil
+	return out
 }
 
-func formatGenotypeDataEntry(out []byte, format utils.Symbol, data utils.SmallMap) ([]byte, bool, error) {
+func formatGenotypeDataEntry(out []byte, format utils.Symbol, data utils.SmallMap) ([]byte, bool) {
 	switch value, _ := data.Get(format); val := value.(type) {
 	case nil:
-		return append(out, '.'), false, nil
+		return append(out, '.'), false
 	case []interface{}:
 		if len(val) == 0 {
-			return out, true, nil
+			return out, true
 		}
-		var err error
 		if val[0] == nil {
 			out = append(out, '.')
 		} else {
-			out, err = formatValue(out, val[0])
-			if err != nil {
-				return nil, false, err
-			}
+			out = formatValue(out, val[0])
 		}
 		for _, v := range val[1:] {
 			out = append(out, ',')
 			if v == nil {
 				out = append(out, '.')
 			} else {
-				out, err = formatValue(out, v)
-				if err != nil {
-					return nil, false, err
-				}
+				out = formatValue(out, v)
 			}
 		}
-		return out, true, nil
+		return out, true
 	default:
-		var err error
-		out, err = formatValue(out, value)
-		if err != nil {
-			return nil, false, err
-		}
-		return out, true, nil
+		return formatValue(out, value), true
 	}
 }
 
-func formatGenotypeData(out []byte, format []utils.Symbol, data utils.SmallMap) ([]byte, error) {
+func formatGenotypeData(out []byte, format []utils.Symbol, g Genotype) []byte {
 	if len(format) == 0 {
-		return out, nil
+		return out
 	}
-	pos := len(out)
-	out, ok, err := formatGenotypeDataEntry(out, format[0], data)
-	if err != nil {
-		return nil, err
-	}
-	if ok {
-		pos = len(out)
-	}
-	for _, f := range format[1:] {
-		out = append(out, ':')
-		out, ok, err = formatGenotypeDataEntry(out, f, data)
-		if err != nil {
-			return nil, err
+	var pos int
+	var ok bool
+	if format[0] == GT {
+		var sep byte
+		if g.Phased {
+			sep = '|'
+		} else {
+			sep = '/'
 		}
+		if n := g.GT[0]; n < 0 {
+			out = append(out, '.')
+		} else {
+			out = strconv.AppendInt(out, int64(n), 10)
+		}
+		for _, n := range g.GT[1:] {
+			out = append(out, sep)
+			if n < 0 {
+				out = append(out, '.')
+			} else {
+				out = strconv.AppendInt(out, int64(n), 10)
+			}
+		}
+		pos = len(out)
+	} else {
+		pos = len(out)
+		out, ok = formatGenotypeDataEntry(out, format[0], g.Data)
 		if ok {
 			pos = len(out)
 		}
 	}
-	if format[len(format)-1] == GT {
-		return out, nil
+	for _, f := range format[1:] {
+		out = append(out, ':')
+		out, ok = formatGenotypeDataEntry(out, f, g.Data)
+		if ok {
+			pos = len(out)
+		}
 	}
-	return out[:pos], nil
+	return out[:pos]
 }
 
 // Format outputs a VCF variant line
-func (variant *Variant) Format(out []byte) ([]byte, error) {
+func (variant Variant) Format(out []byte) []byte {
 	out = append(append(out, variant.Chrom...), '\t')
 	if variant.Pos < 0 {
 		out = append(out, '.', '\t')
@@ -1226,7 +1200,11 @@ func (variant *Variant) Format(out []byte) ([]byte, error) {
 				out = append(strconv.AppendFloat(out, value, 'f', -1, 64), '\t')
 			}
 		*/
-		out = append(strconv.AppendFloat(out, value, 'f', -1, 64), '\t')
+		out = strconv.AppendFloat(out, value, 'f', 2, 64)
+		if bytes.HasSuffix(out, []byte(".00")) {
+			out = out[:len(out)-3]
+		}
+		out = append(out, '\t')
 	} else {
 		out = append(out, '.', '\t')
 	}
@@ -1235,220 +1213,248 @@ func (variant *Variant) Format(out []byte) ([]byte, error) {
 	} else {
 		out = append(formatSymbolList(out, variant.Filter, ';'), '\t')
 	}
-	var err error
-	out, err = formatInfo(out, variant.Info)
-	if err != nil {
-		return nil, err
-	}
+	out = formatInfo(out, variant.Info)
 	if len(variant.GenotypeFormat) > 0 {
 		out = append(out, '\t')
 		out = formatSymbolList(out, variant.GenotypeFormat, ':')
 		for _, data := range variant.GenotypeData {
-			out = append(out, '\t')
-			out, err = formatGenotypeData(out, variant.GenotypeFormat, data)
-			if err != nil {
-				return nil, err
-			}
+			out = formatGenotypeData(append(out, '\t'), variant.GenotypeFormat, data)
 		}
 	}
-	return append(out, '\n'), nil
+	return append(out, '\n')
+}
+
+func FormatVariants(out *bufio.Writer, variants []Variant) {
+	var p pipeline.Pipeline
+	p.Source(variants)
+	p.Add(
+		pipeline.LimitedPar(0, pipeline.Receive(func(_ int, data interface{}) interface{} {
+			variants := data.([]Variant)
+			records := make([][]byte, 0, len(variants))
+			var buf []byte
+			for _, variant := range variants {
+				buf = variant.Format(buf)
+				records = append(records, append([]byte(nil), buf...))
+				buf = buf[:0]
+			}
+			return records
+		})),
+		pipeline.StrictOrd(pipeline.Receive(func(_ int, data interface{}) interface{} {
+			records := data.([][]byte)
+			for _, record := range records {
+				_, _ = out.Write(record)
+			}
+			return nil
+		})),
+	)
+	internal.RunPipeline(&p)
 }
 
 // Format outputs a full VCF struct
-func (vcf *Vcf) Format(out *bufio.Writer) error {
-	if err := vcf.Header.Format(out); err != nil {
-		return err
-	}
-	var buf []byte
-	var err error
-	for _, variant := range vcf.Variants {
-		if buf, err = variant.Format(buf); err != nil {
-			return err
-		}
-		if _, err = out.Write(buf); err != nil {
-			return err
-		}
-		buf = buf[:0]
-	}
-	return nil
+func (vcf *Vcf) Format(out *bufio.Writer) {
+	vcf.Header.Format(out)
+	FormatVariants(out, vcf.Variants)
 }
 
-// The possible file extensions for VCF or BCF files, or gz-compressed VCF files
+// The possible file extensions for VCF or gz-compressed VCF files
 const (
 	VcfExt = ".vcf"
-	BcfExt = ".bcf"
 	GzExt  = ".gz"
 )
 
 // InputFile represents a VCF or BCF file for input.
 type InputFile struct {
-	rc io.ReadCloser
+	rc   io.ReadCloser
+	bgzf *bgzf.Reader
 	*bufio.Reader
-	*exec.Cmd
 }
 
 // OutputFile represents a VCF or BCF file for output.
 type OutputFile struct {
-	wc io.WriteCloser
+	wc   io.WriteCloser
+	bgzf *bgzf.Writer
 	*bufio.Writer
-	*exec.Cmd
-}
-
-// Reader is a bufio.Reader for a VCF or BCF InputFile.
-type Reader bufio.Reader
-
-// Writer is a bufio.Writer for a VCF or BCF OutputFile.
-type Writer bufio.Writer
-
-// VcfReader returns the reader for a VCF or BCF InputFile.
-func (input *InputFile) VcfReader() *Reader {
-	return (*Reader)(input.Reader)
-}
-
-// VcfWriter returns the Writer for a VCF or BCF OutputFile.
-func (output *OutputFile) VcfWriter() *Writer {
-	return (*Writer)(output.Writer)
 }
 
 // Open a VCF file for input.
 //
-// If the filename extension is .bcf or .gz, use bcftools view for
-// input. Tell bcftools view to only return the header section for
-// input when headerOnly is true.
-//
-// bcftools must be visible in the directories named by the PATH
-// environment variable for .bcf or .gz input.
-//
-// If the filename extension is not .bcf or .gz, then .vcf is always
-// assumed.
+// Whether the format is gzipped or not is determined from the content
+// of the input, not from any file extensions.
 //
 // If the name is "/dev/stdin", then the input is read from os.Stdin
-func Open(name string, headerOnly bool) (*InputFile, error) {
-	switch filepath.Ext(name) {
-	case BcfExt, GzExt:
-		if _, err := os.Stat(name); os.IsNotExist(err) {
-			return nil, err
-		}
-		args := []string{"view"}
-		if headerOnly {
-			args = append(args, "-h")
-		}
-		args = append(args, []string{"--threads", strconv.FormatInt(int64(runtime.GOMAXPROCS(0)), 10)}...)
-		args = append(args, name)
-		cmd := exec.Command("bcftools", args...)
-		outPipe, err := cmd.StdoutPipe()
-		if err != nil {
-			return nil, err
-		}
-		err = cmd.Start()
-		if err != nil {
-			return nil, err
-		}
-		return &InputFile{outPipe, bufio.NewReader(outPipe), cmd}, nil
-	default:
-		if name == "/dev/stdin" {
-			return &InputFile{os.Stdin, bufio.NewReader(os.Stdin), nil}, nil
-		}
-		file, err := os.Open(name)
-		if err != nil {
-			return nil, err
-		}
-		return &InputFile{file, bufio.NewReader(file), nil}, nil
+func Open(name string) *InputFile {
+	var file io.ReadCloser
+	if name == "/dev/stdin" {
+		file = os.Stdin
+	} else {
+		file = internal.FileOpen(name)
 	}
+	buf := bufio.NewReader(file)
+	ok, err := bgzf.IsGzip(buf)
+	if err != nil {
+		log.Panic(err)
+	}
+	if !ok {
+		return &InputFile{
+			rc:     file,
+			Reader: buf,
+		}
+	}
+	bgzf, err := bgzf.NewReader(buf)
+	if err != nil {
+		log.Panic(err)
+	}
+	return &InputFile{
+		rc:     file,
+		bgzf:   bgzf,
+		Reader: bufio.NewReader(bgzf),
+	}
+}
+
+// Open a VCF file for input, returning false if it doesn't exist.
+//
+// Whether the format is gzipped or not is determined from the content
+// of the input, not from any file extensions.
+//
+// If the name is "/dev/stdin", then the input is read from os.Stdin
+func OpenIfExists(name string) (*InputFile, bool) {
+	var file io.ReadCloser
+	if name == "/dev/stdin" {
+		file = os.Stdin
+	} else if f, ok := internal.FileOpenIfExists(name); ok {
+		file = f
+	} else {
+		return nil, false
+	}
+	buf := bufio.NewReader(file)
+	ok, err := bgzf.IsGzip(buf)
+	if err != nil {
+		log.Panic(err)
+	}
+	if !ok {
+		return &InputFile{
+			rc:     file,
+			Reader: buf,
+		}, true
+	}
+	bgzf, err := bgzf.NewReader(buf)
+	if err != nil {
+		log.Panic(err)
+	}
+	return &InputFile{
+		rc:     file,
+		bgzf:   bgzf,
+		Reader: bufio.NewReader(bgzf),
+	}, true
 }
 
 // Create a VCF file for output.
 //
-// If the filename extension is .bcf or .gz, use bcftools view for
-// output.
+// The format string can be "vcf" or "gz". If the format string
+// is empty, the output format is determined by looking at the
+// filename extension. If the filename extension is not .gz,
+// then .vcf is always assumed.
 //
-// bcftools must be visible in the directories named by the PATH
-// environment variable for .bcf or .gz output.
+// The format string will not become part of the resulting filename.
 //
-// If the filename extension is not .bcf or .gz, then .vcf is always
-// assumed.
+// Following zlib, levels range from 1 (BestSpeed) to 9 (BestCompression);
+// higher levels typically run slower but compress more. Level 0
+// (NoCompression) does not attempt any compression; it only adds the
+// necessary DEFLATE framing.
+// Level -1 (DefaultCompression) uses the default compression level.
+// Level -2 (HuffmanOnly) will use Huffman compression only, giving
+// a very fast compression for all types of input, but sacrificing considerable
+// compression efficiency.
 //
 // If the name is "/dev/stdout", then the output is written to
 // os.Stdout.
-func Create(name string, compressed bool) (*OutputFile, error) {
-	ext := filepath.Ext(name)
-	if ext == BcfExt || ext == GzExt || compressed {
-		args := []string{"view"}
-		switch ext {
-		case BcfExt:
-			if compressed {
-				args = append(args, "-Ob")
-			} else {
-				args = append(args, "-Ou")
-			}
-		case GzExt:
-			args = append(args, "-Oz")
-		default:
-			if compressed {
-				args = append(args, "-Oz")
-			} else {
-				args = append(args, "-Ov")
-			}
-		}
-		args = append(args, []string{"--threads", strconv.FormatInt(int64(runtime.GOMAXPROCS(0)), 10)}...)
-		args = append(args, []string{"-o", name, "-"}...)
-		cmd := exec.Command("bcftools", args...)
-		inPipe, err := cmd.StdinPipe()
-		if err != nil {
-			return nil, err
-		}
-		err = cmd.Start()
-		if err != nil {
-			return nil, err
-		}
-		return &OutputFile{inPipe, bufio.NewWriter(inPipe), cmd}, nil
-	}
+func Create(name string, format string, level int) *OutputFile {
+	var file io.WriteCloser
 	if name == "/dev/stdout" {
-		return &OutputFile{os.Stdout, bufio.NewWriter(os.Stdout), nil}, nil
+		file = os.Stdout
+	} else {
+		file = internal.FileCreate(name)
 	}
-	file, err := os.Create(name)
-	if err != nil {
-		return nil, err
+	if format == "" {
+		format = filepath.Ext(name)
 	}
-	return &OutputFile{file, bufio.NewWriter(file), nil}, nil
+	switch strings.ToLower(format) {
+	case "gz", ".gz", "vcf.gz", ".vcf.gz":
+		bgzf := bgzf.NewWriter(file, level)
+		return &OutputFile{
+			wc:     file,
+			bgzf:   bgzf,
+			Writer: bufio.NewWriter(bgzf),
+		}
+	case "bcf", ".bcf":
+		log.Panicf("BCF format not supported when creating %v", name)
+		return nil
+	default:
+		return &OutputFile{
+			wc:     file,
+			Writer: bufio.NewWriter(file),
+		}
+	}
 }
 
-// Close the VCF input file. If bcftools view is used for input, wait
-// for its process to finish.
-func (input *InputFile) Close() error {
+// Close the VCF input file.
+func (input *InputFile) Close() {
+	if input.bgzf != nil {
+		internal.Close(input.bgzf)
+	}
 	if input.rc != os.Stdin {
-		err := input.rc.Close()
-		if err != nil {
-			return err
-		}
+		internal.Close(input.rc)
 	}
-	if input.Cmd != nil {
-		err := input.Wait()
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
-// Close the VCF input file. If bcftools view is used for input, wait
-// for its process to finish.
-func (output *OutputFile) Close() error {
+// Close the VCF input file.
+func (output *OutputFile) Close() {
 	err := output.Flush()
 	if err != nil {
-		return err
+		log.Panic(err)
+	}
+	if output.bgzf != nil {
+		internal.Close(output.bgzf)
 	}
 	if output.wc != os.Stdout {
-		err := output.wc.Close()
-		if err != nil {
-			return err
-		}
+		internal.Close(output.wc)
 	}
-	if output.Cmd != nil {
-		err := output.Wait()
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+}
+
+// ParseVariants parses VCF variant lines based on the given VCF header.
+func (header *Header) ParseVariants(input *InputFile) []Variant {
+	variantParser := header.NewVariantParser()
+	var variants []Variant
+	var p pipeline.Pipeline
+	p.Source(pipeline.NewScanner(input.Reader))
+	p.Add(
+		pipeline.LimitedPar(0, pipeline.Receive(func(_ int, data interface{}) interface{} {
+			lines := data.([]string)
+			variants := make([]Variant, 0, len(lines))
+			var sc StringScanner
+			for _, line := range lines {
+				sc.Reset(line)
+				variants = append(variants, sc.ParseVariant(variantParser))
+			}
+			return variants
+		})),
+		pipeline.StrictOrd(pipeline.Receive(func(_ int, data interface{}) interface{} {
+			variants = append(variants, data.([]Variant)...)
+			return nil
+		})),
+	)
+	internal.RunPipeline(&p)
+	return variants
+}
+
+// Parse parseses a full VCF files.
+func (input *InputFile) Parse() *Vcf {
+	header, _ := ParseHeader(input.Reader)
+	variants := header.ParseVariants(input)
+	return &Vcf{header, variants}
+}
+
+// Format outputs a full VCF struct.
+func (output *OutputFile) Format(vcf *Vcf) {
+	vcf.Format(output.Writer)
 }
