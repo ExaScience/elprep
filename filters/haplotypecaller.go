@@ -221,7 +221,7 @@ func NewHaplotypeCaller(
 		confidenceMode = bpResolution
 		standardConfidenceForCalling = -0.0 // todo: command line parameter; the default depends on confidenceMode
 	default:
-		log.Fatalf("invalid reference confidence mode %v", referenceConfidence)
+		log.Panicf("invalid reference confidence mode %v", referenceConfidence)
 	}
 
 	standardConfidenceForActivity := math.Min(4, standardConfidenceForCalling)

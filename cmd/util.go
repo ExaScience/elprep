@@ -239,6 +239,7 @@ func setLogOutput(path string) {
 	} else {
 		fullPath = filepath.Join(path, logPath)
 	}
+	internal.MkdirAll(filepath.Dir(fullPath), 0700)
 	f := internal.FileCreate(fullPath)
 	fmt.Fprintln(f, ProgramMessage)
 

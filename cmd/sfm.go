@@ -562,7 +562,7 @@ func Sfm() {
 	if tmpPath != "" {
 		fmt.Fprint(&command, " --tmp-path ", tmpPath)
 		if err := os.MkdirAll(tmpPath, 0700); err != nil {
-			log.Fatal(err, ", while trying to create directories for split files ", tmpPath)
+			log.Panic(err, ", while trying to create directories for split files ", tmpPath)
 		}
 	}
 

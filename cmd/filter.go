@@ -48,7 +48,7 @@ func parseAndMergeSpreadFile(spreadFile string, reads *sam.Sam) {
 	file.RunPipeline(spreadReads, []sam.Filter{func(_ *sam.Header) sam.AlignmentFilter {
 		contigs, ok := reads.Header.Contigs()
 		if !ok {
-			log.Fatal("Cannot call haplotypes on split file without contig information.")
+			log.Panic("Cannot call haplotypes on split file without contig information.")
 		}
 		contigCheck := make(map[string]bool)
 		for _, contig := range contigs {
