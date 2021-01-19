@@ -54,7 +54,9 @@ We also provide a download of a precompiled binary.
 
 ## Binaries
 
-elPrep 5 binaries available soon.
+elPrep 5 binaries can be downloaded from this website:
+
+	https://www.imec-int.com/en/expertise/lifesciences/genomics/dna-sequence-analysis-software
 
 ## GitHub
 
