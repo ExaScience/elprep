@@ -56,15 +56,15 @@ We also provide a download of a precompiled binary.
 
 elPrep 5 binaries can be downloaded from this website:
 
-	https://www.imec-int.com/en/expertise/lifesciences/genomics/dna-sequence-analysis-software
+* https://www.imec-int.com/en/expertise/lifesciences/genomics/dna-sequence-analysis-software
 
 ## GitHub
 
 The elPrep source code is freely available on GitHub. elPrep is implemented in Go and tested for Linux.
 
-	elPrep GitHub URL:
+elPrep GitHub URL:
 
-		https://github.com/exascience/elprep
+* https://github.com/exascience/elprep
 
 ## Dependencies
 
@@ -159,7 +159,7 @@ Please cite the following articles:
 
 Herzeel C, Costanza P, Decap D, Fostier J, Verachtert W (2019) elPrep 4: A multithreaded framework for sequence analysis. PLoS ONE 14(2): e0209523. https://doi.org/10.1371/journal.pone.0209523
 
-Herzeel C, Costanza P, Decap D, Fostier J, Reumers J (2015) elPrep: High-Performance Preparation of Sequence Alignment/Map Files for Variant Calling. PLoS ONE 10(7): e0132868. doi:10.1371/journal.pone.0132868
+Herzeel C, Costanza P, Decap D, Fostier J, Reumers J (2015) elPrep: High-Performance Preparation of Sequence Alignment/Map Files for Variant Calling. PLoS ONE 10(7): e0132868. https://doi.org/10.1371/journal.pone.0132868
 
 Costanza P, Herzeel C, Verachter W (2019) A comparison of three programming languages for a full-fledged next-generation sequencing tool. BMC Bioinformatics 2019 20:301. https://doi.org/10.1186/s12859-019-2903-5
 
