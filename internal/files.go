@@ -51,6 +51,15 @@ func FileCreate(name string) *os.File {
 	return f
 }
 
+// FileCreateOpenIfExists Creates a new file or opens if it already exists for appending
+func FileCreateOpenIfExists(name string) *os.File {
+	f, err := os.OpenFile(name, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0666)
+	if err != nil {
+		log.Panic(err)
+	}
+	return f
+}
+
 // FileOpen is os.Open with panics in place of errors
 func FileOpen(name string) *os.File {
 	f, err := os.Open(name)
