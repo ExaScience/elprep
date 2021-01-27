@@ -983,11 +983,11 @@ func Filter() {
 		if vcfOutput != "" {
 			var activityProfileOut, assemblyRegionsOut io.WriteCloser
 			if activityProfile != "" {
-				activityProfileOut = internal.FileCreateOpenIfExists(activityProfile)
+				activityProfileOut = internal.FileCreateAppendIfExists(activityProfile)
 				defer internal.Close(activityProfileOut)
 			}
 			if assemblyRegions != "" {
-				assemblyRegionsOut = internal.FileCreateOpenIfExists(assemblyRegions)
+				assemblyRegionsOut = internal.FileCreateAppendIfExists(assemblyRegions)
 				defer internal.Close(assemblyRegionsOut)
 			}
 			haplotypeCaller := filters.NewHaplotypeCaller(
@@ -1022,11 +1022,11 @@ func Filter() {
 		if vcfOutput != "" {
 			var activityProfileOut, assemblyRegionsOut io.WriteCloser
 			if activityProfile != "" {
-				activityProfileOut = internal.FileCreateOpenIfExists(activityProfile)
+				activityProfileOut = internal.FileCreateAppendIfExists(activityProfile)
 				defer internal.Close(activityProfileOut)
 			}
 			if assemblyRegions != "" {
-				assemblyRegionsOut = internal.FileCreateOpenIfExists(assemblyRegions)
+				assemblyRegionsOut = internal.FileCreateAppendIfExists(assemblyRegions)
 				defer internal.Close(assemblyRegionsOut)
 			}
 			haplotypeCaller = filters.NewHaplotypeCaller(
