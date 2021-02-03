@@ -33,20 +33,21 @@ import (
 )
 
 func readGroupCovariate(hdr *sam.Header, aln *sam.Alignment) string {
-	rgV := aln.RG()
-	if rgV == nil {
+	switch rg := aln.RG().(type) {
+	default:
 		log.Panic("Error: BQSR requires input with read groups. Alignment ", aln.QNAME, " has no read group. Please fix input, e.g. rerun with the --replace-read-group option.")
-	}
-	rg := rgV.(string)
-	for _, record := range hdr.RG {
-		if id, ok := record["ID"]; ok && rg == id {
-			if unit, ok := record["PU"]; ok {
-				return unit
+		panic("unreachable code")
+	case string:
+		for _, record := range hdr.RG {
+			if id, ok := record["ID"]; ok && rg == id {
+				if unit, ok := record["PU"]; ok {
+					return unit
+				}
+				break
 			}
-			break
 		}
+		return rg
 	}
-	return rg
 }
 
 const lengthBits = 4
