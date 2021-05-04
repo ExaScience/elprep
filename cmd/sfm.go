@@ -267,7 +267,7 @@ func Sfm() {
 			sanityChecksFailed = true
 			log.Println("Error: Neither writing a SAM output, nor a VCF output.")
 		}
-	} else if !checkCreate("--haplotypecaller", vcfOutput) {
+	} else if !checkCreate("--haplotypecaller", vcfOutput) || !checkHaplotypecallerOptions(referenceElFasta) {
 		sanityChecksFailed = true
 	}
 
