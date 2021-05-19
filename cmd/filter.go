@@ -81,7 +81,6 @@ func runRemainingPipeline(
 			filteredReads.RunPipeline(filteredReads, filters2, sortingOrder)
 		})
 		filters2 = nil
-		go runtime.GC()
 		phase++
 		timedRun(timed, profile, "Calling variants.", phase, func() {
 			vcfPathname := internal.FilepathAbs(vcfOutput)
@@ -106,14 +105,12 @@ func runRemainingPipeline(
 					filteredReads.RunPipeline(filteredReads, filters2, sortingOrder)
 				})
 				filters2 = nil
-				go runtime.GC()
 			}
 			if spreadFile != "" {
 				phase++
 				timedRun(timed, profile, "Merging in spread reads.", phase, func() {
 					parseAndMergeSpreadFile(spreadFile, filteredReads)
 				})
-				go runtime.GC()
 			}
 			keptReads := new(sam.Sam)
 			*keptReads = *filteredReads
@@ -125,13 +122,11 @@ func runRemainingPipeline(
 				defer output.Close()
 				filteredReads.RunPipeline(output, nil, sortingOrder)
 			})
-			go runtime.GC()
 			phase++
 			timedRun(timed, profile, "Preparing variant calling.", phase, func() {
 				filters3 := []sam.Filter{filters.FilterReadsBySampleName(&sampleName), filters.HaplotypeCallAln}
 				keptReads.RunPipeline(keptReads, filters3, sortingOrder)
 			})
-			go runtime.GC()
 			phase++
 			timedRun(timed, profile, "Calling variants.", phase, func() {
 				vcfPathname := internal.FilepathAbs(vcfOutput)
@@ -161,14 +156,13 @@ func runBestPracticesPipelineIntermediateSam(
 		input.RunPipeline(filteredReads, filters1, sortingOrder)
 	})
 	filters1 = nil
-	go runtime.GC()
+	runtime.GC()
 	if opticalDuplicateFilter != nil {
 		phase++
 		timedRun(timed, profile, "Marking optical duplicates.", phase, func() {
 			opticalDuplicateFilter(filteredReads)
 		})
 		opticalDuplicateFilter = nil
-		go runtime.GC()
 	}
 	if sortingOrder != sam.Unsorted {
 		sortingOrder = sam.Keep
@@ -183,7 +177,6 @@ func runBestPracticesPipelineIntermediateSam(
 				filteredReads.RunPipeline(filteredReads, []sam.Filter{targetRegionsFilter}, sortingOrder)
 			})
 			targetRegionsFilter = nil
-			go runtime.GC()
 		}
 		var baseRecalibratorTables *filters.BaseRecalibratorTables
 		phase++
@@ -191,7 +184,6 @@ func runBestPracticesPipelineIntermediateSam(
 			baseRecalibratorTables = baseRecalibrator.Recalibrate(filteredReads, maxCycle)
 		})
 		baseRecalibrator = nil
-		go runtime.GC()
 		// Finalize BQSR tables + log recal file
 		phase++
 		timedRun(timed, profile, "Finalize BQSR tables.", phase, func() {
@@ -210,7 +202,6 @@ func runBestPracticesPipelineIntermediateSam(
 			filteredReads.RunPipeline(filteredReads, []sam.Filter{baseRecalibratorTables.ApplyBQSR(quantizeLevels, sqqList, maxCycle)}, sortingOrder)
 		})
 		baseRecalibratorTables = nil
-		go runtime.GC()
 	}
 	runRemainingPipeline(
 		phase, fileOut, outFormat, sortingOrder,
@@ -231,7 +222,6 @@ func runBestPracticesPipelineWithBQSRApplyOnly(
 		baseRecalibratorTables.PrintBQSRTables(pathname)
 	})
 	baseRecalibratorTables = nil
-	go runtime.GC()
 	timedRun(timed, profile, "Running pipeline.", 2, func() {
 		input := sam.Open(internal.FilepathAbs(input))
 		defer input.Close()
@@ -256,7 +246,6 @@ func runBestPracticesPipelineIntermediateSamWithBQSRApplyOnly(
 		baseRecalibratorTables.PrintBQSRTables(pathname)
 	})
 	baseRecalibratorTables = nil
-	go runtime.GC()
 	filteredReads := sam.NewSam()
 	timedRun(timed, profile, "Running pipeline.", 2, func() {
 		input := sam.Open(internal.FilepathAbs(input))
@@ -264,7 +253,7 @@ func runBestPracticesPipelineIntermediateSamWithBQSRApplyOnly(
 		input.RunPipeline(filteredReads, filters, sortingOrder)
 	})
 	filters = nil
-	go runtime.GC()
+	runtime.GC()
 	runRemainingPipeline(
 		3, output, outFormat, sortingOrder,
 		filteredReads, nil,
@@ -287,7 +276,7 @@ func runBestPracticesPipelineIntermediateSamWithBQSRCalculateTablesOnly(
 		input.RunPipeline(filteredReads, filters1, sortingOrder)
 	})
 	filters1 = nil
-	go runtime.GC()
+	runtime.GC()
 	// Marking optical duplicates
 	if opticalDuplicateFilter != nil {
 		phase++
@@ -295,7 +284,6 @@ func runBestPracticesPipelineIntermediateSamWithBQSRCalculateTablesOnly(
 			opticalDuplicateFilter(filteredReads)
 		})
 		opticalDuplicateFilter = nil
-		go runtime.GC()
 	}
 	// Filter out reads based on target regions
 	if bedRegions != nil {
@@ -305,7 +293,6 @@ func runBestPracticesPipelineIntermediateSamWithBQSRCalculateTablesOnly(
 			filteredReads.RunPipeline(filteredReads, []sam.Filter{targetRegionsFilter}, sortingOrder)
 		})
 		targetRegionsFilter = nil
-		go runtime.GC()
 	}
 	// Base recalibration
 	var baseRecalibratorTables *filters.BaseRecalibratorTables
@@ -321,7 +308,6 @@ func runBestPracticesPipelineIntermediateSamWithBQSRCalculateTablesOnly(
 		baseRecalibratorTables.PrintBQSRTablesToIntermediateFile(pathname)
 	})
 	baseRecalibratorTables = nil
-	go runtime.GC()
 	// Write output to file
 	phase++
 	timedRun(timed, profile, "Write to file.", phase, func() {

@@ -27,7 +27,7 @@ import (
 
 	"github.com/exascience/elprep/v5/fasta"
 
-	"github.com/willf/bitset"
+	"github.com/bits-and-blooms/bitset"
 
 	"github.com/exascience/elprep/v5/sam"
 )
