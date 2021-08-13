@@ -43,20 +43,20 @@ The advantages of elPrep include:
 * compatible with existing tools
 * modular, easy to add and remove pipeline steps
 
-# Availability
+# Licensing & Availability
 
-elPrep is released and distributed under a dual-licensing scheme. It is released as an open-source project under the terms of the GNU Affero General Public License 
-version 3 as published by the Free Software Foundation, with Additional Terms. Please see the file LICENSE.txt for a 
-copy of the GNU Affero Public License and the Additional Terms. For inquiries about the premium licensing option contact
- us via exascience@imec.be.
+elPrep 5 is released and distributed under a **dual-licensing scheme**:
+1. It is released as an open-source project under the 
+terms of the GNU Affero General Public License version 3 as published by the Free Software Foundation, with Additional 
+Terms. Please see the file LICENSE.txt for a copy of the GNU Affero Public License and the Additional Terms. 
+2. It is also available under the terms of the elPrep Premium License. This is the same code base but lifts some of the
+AGPL restrictions. Please see the file PREMIUMLICENSE.pdf for details. This license can be acquired via the [Flintbox 
+platform](https://imec.flintbox.com/technologies/fe07eac7-bef5-45a2-a2e3-b6c8f4e0d2d7).
+ 
+Go to our [terms of use](https://www.imec-int.com/en/terms-use-elprep) page for detailed information.
 
-We also provide a download of a precompiled binary.
-
-## Binaries
-
-elPrep 5 binaries can be downloaded from this website:
-
-* https://www.imec-int.com/en/expertise/lifesciences/genomics/dna-sequence-analysis-software
+elPrep 5 binaries can be compiled from the source code available on GitHub, or can also be installed 
+via [anaconda/bioconda](https://anaconda.org/bioconda/elprep).
 
 ## GitHub
 
