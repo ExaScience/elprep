@@ -61,9 +61,8 @@ platform](https://imec.flintbox.com/technologies/fe07eac7-bef5-45a2-a2e3-b6c8f4e
 Go to our [terms of use](https://www.imec-int.com/en/terms-use-elprep) page for detailed information.
 
 elPrep 5 binaries can be compiled from the source code available on GitHub, or can also be installed 
-via [anaconda/bioconda](https://anaconda.org/bioconda/elprep).
+via [anaconda/bioconda](https://anaconda.org/bioconda/elprep):
 
-or install using conda
 ```bash
 conda install -c bioconda elprep
 ```
