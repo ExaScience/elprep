@@ -1,3 +1,8 @@
+[![Anaconda-Server Badge](https://anaconda.org/bioconda/elprep/badges/installer/conda.svg)](https://conda.anaconda.org/bioconda)
+[![Anaconda-Server Badge](https://anaconda.org/bioconda/elprep/badges/version.svg)](https://anaconda.org/bioconda/elprep)
+[![Anaconda-Server Badge](https://anaconda.org/bioconda/elprep/badges/latest_release_date.svg)](https://anaconda.org/bioconda/elprep)
+[![Anaconda-Server Badge](https://anaconda.org/bioconda/elprep/badges/downloads.svg)](https://anaconda.org/bioconda/elprep)
+[![Anaconda-Server Badge](https://anaconda.org/bioconda/elprep/badges/license.svg)](https://anaconda.org/bioconda/elprep)
 # Overview
 
 elPrep is a high-performance tool for analyzing .sam/.bam files (up to and including variant calling) in sequencing pipelines. 
@@ -57,6 +62,11 @@ Go to our [terms of use](https://www.imec-int.com/en/terms-use-elprep) page for 
 
 elPrep 5 binaries can be compiled from the source code available on GitHub, or can also be installed 
 via [anaconda/bioconda](https://anaconda.org/bioconda/elprep).
+
+or install using conda
+```bash
+conda install -c bioconda elprep
+```
 
 ## GitHub
 
