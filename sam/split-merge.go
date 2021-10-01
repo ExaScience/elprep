@@ -229,9 +229,16 @@ func (hdr *Header) Contigs() (contigs []string, ok bool) {
 // requirements on the input file for splitting.
 func SplitFilePerChromosome(input, outputPath, outputPrefix, outputExtension string, contigGroupSize int) {
 	inputPath, files := internal.Directory(input)
+	var header *Header
+	var filters []AlignmentFilter
 	firstFile := filepath.Join(inputPath, files[0])
 	firstIn := Open(firstFile)
-	header := firstIn.ParseHeader()
+	if len(files) > 1 {
+		header, filters = MergeInputs(inputPath, files)
+		firstIn.SkipHeader() // skip header because it won't be used as it is replaced by the merged header
+	} else {
+		header = firstIn.ParseHeader()
+	}
 	groups, contigToGroup, groupToContigs := computeContigGroups(header.SQ, contigGroupSize)
 	splitsPath := filepath.Join(outputPath, "splits")
 	internal.MkdirAll(splitsPath, 0700)
@@ -266,8 +273,15 @@ func SplitFilePerChromosome(input, outputPath, outputPrefix, outputExtension str
 			pipeline.LimitedPar(0, BytesToAlignment(in)),
 			pipeline.StrictOrd(pipeline.Receive(func(_ int, data interface{}) interface{} {
 				for _, aln := range data.([]*Alignment) {
+					//execute the filters that may update optional rg and pg tags in reads
+					for _, filter := range filters {
+						filter(aln)
+					}
 					group := contigToGroup[aln.RNAME]
 					out := groupFiles[group]
+					if out == nil {
+						log.Panic("Attempting to output a read mapped to a region not present in the header: QNAME: ", aln.QNAME, "RNAME: ", aln.RNAME)
+					}
 					buf = out.FormatAlignment(aln, buf[:0])
 					if aln.RNEXT == "=" || aln.RNAME == "*" || contigToGroup[aln.RNEXT] == group {
 						out.Write(buf) // untagged
@@ -649,9 +663,16 @@ func MergeSortedFilesSplitPerChromosomeWithoutSpreadFile(inputPath, output, inpu
 // are no requirements on the input file for splitting.
 func SplitSingleEndFilePerChromosome(input, outputPath, outputPrefix, outputExtension string, contigGroupSize int) {
 	inputPath, files := internal.Directory(input)
+	var header *Header
+	var filters []AlignmentFilter
 	firstFile := filepath.Join(inputPath, files[0])
 	firstIn := Open(firstFile)
-	header := firstIn.ParseHeader()
+	if len(files) > 1 {
+		header, filters = MergeInputs(inputPath, files)
+		firstIn.SkipHeader()
+	} else {
+		header = firstIn.ParseHeader()
+	}
 	groups, contigToGroup, _ := computeContigGroups(header.SQ, contigGroupSize)
 	groupFiles := make(map[string]*OutputFile)
 	header.AddUserRecord("@sr", utils.StringMap{"co": "This file was created using elprep split --single-end."})
@@ -673,7 +694,14 @@ func SplitSingleEndFilePerChromosome(input, outputPath, outputPrefix, outputExte
 			pipeline.LimitedPar(0, BytesToAlignment(in)),
 			pipeline.StrictOrd(pipeline.Receive(func(_ int, data interface{}) interface{} {
 				for _, aln := range data.([]*Alignment) {
+					//execute the filters that may update optional rg and pg tags in reads
+					for _, filter := range filters {
+						filter(aln)
+					}
 					out := groupFiles[contigToGroup[aln.RNAME]]
+					if out == nil {
+						log.Panic("Attempting to output a read mapped to a region not present in the header: QNAME: ", aln.QNAME, " RNAME: ", aln.RNAME)
+					}
 					buf = out.FormatAlignment(aln, buf[:0])
 					out.Write(buf) // untagged
 				}

@@ -358,6 +358,11 @@ func (aln *Alignment) SetRG(rg interface{}) {
 	aln.TAGS.Set(RG, rg)
 }
 
+// SetPG sets the PG optional field.
+func (aln *Alignment) SetPG(pg interface{}) {
+	aln.TAGS.Set(PG, pg)
+}
+
 // REFID returns the REFID temporary field.
 //
 // If REFID field is not set, this will panic with a log message. The
