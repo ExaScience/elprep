@@ -525,9 +525,11 @@ func MarkOpticalDuplicates(reads *sam.Sam, pairs *sync.Map, opticalPixelDistance
 }
 
 func calculateDerivedDuplicateMetrics(ctr *DuplicatesCtr) {
-	ctr.estimatedLibrarySize = estimateLibrarySize(ctr.ReadPairsExamined-ctr.ReadPairOpticalDuplicates, ctr.ReadPairsExamined-ctr.ReadPairDuplicates)
+	if ctr.ReadPairsExamined > 0 { // do not compute these metrics for single-end reads
+		ctr.estimatedLibrarySize = estimateLibrarySize(ctr.ReadPairsExamined-ctr.ReadPairOpticalDuplicates, ctr.ReadPairsExamined-ctr.ReadPairDuplicates)
+		ctr.histogram = histogramRoi(ctr)
+	}
 	ctr.percentDuplication = float64(ctr.UnpairedReadDuplicates+ctr.ReadPairDuplicates*2) / float64(ctr.UnpairedReadsExamined+ctr.ReadPairsExamined*2)
-	ctr.histogram = histogramRoi(ctr)
 }
 
 func f(x, c, n float64) float64 {
@@ -619,6 +621,8 @@ func PrintDuplicatesMetrics(metrics, commandLine string, ctrs map[string]*Duplic
 	for library, ctr := range ctrs {
 		if ctr.ReadPairsExamined > 0 {
 			fmt.Fprintf(file, "%v\t%v\t%v\t%v\t%v\t%v\t%v\t%v\t%s\t%v\n", library, ctr.UnpairedReadsExamined, ctr.ReadPairsExamined, ctr.SecondaryOrSupplementaryReads, ctr.UnmappedReads, ctr.UnpairedReadDuplicates, ctr.ReadPairDuplicates, ctr.ReadPairOpticalDuplicates, formatFloat(ctr.percentDuplication), ctr.estimatedLibrarySize)
+		} else {
+			fmt.Fprintf(file, "%v\t%v\t%v\t%v\t%v\t%v\t%v\t%v\t%s\n", library, ctr.UnpairedReadsExamined, ctr.ReadPairsExamined, ctr.SecondaryOrSupplementaryReads, ctr.UnmappedReads, ctr.UnpairedReadDuplicates, ctr.ReadPairDuplicates, ctr.ReadPairOpticalDuplicates, formatFloat(ctr.percentDuplication))
 		}
 	}
 	fmt.Fprintln(file)
