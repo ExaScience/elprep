@@ -23,6 +23,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -422,7 +423,14 @@ func formatSamString(out []byte, tag, value string) []byte {
 // Section 1.3.
 func formatSamHeaderLine(out []byte, code string, record utils.StringMap) []byte {
 	out = append(out, code...)
-	for key, value := range record {
+	// sort keys so we always get the same output
+	keys := make([]string, 0, len(record))
+	for k := range record {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		value := record[key]
 		out = formatSamString(out, key, value)
 	}
 	out = append(out, '\n')
