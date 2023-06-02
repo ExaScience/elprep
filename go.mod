@@ -4,6 +4,7 @@ go 1.18
 
 require (
 	github.com/bits-and-blooms/bitset v1.2.2
+	github.com/elliotwutingfeng/asciiset v0.0.0-20230602022725-51bbb787efab
 	github.com/exascience/pargo v1.1.0
 	github.com/google/uuid v1.3.0
 	golang.org/x/sys v0.0.0-20220422013727-9388b58f7150

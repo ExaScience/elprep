@@ -23,6 +23,7 @@ import (
 	"math/rand"
 	"strconv"
 
+	"github.com/elliotwutingfeng/asciiset"
 	"github.com/exascience/elprep/v5/bed"
 	"github.com/exascience/elprep/v5/intervals"
 	"github.com/exascience/elprep/v5/sam"
@@ -82,7 +83,7 @@ func RemoveUnmappedReadsStrict(_ *sam.Header) sam.AlignmentFilter {
 	}
 }
 
-var nonExactMappingOperator = map[byte]bool{'I': true, 'D': true, 'N': true, 'H': true, 'P': true, 'X': true, '=': true}
+var nonExactMappingOperator, _ = asciiset.MakeASCIISet("IDNHPX=")
 
 // RemoveNonExactMappingReads is a filter that removes all reads that
 // are not exact matches with the reference (soft-clipping ok), based
@@ -90,7 +91,7 @@ var nonExactMappingOperator = map[byte]bool{'I': true, 'D': true, 'N': true, 'H'
 func RemoveNonExactMappingReads(_ *sam.Header) sam.AlignmentFilter {
 	return func(aln *sam.Alignment) bool {
 		for _, op := range aln.CIGAR {
-			if nonExactMappingOperator[op.Operation] {
+			if nonExactMappingOperator.Contains(op.Operation) {
 				return false
 			}
 		}

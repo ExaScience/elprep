@@ -21,6 +21,7 @@ package filters
 import (
 	"log"
 
+	"github.com/elliotwutingfeng/asciiset"
 	"github.com/exascience/elprep/v5/sam"
 )
 
@@ -74,13 +75,13 @@ func absInt32(x int32) int32 {
 }
 
 var (
-	operatorConsumesReadBases      = map[byte]bool{'M': true, 'I': true, 'S': true, '=': true, 'X': true}
-	operatorConsumesReferenceBases = map[byte]bool{'M': true, 'D': true, 'N': true, '=': true, 'X': true}
+	operatorConsumesReadBases, _      = asciiset.MakeASCIISet("MIS=X")
+	operatorConsumesReferenceBases, _ = asciiset.MakeASCIISet("MDN=X")
 )
 
 func elementStradlessClippedRead(newCigar []sam.CigarOperation, operator byte, relativeClippingPosition, clippedBases int32) []sam.CigarOperation {
-	if operatorConsumesReadBases[operator] {
-		if operatorConsumesReferenceBases[operator] {
+	if operatorConsumesReadBases.Contains(operator) {
+		if operatorConsumesReferenceBases.Contains(operator) {
 			if relativeClippingPosition > 0 {
 				newCigar = append(newCigar, sam.CigarOperation{
 					Length:    relativeClippingPosition,
@@ -279,7 +280,7 @@ func computeReadCoordinateForReferenceCoordinate(cigarVec []sam.CigarOperation, 
 		index++
 		elementLength := int(element.Length)
 		var shift int
-		if operatorConsumesReferenceBases[element.Operation] || element.Operation == 'S' {
+		if operatorConsumesReferenceBases.Contains(element.Operation) || element.Operation == 'S' {
 			if refBases+elementLength < goal {
 				shift = elementLength
 			} else {

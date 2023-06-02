@@ -45,14 +45,14 @@ func getBasesAndBaseQualitiesAlignedOneToOne(aln *sam.Alignment) (sam.Sequence, 
 			paddedBaseQualities := make([]byte, 0, nofRefBases)
 			var pos int32
 			for _, element := range aln.CIGAR {
-				if operatorConsumesReadBases[element.Operation] {
+				if operatorConsumesReadBases.Contains(element.Operation) {
 					end := pos + element.Length
-					if operatorConsumesReferenceBases[element.Operation] {
+					if operatorConsumesReferenceBases.Contains(element.Operation) {
 						paddedBases = paddedBases.AppendSlice(nibbles.Nibbles(bases.Slice(int(pos), int(end))))
 						paddedBaseQualities = append(paddedBaseQualities, baseQualities[pos:end]...)
 					}
 					pos = end
-				} else if operatorConsumesReferenceBases[element.Operation] {
+				} else if operatorConsumesReferenceBases.Contains(element.Operation) {
 					for j := int32(0); j < element.Length; j++ {
 						paddedBases = paddedBases.Append('-')
 						paddedBaseQualities = append(paddedBaseQualities, 0)
